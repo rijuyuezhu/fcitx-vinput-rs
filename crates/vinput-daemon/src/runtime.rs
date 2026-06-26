@@ -6,6 +6,7 @@ use vinput_asr::{AsrBackend, AsrError, MockAsrBackend, RecognitionSession, event
 use vinput_audio::PcmBuffer;
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
+use vinput_text::{TextFinisher, TextRequest};
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
 const MOCK_SILENCE_THRESHOLD: i16 = 8;
@@ -101,17 +102,14 @@ impl RuntimeState {
         self.capture_partial_events(&mut *session)?;
         session.finish().map_err(RuntimeError::Asr)?;
         let events = session.poll_events().map_err(RuntimeError::Asr)?;
-        let mut payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
-
-        if scene == vinput_config::COMMAND_SCENE_ID {
-            let selected = self.selected_text.as_deref().unwrap_or_default();
-            let command_text = if selected.is_empty() {
-                format!("mock command result: {}", payload.commit_text)
-            } else {
-                format!("mock command result for: {selected}")
-            };
-            payload = RecognitionPayload::raw(command_text);
-        }
+        let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
+        let scene_definition = self.scene_definition(&scene);
+        let payload = TextFinisher::finish(&TextRequest {
+            raw_text: &raw_payload.commit_text,
+            scene: &scene_definition,
+            selected_text: self.selected_text.as_deref(),
+        })
+        .map_err(RuntimeError::Finish)?;
 
         self.reset_to_idle();
         Ok(payload)
@@ -186,6 +184,21 @@ impl RuntimeState {
         pcm
     }
 
+    fn scene_definition(&self, scene_id: &str) -> vinput_config::SceneDefinition {
+        self.config
+            .scenes
+            .definitions
+            .iter()
+            .find(|scene| scene.id == scene_id)
+            .cloned()
+            .unwrap_or_else(|| vinput_config::SceneDefinition {
+                id: scene_id.to_owned(),
+                label: scene_id.to_owned(),
+                prompt: None,
+                candidate_count: 0,
+            })
+    }
+
     fn reset_to_idle(&mut self) {
         self.status = ServiceStatus::Idle;
         self.current_scene = None;
@@ -221,6 +234,9 @@ pub enum RuntimeError {
     /// ASR backend/session failed.
     #[error("asr error: {0}")]
     Asr(#[source] AsrError),
+    /// Result finishing failed.
+    #[error("result finishing error: {0}")]
+    Finish(#[source] vinput_text::TextError),
 }
 
 #[cfg(test)]

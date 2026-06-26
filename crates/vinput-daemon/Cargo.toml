@@ -25,6 +25,7 @@ vinput-asr = { path = "../vinput-asr" }
 vinput-audio = { path = "../vinput-audio" }
 vinput-config = { path = "../vinput-config" }
 vinput-protocol = { path = "../vinput-protocol" }
+vinput-text = { path = "../vinput-text" }
 zbus.workspace = true
 
 [dev-dependencies]

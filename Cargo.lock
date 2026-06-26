@@ -1028,6 +1028,7 @@ dependencies = [
  "vinput-audio",
  "vinput-config",
  "vinput-protocol",
+ "vinput-text",
  "zbus",
 ]
 
@@ -1041,6 +1042,15 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror",
+]
+
+[[package]]
+name = "vinput-text"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "vinput-config",
+ "vinput-protocol",
 ]
 
 [[package]]

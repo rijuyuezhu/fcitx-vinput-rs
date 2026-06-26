@@ -4,6 +4,7 @@ members = [
     "crates/vinput-config",
     "crates/vinput-asr",
     "crates/vinput-audio",
+    "crates/vinput-text",
     "crates/vinput-daemon",
     "crates/vinput-cli",
 ]
