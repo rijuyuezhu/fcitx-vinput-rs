@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    "crates/vinput-protocol",
+    "crates/vinput-config",
+    "crates/vinput-daemon",
+    "crates/vinput-cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/rijuyuezhu/fcitx-vinput-rs"
+rust-version = "1.88"
+
+[workspace.dependencies]
+anyhow = "1.0.98"
+clap = { version = "4.5.40", features = ["derive", "env"] }
+figment = { version = "0.10.19", features = ["json", "toml", "env"] }
+insta = { version = "1.43.1", features = ["json"] }
+schemars = { version = "1.0.4", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+serde_with = "3.14.0"
+strum = { version = "0.27.1", features = ["derive"] }
+thiserror = "2.0.12"
+tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"

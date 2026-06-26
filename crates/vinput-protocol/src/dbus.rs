@@ -1,0 +1,64 @@
+//! D-Bus names that must remain compatible with the C++ fcitx5-vinput addon.
+
+/// Well-known bus name owned by the Rust daemon.
+pub const SERVICE_BUS_NAME: &str = "org.fcitx.Vinput";
+
+/// Object path exported by the Rust daemon.
+pub const SERVICE_OBJECT_PATH: &str = "/org/fcitx/Vinput";
+
+/// Main service interface exported by the Rust daemon.
+pub const SERVICE_INTERFACE: &str = "org.fcitx.Vinput.Service";
+
+/// Object path used by the Fcitx5 addon-side notifier.
+pub const FRONTEND_NOTIFIER_OBJECT_PATH: &str = "/org/fcitx/Fcitx5/Vinput";
+
+/// Interface used by the Fcitx5 addon-side notifier.
+pub const FRONTEND_NOTIFIER_INTERFACE: &str = "org.fcitx.Fcitx5.Vinput1";
+
+/// Method names on [`SERVICE_INTERFACE`].
+pub mod method {
+    /// Start normal speech recognition.
+    pub const START_RECORDING: &str = "StartRecording";
+    /// Start command-mode speech recognition with selected text context.
+    pub const START_COMMAND_RECORDING: &str = "StartCommandRecording";
+    /// Stop the current recording and produce a recognition result.
+    pub const STOP_RECORDING: &str = "StopRecording";
+    /// Return the current daemon status string.
+    pub const GET_STATUS: &str = "GetStatus";
+    /// Return a JSON snapshot of the selected/effective ASR backend.
+    pub const GET_ASR_BACKEND_STATE: &str = "GetAsrBackendState";
+    /// Reload the selected ASR backend.
+    pub const RELOAD_ASR_BACKEND: &str = "ReloadAsrBackend";
+    /// Start a configured LLM adapter process.
+    pub const START_ADAPTER: &str = "StartAdapter";
+    /// Stop a configured LLM adapter process.
+    pub const STOP_ADAPTER: &str = "StopAdapter";
+    /// Send a frontend notification.
+    pub const NOTIFY: &str = "Notify";
+}
+
+/// Signal names on [`SERVICE_INTERFACE`].
+pub mod signal {
+    /// Final recognition payload. The first argument is a JSON string.
+    pub const RECOGNITION_RESULT: &str = "RecognitionResult";
+    /// Streaming partial text. The first argument is a string.
+    pub const RECOGNITION_PARTIAL: &str = "RecognitionPartial";
+    /// Daemon status transition. The first argument is a status string.
+    pub const STATUS_CHANGED: &str = "StatusChanged";
+    /// Daemon-originated notification payload.
+    pub const DAEMON_NOTIFICATION: &str = "DaemonNotification";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dbus_names_match_the_legacy_contract() {
+        assert_eq!(SERVICE_BUS_NAME, "org.fcitx.Vinput");
+        assert_eq!(SERVICE_OBJECT_PATH, "/org/fcitx/Vinput");
+        assert_eq!(SERVICE_INTERFACE, "org.fcitx.Vinput.Service");
+        assert_eq!(method::START_RECORDING, "StartRecording");
+        assert_eq!(signal::RECOGNITION_RESULT, "RecognitionResult");
+    }
+}

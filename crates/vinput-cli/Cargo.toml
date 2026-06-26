@@ -1,0 +1,21 @@
+[package]
+name = "vinput-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "vinput"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+vinput-config = { path = "../vinput-config" }
+vinput-protocol = { path = "../vinput-protocol" }
