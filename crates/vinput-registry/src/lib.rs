@@ -90,6 +90,51 @@ impl RegistryIndex {
         });
         model_assets.chain(adapter_assets).collect()
     }
+    /// Expands assets for one model id into deterministic planning rows.
+    pub fn planned_model_assets(
+        &self,
+        model_id: &str,
+        config: &RegistryConfig,
+    ) -> Result<Vec<PlannedAsset>, RegistryError> {
+        let model = self
+            .model(model_id)
+            .ok_or_else(|| RegistryError::UnknownModelId(model_id.to_owned()))?;
+        Ok(model
+            .assets
+            .iter()
+            .map(|asset| PlannedAsset {
+                entry_kind: RegistryEntryKind::Model,
+                entry_id: model.id.clone(),
+                path: asset.path.clone(),
+                urls: asset.resolved_urls(config),
+                sha256: asset.sha256.clone(),
+                size_bytes: asset.size_bytes,
+            })
+            .collect())
+    }
+
+    /// Expands assets for one adapter id into deterministic planning rows.
+    pub fn planned_adapter_assets(
+        &self,
+        adapter_id: &str,
+        config: &RegistryConfig,
+    ) -> Result<Vec<PlannedAsset>, RegistryError> {
+        let adapter = self
+            .adapter(adapter_id)
+            .ok_or_else(|| RegistryError::UnknownAdapterId(adapter_id.to_owned()))?;
+        Ok(adapter
+            .assets
+            .iter()
+            .map(|asset| PlannedAsset {
+                entry_kind: RegistryEntryKind::Adapter,
+                entry_id: adapter.id.clone(),
+                path: asset.path.clone(),
+                urls: asset.resolved_urls(config),
+                sha256: asset.sha256.clone(),
+                size_bytes: asset.size_bytes,
+            })
+            .collect())
+    }
 }
 
 /// Registry entry kind that owns a planned asset.
@@ -224,12 +269,18 @@ pub enum RegistryError {
     /// Registry ids must not be empty.
     #[error("registry id must not be empty")]
     EmptyId,
+    /// Unknown model id.
+    #[error("unknown model id `{0}`")]
+    UnknownModelId(String),
     /// Duplicate model id.
     #[error("duplicate model id `{0}`")]
     DuplicateModelId(String),
     /// Model provider must not be empty.
     #[error("model `{0}` has an empty provider")]
     EmptyProvider(String),
+    /// Unknown adapter id.
+    #[error("unknown adapter id `{0}`")]
+    UnknownAdapterId(String),
     /// Duplicate adapter id.
     #[error("duplicate adapter id `{0}`")]
     DuplicateAdapterId(String),
@@ -384,6 +435,49 @@ mod tests {
                 "https://example.invalid/root/models/sherpa-zh-small.tar.zst".to_owned(),
                 "https://mirror.invalid/root/models/sherpa-zh-small.tar.zst".to_owned(),
             ]
+        );
+    }
+
+    #[test]
+    fn plans_assets_for_selected_entries() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let config = RegistryConfig {
+            base_urls: vec!["https://registry.invalid/root".to_owned()],
+        };
+        let model_plan = index
+            .planned_model_assets("sherpa-zh-small", &config)
+            .unwrap();
+        assert_eq!(model_plan.len(), 1);
+        assert_eq!(model_plan[0].entry_kind, super::RegistryEntryKind::Model);
+        assert_eq!(model_plan[0].entry_id, "sherpa-zh-small");
+        let adapter_plan = index
+            .planned_adapter_assets("mock-adapter", &config)
+            .unwrap();
+        assert_eq!(adapter_plan.len(), 1);
+        assert_eq!(
+            adapter_plan[0].entry_kind,
+            super::RegistryEntryKind::Adapter
+        );
+        assert_eq!(adapter_plan[0].entry_id, "mock-adapter");
+    }
+
+    #[test]
+    fn selected_asset_plans_reject_unknown_entries() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let config = RegistryConfig {
+            base_urls: vec!["https://registry.invalid/root".to_owned()],
+        };
+        assert_eq!(
+            index
+                .planned_model_assets("missing-model", &config)
+                .unwrap_err(),
+            RegistryError::UnknownModelId("missing-model".to_owned())
+        );
+        assert_eq!(
+            index
+                .planned_adapter_assets("missing-adapter", &config)
+                .unwrap_err(),
+            RegistryError::UnknownAdapterId("missing-adapter".to_owned())
         );
     }
 
