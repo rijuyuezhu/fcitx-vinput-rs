@@ -358,3 +358,29 @@ fn registry_plan_rejects_model_and_adapter_together() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("cannot be used with"));
 }
+
+#[test]
+fn registry_plan_fails_for_unknown_adapter() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "adapters": [
+            {"id":"a","label":"A","kind":"command","assets":[]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "plan"])
+        .arg(&path)
+        .args(["--adapter", "missing"])
+        .output()
+        .expect("run vinput registry plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("unknown adapter id `missing`"));
+}
