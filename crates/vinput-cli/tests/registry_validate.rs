@@ -1,0 +1,82 @@
+//! Integration tests for registry validation CLI paths.
+
+use std::{fs, process::Command};
+
+fn write_temp_registry(contents: &str) -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "vinput-registry-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos()
+    ));
+    fs::write(&path, contents).expect("write temporary registry fixture");
+    path
+}
+
+#[test]
+fn registry_validate_prints_summary_for_valid_index() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {
+              "id": "sherpa-zh-small",
+              "label": "Sherpa zh small",
+              "provider": "sherpa-onnx",
+              "assets": [
+                {
+                  "path": "models/sherpa-zh-small.tar.zst",
+                  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              ]
+            }
+          ],
+          "adapters": [
+            {
+              "id": "mock-adapter",
+              "label": "Mock adapter",
+              "kind": "command",
+              "assets": []
+            }
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry summary should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["model_count"], 1);
+    assert_eq!(value["adapter_count"], 1);
+    assert_eq!(value["asset_count"], 1);
+}
+
+#[test]
+fn registry_validate_fails_for_unsafe_asset_path() {
+    let path = write_temp_registry(
+        r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"../bad"}]}]}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("unsafe asset path `../bad`"));
+}
