@@ -106,28 +106,30 @@ impl RuntimeState {
             .or_else(|| self.current_scene.clone())
             .unwrap_or_else(|| self.config.scenes.active_scene.clone());
 
-        let mut session = self
-            .active_session
-            .take()
-            .ok_or(RuntimeError::MissingAsrSession)?;
-        let pcm = self.read_captured_pcm()?;
-        session
-            .push_audio(pcm.samples())
-            .map_err(RuntimeError::Asr)?;
-        self.capture_partial_events(&mut *session)?;
-        session.finish().map_err(RuntimeError::Asr)?;
-        let events = session.poll_events().map_err(RuntimeError::Asr)?;
-        let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
-        let scene_definition = self.scene_definition(&scene);
-        let payload = TextFinisher::finish(&TextRequest {
-            raw_text: &raw_payload.commit_text,
-            scene: &scene_definition,
-            selected_text: self.selected_text.as_deref(),
-        })
-        .map_err(RuntimeError::Finish)?;
+        let result = (|| {
+            let mut session = self
+                .active_session
+                .take()
+                .ok_or(RuntimeError::MissingAsrSession)?;
+            let pcm = self.read_captured_pcm()?;
+            session
+                .push_audio(pcm.samples())
+                .map_err(RuntimeError::Asr)?;
+            self.capture_partial_events(&mut *session)?;
+            session.finish().map_err(RuntimeError::Asr)?;
+            let events = session.poll_events().map_err(RuntimeError::Asr)?;
+            let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
+            let scene_definition = self.scene_definition(&scene);
+            TextFinisher::finish(&TextRequest {
+                raw_text: &raw_payload.commit_text,
+                scene: &scene_definition,
+                selected_text: self.selected_text.as_deref(),
+            })
+            .map_err(RuntimeError::Finish)
+        })();
 
         self.reset_to_idle();
-        Ok(payload)
+        result
     }
 
     /// Returns the latest partial text, if any.
@@ -389,6 +391,29 @@ mod tests {
         assert_eq!(context.scene_id, vinput_config::COMMAND_SCENE_ID);
         assert_eq!(context.language.as_deref(), Some("zh"));
         assert_eq!(context.selected_text.as_deref(), Some("selected text"));
+    }
+
+    #[test]
+    fn failed_text_finishing_returns_runtime_to_idle() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.active_scene = "needs-adapter".to_owned();
+        config
+            .scenes
+            .definitions
+            .push(vinput_config::SceneDefinition {
+                id: "needs-adapter".to_owned(),
+                label: "Needs adapter".to_owned(),
+                prompt: Some("polish text".to_owned()),
+                candidate_count: 1,
+            });
+        let mut runtime = RuntimeState::new(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let error = runtime.stop_recording(None).unwrap_err();
+
+        assert!(matches!(error, super::RuntimeError::Finish(_)));
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
     }
 
     #[test]
