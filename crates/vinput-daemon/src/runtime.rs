@@ -14,6 +14,7 @@ use vinput_text::{TextFinisher, TextRequest};
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
 const MOCK_SILENCE_THRESHOLD: i16 = 8;
+const DEFAULT_MOCK_AUDIO_FRAMES: usize = 4;
 
 /// In-memory runtime state for the first daemon milestone.
 pub struct RuntimeState {
