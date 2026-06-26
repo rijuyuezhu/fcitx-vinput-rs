@@ -165,8 +165,11 @@ pub trait AsrBackend: Send + Sync {
     /// Returns backend identity and capabilities.
     fn describe(&self) -> BackendDescriptor;
 
-    /// Creates a fresh recognition session.
-    fn create_session(&self) -> Result<Box<dyn RecognitionSession>, AsrError>;
+    /// Creates a fresh recognition session for the given context.
+    fn create_session(
+        &self,
+        context: RecognitionContext,
+    ) -> Result<Box<dyn RecognitionSession>, AsrError>;
 }
 
 /// Recognition errors.
@@ -228,7 +231,10 @@ impl AsrBackend for MockAsrBackend {
         self.descriptor.clone()
     }
 
-    fn create_session(&self) -> Result<Box<dyn RecognitionSession>, AsrError> {
+    fn create_session(
+        &self,
+        _context: RecognitionContext,
+    ) -> Result<Box<dyn RecognitionSession>, AsrError> {
         Ok(Box::new(MockRecognitionSession {
             final_text: self.final_text.clone(),
             partial_text: self.partial_text.clone(),
@@ -319,8 +325,8 @@ impl RecognitionSession for MockRecognitionSession {
 #[cfg(test)]
 mod tests {
     use super::{
-        AsrBackend, AsrError, AudioDeliveryMode, MockAsrBackend, RecognitionEvent,
-        events_to_payload,
+        AsrBackend, AsrError, AudioDeliveryMode, MockAsrBackend, RecognitionContext,
+        RecognitionEvent, events_to_payload,
     };
 
     #[test]
@@ -342,7 +348,9 @@ mod tests {
             AudioDeliveryMode::Buffered
         );
 
-        let mut session = backend.create_session().unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("__raw__", None))
+            .unwrap();
         session.push_audio(&[1, 2, 3]).unwrap();
         assert!(session.poll_events().unwrap().is_empty());
         session.finish().unwrap();
@@ -362,7 +370,9 @@ mod tests {
     #[test]
     fn mock_streaming_backend_emits_partial_once() {
         let backend = MockAsrBackend::streaming("partial", "final");
-        let mut session = backend.create_session().unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("__raw__", None))
+            .unwrap();
         session.push_audio(&[1]).unwrap();
         assert_eq!(
             session.poll_events().unwrap(),
@@ -377,7 +387,9 @@ mod tests {
     #[test]
     fn session_rejects_audio_after_finish() {
         let backend = MockAsrBackend::buffered("done");
-        let mut session = backend.create_session().unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("__raw__", None))
+            .unwrap();
         session.finish().unwrap();
         assert!(matches!(
             session.push_audio(&[1]).unwrap_err(),

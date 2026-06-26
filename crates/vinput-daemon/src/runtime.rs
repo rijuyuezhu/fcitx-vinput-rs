@@ -2,7 +2,9 @@
 
 use std::time::{Duration, Instant};
 use thiserror::Error;
-use vinput_asr::{AsrBackend, AsrError, MockAsrBackend, RecognitionSession, events_to_payload};
+use vinput_asr::{
+    AsrBackend, AsrError, MockAsrBackend, RecognitionContext, RecognitionSession, events_to_payload,
+};
 use vinput_audio::{AudioError, AudioSource, MockAudioSource, PcmBuffer};
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
@@ -157,9 +159,10 @@ impl RuntimeState {
         selected_text: Option<String>,
     ) -> Result<(), RuntimeError> {
         self.ensure_idle()?;
+        let context = self.recognition_context(&scene_id, selected_text.as_deref());
         let mut session = self
             .asr_backend
-            .create_session()
+            .create_session(context)
             .map_err(RuntimeError::Asr)?;
         let pcm = self.read_captured_pcm()?;
         session
@@ -183,6 +186,25 @@ impl RuntimeState {
             }
         }
         Ok(())
+    }
+
+    fn recognition_context(
+        &self,
+        scene_id: &str,
+        selected_text: Option<&str>,
+    ) -> RecognitionContext {
+        if scene_id == vinput_config::COMMAND_SCENE_ID {
+            RecognitionContext::command(
+                scene_id.to_owned(),
+                Some(self.config.global.default_language.clone()),
+                selected_text.unwrap_or_default().to_owned(),
+            )
+        } else {
+            RecognitionContext::normal(
+                scene_id.to_owned(),
+                Some(self.config.global.default_language.clone()),
+            )
+        }
     }
 
     fn read_captured_pcm(&mut self) -> Result<PcmBuffer, RuntimeError> {
@@ -267,11 +289,44 @@ pub enum RuntimeError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::RuntimeState;
-    use vinput_asr::MockAsrBackend;
+    use vinput_asr::{
+        AsrBackend, AsrError, BackendDescriptor, MockAsrBackend, RecognitionContext,
+        RecognitionSession,
+    };
     use vinput_audio::{MockAudioSource, PcmBuffer};
     use vinput_config::VinputConfig;
     use vinput_protocol::ServiceStatus;
+
+    struct ContextRecordingBackend {
+        inner: MockAsrBackend,
+        captured: Arc<Mutex<Option<RecognitionContext>>>,
+    }
+
+    impl ContextRecordingBackend {
+        fn new(captured: Arc<Mutex<Option<RecognitionContext>>>) -> Self {
+            Self {
+                inner: MockAsrBackend::streaming("listening", "custom final"),
+                captured,
+            }
+        }
+    }
+
+    impl AsrBackend for ContextRecordingBackend {
+        fn describe(&self) -> BackendDescriptor {
+            self.inner.describe()
+        }
+
+        fn create_session(
+            &self,
+            context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            *self.captured.lock().expect("context lock poisoned") = Some(context.clone());
+            self.inner.create_session(context)
+        }
+    }
 
     #[test]
     fn normal_recording_mock_roundtrip_returns_to_idle() {
@@ -309,6 +364,26 @@ mod tests {
         runtime.start_recording().unwrap();
         let payload = runtime.stop_recording(None).unwrap();
         assert_eq!(payload.commit_text, "custom final");
+    }
+
+    #[test]
+    fn command_recording_passes_context_to_asr_backend() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let captured = Arc::new(Mutex::new(None));
+        let backend = ContextRecordingBackend::new(Arc::clone(&captured));
+        let mut runtime = RuntimeState::with_asr_backend(config, Box::new(backend)).unwrap();
+
+        runtime.start_command_recording("selected text").unwrap();
+
+        let context = captured
+            .lock()
+            .expect("context lock poisoned")
+            .clone()
+            .expect("ASR backend should receive context");
+        assert!(context.command_mode);
+        assert_eq!(context.scene_id, vinput_config::COMMAND_SCENE_ID);
+        assert_eq!(context.language.as_deref(), Some("zh"));
+        assert_eq!(context.selected_text.as_deref(), Some("selected text"));
     }
 
     #[test]
