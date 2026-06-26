@@ -19,6 +19,7 @@ tracing-subscriber.workspace = true
 thiserror.workspace = true
 vinput-config = { path = "../vinput-config" }
 vinput-protocol = { path = "../vinput-protocol" }
+zbus.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

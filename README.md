@@ -2,18 +2,19 @@
 
 Rust-oriented rewrite workspace for [`fcitx5-vinput`](https://github.com/xifan2333/fcitx5-vinput).
 
-The first milestone is intentionally small: preserve the public daemon/frontend contract, make the config/protocol types testable, and run a mock daemon loop before replacing the original C++ backend pieces one by one.
+The first milestones are intentionally small: preserve the public daemon/frontend contract, make the config/protocol types testable, run a mock daemon loop, and expose that mock runtime through the legacy D-Bus ABI before replacing the original C++ backend pieces one by one.
 
 ## Current layout
 
 - `crates/vinput-protocol`: D-Bus names, status strings, ASR state, and recognition result JSON.
 - `crates/vinput-config`: typed model for the legacy `data/default-config.json` plus initial validation.
-- `crates/vinput-daemon`: mock daemon runtime and one-shot command for early end-to-end checks.
+- `crates/vinput-daemon`: mock daemon runtime, library modules, and `zbus` service facade for the legacy daemon ABI.
 - `crates/vinput-cli`: bootstrap CLI named `vinput` for protocol/config/payload inspection.
 - `data/default-config.json`: copied from the original project as the compatibility baseline.
 - `docs/architecture/`: tracked architecture notes.
+- `docs/legacy/`: tracked original-source annotations.
 
-Local planning notes under `docs/plan/` are intentionally ignored outside git.
+Local planning notes under `docs/plan/` are intentionally ignored by that directory's local `.gitignore`.
 
 ## Tooling
 
@@ -48,6 +49,12 @@ cargo run -p vinput-cli -- protocol
 cargo run -p vinput-cli -- config
 cargo run -p vinput-cli -- mock-result '你好'
 cargo run -p vinput-daemon -- --once
+```
+
+Run the mock D-Bus service inside an existing session bus with:
+
+```sh
+cargo run -p vinput-daemon -- --dbus
 ```
 
 ## Development route

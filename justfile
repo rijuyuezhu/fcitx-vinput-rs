@@ -21,3 +21,7 @@ smoke:
     cargo run -q -p vinput-cli -- config
     cargo run -q -p vinput-cli -- mock-result '你好'
     cargo run -q -p vinput-daemon -- --once
+
+# Run the mock legacy D-Bus service on the current session bus.
+dbus:
+    cargo run -p vinput-daemon -- --dbus
