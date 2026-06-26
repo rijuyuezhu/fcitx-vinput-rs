@@ -137,6 +137,32 @@ impl RegistryIndex {
     }
 }
 
+/// Summary for a planned registry asset set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AssetPlanSummary {
+    /// Number of assets in the plan.
+    pub asset_count: usize,
+    /// Sum of known asset sizes.
+    pub known_size_bytes: u64,
+    /// Number of assets that do not declare a size.
+    pub unknown_size_count: usize,
+}
+
+impl AssetPlanSummary {
+    /// Builds a summary from planned assets.
+    #[must_use]
+    pub fn from_assets(assets: &[PlannedAsset]) -> Self {
+        Self {
+            asset_count: assets.len(),
+            known_size_bytes: assets.iter().filter_map(|asset| asset.size_bytes).sum(),
+            unknown_size_count: assets
+                .iter()
+                .filter(|asset| asset.size_bytes.is_none())
+                .count(),
+        }
+    }
+}
+
 /// Registry entry kind that owns a planned asset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -396,6 +422,18 @@ mod tests {
         );
         assert_eq!(index.adapter("mock-adapter").unwrap().kind, "command");
         assert!(index.model("missing").is_none());
+    }
+
+    #[test]
+    fn summarizes_planned_asset_sizes() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let plan = index.planned_assets(&RegistryConfig {
+            base_urls: vec!["https://registry.invalid/root".to_owned()],
+        });
+        let summary = super::AssetPlanSummary::from_assets(&plan);
+        assert_eq!(summary.asset_count, 2);
+        assert_eq!(summary.known_size_bytes, 49);
+        assert_eq!(summary.unknown_size_count, 0);
     }
 
     #[test]
