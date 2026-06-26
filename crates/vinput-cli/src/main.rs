@@ -199,18 +199,13 @@ fn validate_registry_index(path: &PathBuf) -> anyhow::Result<()> {
         .with_context(|| format!("read registry index `{}`", path.display()))?;
     let index = RegistryIndex::from_json_str(&input)
         .with_context(|| format!("validate registry index `{}`", path.display()))?;
-    let model_asset_count: usize = index.models.iter().map(|model| model.assets.len()).sum();
-    let adapter_asset_count: usize = index
-        .adapters
-        .iter()
-        .map(|adapter| adapter.assets.len())
-        .sum();
+    let index_summary = index.summary();
     let summary = serde_json::json!({
         "ok": true,
-        "version": index.version,
-        "model_count": index.models.len(),
-        "adapter_count": index.adapters.len(),
-        "asset_count": model_asset_count + adapter_asset_count,
+        "version": index_summary.version,
+        "model_count": index_summary.model_count,
+        "adapter_count": index_summary.adapter_count,
+        "asset_count": index_summary.asset_count,
     });
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())

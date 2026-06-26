@@ -54,6 +54,26 @@ impl RegistryIndex {
         Ok(())
     }
 
+    /// Builds a compact summary for CLI and diagnostics.
+    #[must_use]
+    pub fn summary(&self) -> RegistryIndexSummary {
+        RegistryIndexSummary {
+            version: self.version,
+            model_count: self.models.len(),
+            adapter_count: self.adapters.len(),
+            asset_count: self
+                .models
+                .iter()
+                .map(|model| model.assets.len())
+                .sum::<usize>()
+                + self
+                    .adapters
+                    .iter()
+                    .map(|adapter| adapter.assets.len())
+                    .sum::<usize>(),
+        }
+    }
+
     /// Finds a model by id.
     #[must_use]
     pub fn model(&self, id: &str) -> Option<&ModelEntry> {
@@ -135,6 +155,19 @@ impl RegistryIndex {
             })
             .collect())
     }
+}
+
+/// Compact registry index summary for CLI and diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RegistryIndexSummary {
+    /// Registry index schema version.
+    pub version: u32,
+    /// Number of models.
+    pub model_count: usize,
+    /// Number of adapters.
+    pub adapter_count: usize,
+    /// Total number of model and adapter assets.
+    pub asset_count: usize,
 }
 
 /// Summary for a planned registry asset set.
@@ -434,6 +467,16 @@ mod tests {
         assert_eq!(summary.asset_count, 2);
         assert_eq!(summary.known_size_bytes, 49);
         assert_eq!(summary.unknown_size_count, 0);
+    }
+
+    #[test]
+    fn summary_counts_registry_entries_and_assets() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let summary = index.summary();
+        assert_eq!(summary.version, 1);
+        assert_eq!(summary.model_count, 1);
+        assert_eq!(summary.adapter_count, 1);
+        assert_eq!(summary.asset_count, 2);
     }
 
     #[test]
