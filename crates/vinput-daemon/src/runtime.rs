@@ -337,6 +337,43 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_start_is_rejected_while_recording() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let mut runtime = RuntimeState::new(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let error = runtime
+            .start_command_recording("selected text")
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::RuntimeError::Busy(ServiceStatus::Recording)
+        ));
+        assert_eq!(runtime.status(), ServiceStatus::Recording);
+        assert_eq!(runtime.partial_text(), Some("mock partial"));
+        assert_eq!(
+            runtime.stop_recording(None).unwrap().commit_text,
+            "mock recognition result"
+        );
+    }
+
+    #[test]
+    fn stop_while_idle_is_rejected_without_state_changes() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let mut runtime = RuntimeState::new(config).unwrap();
+
+        let error = runtime.stop_recording(None).unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::RuntimeError::NotRecording(ServiceStatus::Idle)
+        ));
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
+    }
+
+    #[test]
     fn normal_recording_mock_roundtrip_returns_to_idle() {
         let config = VinputConfig::bundled_default().unwrap();
         let mut runtime = RuntimeState::new(config).unwrap();
