@@ -31,6 +31,16 @@ fn single_string_body(message: &Message) -> anyhow::Result<String> {
     Ok(body.0)
 }
 
+async fn next_pair_signal(
+    stream: &mut zbus::proxy::SignalStream<'_>,
+) -> anyhow::Result<(String, String)> {
+    let message = timeout(Duration::from_secs(2), stream.next())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("signal stream ended"))?;
+    let body: (String, String) = message.body().deserialize()?;
+    Ok(body)
+}
+
 #[tokio::test]
 async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<()> {
     let _service_connection = spawn_service().await?;
@@ -49,6 +59,9 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         .await?;
     let mut result_signals = proxy
         .receive_signal(dbus::signal::RECOGNITION_RESULT)
+        .await?;
+    let mut notification_signals = proxy
+        .receive_signal(dbus::signal::DAEMON_NOTIFICATION)
         .await?;
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
@@ -70,6 +83,15 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
     assert_eq!(signal_payload.commit_text, "mock recognition result");
     assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
+
+    let notification: String = proxy
+        .call(dbus::method::NOTIFY, &("summary", "body"))
+        .await?;
+    assert_eq!(notification, "summary: body");
+    assert_eq!(
+        next_pair_signal(&mut notification_signals).await?,
+        ("summary".to_owned(), "body".to_owned())
+    );
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");

@@ -182,9 +182,16 @@ impl VinputDbusService {
 
     /// Frontend notification compatibility placeholder.
     #[zbus(name = "Notify")]
-    #[allow(clippy::unused_self)]
-    fn notify(&self, summary: &str, body: &str) -> String {
-        format!("{summary}: {body}")
+    async fn notify(
+        &self,
+        summary: &str,
+        body: &str,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<String> {
+        Self::daemon_notification(&emitter, summary, body)
+            .await
+            .map_err(|error| Self::map_signal_error(&error))?;
+        Ok(format!("{summary}: {body}"))
     }
 
     /// Signal emitted when a final recognition result is ready.
