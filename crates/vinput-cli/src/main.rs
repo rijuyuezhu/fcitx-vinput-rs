@@ -23,6 +23,9 @@ enum ConfigCommand {
     Validate {
         /// Path to a config JSON file.
         path: PathBuf,
+        /// Explicitly print only summary fields.
+        #[arg(long)]
+        summary_only: bool,
     },
 }
 
@@ -88,7 +91,9 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         Command::Protocol => print_protocol(),
         Command::Config { command } => match command {
-            Some(ConfigCommand::Validate { path }) => validate_config_file(&path),
+            Some(ConfigCommand::Validate { path, summary_only }) => {
+                validate_config_file(&path, summary_only)
+            }
             None => validate_config(),
         },
         Command::Registry { command } => match command {
@@ -158,19 +163,6 @@ fn validate_config() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn config_summary(config: &VinputConfig) -> serde_json::Value {
-    let summary = config.summary();
-    serde_json::json!({
-        "ok": true,
-        "version": summary.version,
-        "active_scene": summary.active_scene,
-        "active_provider": summary.active_provider,
-        "scene_count": summary.scene_count,
-        "provider_count": summary.provider_count,
-        "registry_mirror_count": summary.registry_mirror_count,
-    })
-}
-
 fn print_registry_summary() -> anyhow::Result<()> {
     let config = VinputConfig::bundled_default().context("parse bundled config")?;
     let index_asset = AssetEntry {
@@ -208,7 +200,7 @@ fn validate_registry_index(path: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn validate_config_file(path: &PathBuf) -> anyhow::Result<()> {
+fn validate_config_file(path: &PathBuf, _summary_only: bool) -> anyhow::Result<()> {
     let input =
         fs::read_to_string(path).with_context(|| format!("read config `{}`", path.display()))?;
     let config = VinputConfig::from_json_str(&input)
