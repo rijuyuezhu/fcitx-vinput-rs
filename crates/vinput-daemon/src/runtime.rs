@@ -5,7 +5,7 @@ use thiserror::Error;
 use vinput_asr::{
     AsrBackend, AsrError, MockAsrBackend, RecognitionContext, RecognitionSession, events_to_payload,
 };
-use vinput_audio::{AudioError, AudioSource, MockAudioSource, PcmBuffer};
+use vinput_audio::{AudioError, AudioSource, CapturedAudio, MockAudioSource, PcmBuffer};
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
 use vinput_text::{TextFinisher, TextRequest};
@@ -208,11 +208,11 @@ impl RuntimeState {
     }
 
     fn read_captured_pcm(&mut self) -> Result<PcmBuffer, RuntimeError> {
-        let pcm = self
+        let captured = self
             .audio_source
             .read_buffer()
             .map_err(RuntimeError::Audio)?;
-        Ok(self.process_captured_pcm(&pcm))
+        Ok(self.process_captured_pcm(&captured.pcm))
     }
 
     fn process_captured_pcm(&self, pcm: &PcmBuffer) -> PcmBuffer {
@@ -257,7 +257,7 @@ impl RuntimeState {
 }
 
 fn default_mock_audio_source() -> MockAudioSource {
-    let frame = PcmBuffer::at_default_rate(MOCK_PCM.to_vec());
+    let frame = CapturedAudio::anonymous(PcmBuffer::at_default_rate(MOCK_PCM.to_vec()));
     MockAudioSource::from_frames(vec![frame.clone(), frame])
 }
 
@@ -296,7 +296,7 @@ mod tests {
         AsrBackend, AsrError, BackendDescriptor, MockAsrBackend, RecognitionContext,
         RecognitionSession,
     };
-    use vinput_audio::{MockAudioSource, PcmBuffer};
+    use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
     use vinput_config::VinputConfig;
     use vinput_protocol::ServiceStatus;
 
@@ -356,8 +356,8 @@ mod tests {
         let config = VinputConfig::bundled_default().unwrap();
         let backend = MockAsrBackend::streaming("listening", "custom final");
         let source = MockAudioSource::from_frames(vec![
-            PcmBuffer::at_default_rate(vec![0, 32, -32, 0]),
-            PcmBuffer::at_default_rate(vec![0, 64, -64, 0]),
+            CapturedAudio::anonymous(PcmBuffer::at_default_rate(vec![0, 32, -32, 0])),
+            CapturedAudio::anonymous(PcmBuffer::at_default_rate(vec![0, 64, -64, 0])),
         ]);
         let mut runtime =
             RuntimeState::with_backends(config, Box::new(backend), Box::new(source)).unwrap();

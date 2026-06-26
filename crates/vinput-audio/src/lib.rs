@@ -158,23 +158,59 @@ impl PcmBuffer {
     }
 }
 
+/// PCM buffer plus capture metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CapturedAudio {
+    /// Captured PCM samples.
+    pub pcm: PcmBuffer,
+    /// Optional source name, such as a `PipeWire` node or test fixture id.
+    #[serde(default)]
+    pub source_name: Option<String>,
+}
+
+impl CapturedAudio {
+    /// Creates captured audio without source metadata.
+    #[must_use]
+    pub fn anonymous(pcm: PcmBuffer) -> Self {
+        Self {
+            pcm,
+            source_name: None,
+        }
+    }
+
+    /// Creates captured audio with a source name.
+    #[must_use]
+    pub fn named(pcm: PcmBuffer, source_name: impl Into<String>) -> Self {
+        Self {
+            pcm,
+            source_name: Some(source_name.into()),
+        }
+    }
+
+    /// Returns captured duration in milliseconds.
+    #[must_use]
+    pub fn duration_ms(&self) -> u64 {
+        self.pcm.duration_ms()
+    }
+}
+
 /// Audio source abstraction used before a concrete desktop backend is wired in.
 pub trait AudioSource: Send {
     /// Read one mono PCM buffer.
-    fn read_buffer(&mut self) -> Result<PcmBuffer, AudioError>;
+    fn read_buffer(&mut self) -> Result<CapturedAudio, AudioError>;
 }
 
 /// Deterministic audio source for runtime wiring and tests.
 #[derive(Debug, Clone)]
 pub struct MockAudioSource {
-    frames: Vec<PcmBuffer>,
+    frames: Vec<CapturedAudio>,
     next: usize,
 }
 
 impl MockAudioSource {
     /// Creates a mock source from a sequence of buffers.
     #[must_use]
-    pub fn from_frames(frames: impl Into<Vec<PcmBuffer>>) -> Self {
+    pub fn from_frames(frames: impl Into<Vec<CapturedAudio>>) -> Self {
         Self {
             frames: frames.into(),
             next: 0,
@@ -183,13 +219,13 @@ impl MockAudioSource {
 
     /// Creates a mock source that returns one buffer.
     #[must_use]
-    pub fn once(frame: PcmBuffer) -> Self {
+    pub fn once(frame: CapturedAudio) -> Self {
         Self::from_frames(vec![frame])
     }
 }
 
 impl AudioSource for MockAudioSource {
-    fn read_buffer(&mut self) -> Result<PcmBuffer, AudioError> {
+    fn read_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
         let frame = self
             .frames
             .get(self.next)
@@ -231,7 +267,7 @@ fn scale_sample(sample: i16, gain: f32) -> i16 {
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioError, DEFAULT_SAMPLE_RATE_HZ, PcmBuffer};
+    use super::{AudioError, CapturedAudio, DEFAULT_SAMPLE_RATE_HZ, PcmBuffer};
 
     #[test]
     fn rejects_zero_sample_rate() {
@@ -284,11 +320,19 @@ mod tests {
     }
 
     #[test]
-    fn mock_audio_source_returns_frames_in_order() {
-        use super::{AudioSource, MockAudioSource};
+    fn captured_audio_reports_pcm_duration_and_source() {
+        let captured =
+            CapturedAudio::named(PcmBuffer::new(1_000, vec![0; 250]).unwrap(), "fixture");
+        assert_eq!(captured.duration_ms(), 250);
+        assert_eq!(captured.source_name.as_deref(), Some("fixture"));
+    }
 
-        let first = PcmBuffer::at_default_rate(vec![1]);
-        let second = PcmBuffer::at_default_rate(vec![2]);
+    #[test]
+    fn mock_audio_source_returns_frames_in_order() {
+        use super::{AudioSource, CapturedAudio, MockAudioSource};
+
+        let first = CapturedAudio::named(PcmBuffer::at_default_rate(vec![1]), "first");
+        let second = CapturedAudio::named(PcmBuffer::at_default_rate(vec![2]), "second");
         let mut source = MockAudioSource::from_frames(vec![first.clone(), second.clone()]);
         assert_eq!(source.read_buffer().unwrap(), first);
         assert_eq!(source.read_buffer().unwrap(), second);
