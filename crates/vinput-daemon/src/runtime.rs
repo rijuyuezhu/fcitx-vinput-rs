@@ -5,7 +5,9 @@ use thiserror::Error;
 use vinput_asr::{
     AsrBackend, AsrError, MockAsrBackend, RecognitionContext, RecognitionSession, events_to_payload,
 };
-use vinput_audio::{AudioError, AudioSource, CapturedAudio, MockAudioSource, PcmBuffer};
+use vinput_audio::{
+    AudioError, AudioProcessingOptions, AudioSource, CapturedAudio, MockAudioSource, PcmBuffer,
+};
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
 use vinput_text::{TextFinisher, TextRequest};
@@ -216,12 +218,15 @@ impl RuntimeState {
     }
 
     fn process_captured_pcm(&self, pcm: &PcmBuffer) -> PcmBuffer {
-        let mut pcm = pcm.trimmed_silence(MOCK_SILENCE_THRESHOLD);
-        if self.config.asr.normalize_audio {
-            pcm.normalize_to_peak(16_000);
-        }
-        pcm.apply_gain(self.config.asr.input_gain);
-        pcm
+        self.audio_processing_options().process(pcm)
+    }
+
+    fn audio_processing_options(&self) -> AudioProcessingOptions {
+        AudioProcessingOptions::new(
+            MOCK_SILENCE_THRESHOLD,
+            self.config.asr.normalize_audio.then_some(16_000),
+            self.config.asr.input_gain,
+        )
     }
 
     fn scene_definition(&self, scene_id: &str) -> vinput_config::SceneDefinition {

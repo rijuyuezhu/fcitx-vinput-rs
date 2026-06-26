@@ -158,6 +158,45 @@ impl PcmBuffer {
     }
 }
 
+/// Deterministic audio processing policy applied before ASR delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AudioProcessingOptions {
+    /// Absolute threshold used to trim quiet leading/trailing regions.
+    pub silence_threshold_abs: i16,
+    /// Optional target peak for normalization.
+    #[serde(default)]
+    pub normalize_to_peak: Option<i16>,
+    /// Gain multiplier applied after optional normalization.
+    pub input_gain: f32,
+}
+
+impl AudioProcessingOptions {
+    /// Creates processing options.
+    #[must_use]
+    pub const fn new(
+        silence_threshold_abs: i16,
+        normalize_to_peak: Option<i16>,
+        input_gain: f32,
+    ) -> Self {
+        Self {
+            silence_threshold_abs,
+            normalize_to_peak,
+            input_gain,
+        }
+    }
+
+    /// Applies trim, optional normalization, and gain in deterministic order.
+    #[must_use]
+    pub fn process(&self, pcm: &PcmBuffer) -> PcmBuffer {
+        let mut processed = pcm.trimmed_silence(self.silence_threshold_abs);
+        if let Some(target_peak) = self.normalize_to_peak {
+            processed.normalize_to_peak(target_peak);
+        }
+        processed.apply_gain(self.input_gain);
+        processed
+    }
+}
+
 /// PCM buffer plus capture metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CapturedAudio {
@@ -317,6 +356,14 @@ mod tests {
         let pcm = PcmBuffer::at_default_rate(vec![0, 1, -1]).trimmed_silence(1);
         assert!(pcm.is_empty());
         assert_eq!(pcm.sample_rate_hz(), DEFAULT_SAMPLE_RATE_HZ);
+    }
+
+    #[test]
+    fn processing_options_apply_trim_normalize_then_gain() {
+        let pcm = PcmBuffer::at_default_rate(vec![0, 1, 10, -20, 1, 0]);
+        let options = super::AudioProcessingOptions::new(1, Some(10_000), 0.5);
+        let processed = options.process(&pcm);
+        assert_eq!(processed.samples(), &[2_500, -5_000]);
     }
 
     #[test]
