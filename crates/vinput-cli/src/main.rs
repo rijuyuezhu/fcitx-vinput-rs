@@ -38,6 +38,9 @@ enum RegistryCommand {
     Plan {
         /// Path to a registry index JSON file.
         path: PathBuf,
+        /// Optional config JSON file that provides registry mirrors.
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
 }
 
@@ -81,7 +84,9 @@ fn main() -> anyhow::Result<()> {
         },
         Command::Registry { command } => match command {
             Some(RegistryCommand::Validate { path }) => validate_registry_index(&path),
-            Some(RegistryCommand::Plan { path }) => print_registry_plan(&path),
+            Some(RegistryCommand::Plan { path, config }) => {
+                print_registry_plan(&path, config.as_ref())
+            }
             None => print_registry_summary(),
         },
         Command::MockResult { text } => {
@@ -196,12 +201,15 @@ fn validate_config_file(path: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_registry_plan(path: &PathBuf) -> anyhow::Result<()> {
+fn print_registry_plan(path: &PathBuf, config_path: Option<&PathBuf>) -> anyhow::Result<()> {
     let input = fs::read_to_string(path)
         .with_context(|| format!("read registry index `{}`", path.display()))?;
     let index = RegistryIndex::from_json_str(&input)
         .with_context(|| format!("validate registry index `{}`", path.display()))?;
-    let config = VinputConfig::bundled_default().context("parse bundled config")?;
+    let config = match config_path {
+        Some(config_path) => load_config_file(config_path)?,
+        None => VinputConfig::bundled_default().context("parse bundled config")?,
+    };
     let planned_assets = index.planned_assets(&config.registry);
     let summary = serde_json::json!({
         "ok": true,
@@ -210,4 +218,15 @@ fn print_registry_plan(path: &PathBuf) -> anyhow::Result<()> {
     });
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
+}
+
+fn load_config_file(path: &PathBuf) -> anyhow::Result<VinputConfig> {
+    let input =
+        fs::read_to_string(path).with_context(|| format!("read config `{}`", path.display()))?;
+    let config = VinputConfig::from_json_str(&input)
+        .with_context(|| format!("parse config `{}`", path.display()))?;
+    config
+        .validate()
+        .with_context(|| format!("validate config `{}`", path.display()))?;
+    Ok(config)
 }

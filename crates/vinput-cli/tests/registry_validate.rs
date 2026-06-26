@@ -187,3 +187,67 @@ fn registry_plan_prints_assets_with_resolved_urls() {
     assert_eq!(value["assets"][1]["entry_kind"], "adapter");
     assert_eq!(value["assets"][1]["entry_id"], "a");
 }
+
+#[test]
+fn registry_plan_uses_custom_config_mirrors() {
+    let registry_path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {
+              "id": "m",
+              "label": "M",
+              "provider": "p",
+              "assets": [{"path":"models/m.tar"}]
+            }
+          ]
+        }
+        "#,
+    );
+    let mut config_path = std::env::temp_dir();
+    config_path.push(format!(
+        "vinput-plan-config-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos()
+    ));
+    fs::write(
+        &config_path,
+        r#"
+        {
+          "version": 1,
+          "registry": {"base_urls": ["https://custom.invalid/root"]},
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    )
+    .expect("write temporary config fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "plan"])
+        .arg(&registry_path)
+        .args(["--config"])
+        .arg(&config_path)
+        .output()
+        .expect("run vinput registry plan");
+    fs::remove_file(&registry_path).expect("remove temporary registry fixture");
+    fs::remove_file(&config_path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    assert_eq!(
+        value["assets"][0]["urls"][0],
+        "https://custom.invalid/root/models/m.tar"
+    );
+}
