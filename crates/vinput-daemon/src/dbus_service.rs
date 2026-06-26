@@ -272,6 +272,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dbus_facade_reports_adapter_placeholders() {
+        let service = service();
+        assert_eq!(
+            service.start_adapter("mock-adapter"),
+            "adapter `mock-adapter` start is not implemented yet"
+        );
+        assert_eq!(
+            service.stop_adapter("mock-adapter"),
+            "adapter `mock-adapter` stop is not implemented yet"
+        );
+    }
+
+    #[tokio::test]
     async fn dbus_facade_returns_asr_state_json() {
         let service = service();
         let state: AsrBackendState =
