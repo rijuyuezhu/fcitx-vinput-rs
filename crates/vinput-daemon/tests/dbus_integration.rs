@@ -75,6 +75,16 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         "mock partial"
     );
 
+    let duplicate_start: zbus::Result<String> =
+        proxy.call(dbus::method::START_RECORDING, &()).await;
+    let duplicate_start_error = duplicate_start.expect_err("duplicate start should fail");
+    assert!(
+        duplicate_start_error
+            .to_string()
+            .contains("runtime is busy"),
+        "unexpected duplicate start error: {duplicate_start_error}"
+    );
+
     let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
     let payload = RecognitionPayload::from_json_str(&payload_json)?;
     assert_eq!(payload.commit_text, "mock recognition result");
