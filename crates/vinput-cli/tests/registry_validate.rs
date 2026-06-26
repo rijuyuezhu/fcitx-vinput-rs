@@ -386,3 +386,34 @@ fn registry_plan_fails_for_unknown_adapter() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("unknown adapter id `missing`"));
 }
+
+
+#[test]
+fn registry_plan_summary_only_omits_assets() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar","size_bytes":9}]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "plan"])
+        .arg(&path)
+        .args(["--summary-only"])
+        .output()
+        .expect("run vinput registry plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    assert_eq!(value["asset_count"], 1);
+    assert_eq!(value["known_size_bytes"], 9);
+    assert_eq!(value["unknown_size_count"], 0);
+    assert!(value.get("assets").is_none());
+}

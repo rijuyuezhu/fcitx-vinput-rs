@@ -47,6 +47,9 @@ enum RegistryCommand {
         /// Only plan assets for this adapter id.
         #[arg(long, conflicts_with = "model")]
         adapter: Option<String>,
+        /// Print only the plan summary without per-asset rows.
+        #[arg(long)]
+        summary_only: bool,
     },
 }
 
@@ -95,7 +98,14 @@ fn main() -> anyhow::Result<()> {
                 config,
                 model,
                 adapter,
-            }) => print_registry_plan(&path, config.as_ref(), model.as_deref(), adapter.as_deref()),
+                summary_only,
+            }) => print_registry_plan(
+                &path,
+                config.as_ref(),
+                model.as_deref(),
+                adapter.as_deref(),
+                summary_only,
+            ),
             None => print_registry_summary(),
         },
         Command::MockResult { text } => {
@@ -215,6 +225,7 @@ fn print_registry_plan(
     config_path: Option<&PathBuf>,
     model_id: Option<&str>,
     adapter_id: Option<&str>,
+    summary_only: bool,
 ) -> anyhow::Result<()> {
     let input = fs::read_to_string(path)
         .with_context(|| format!("read registry index `{}`", path.display()))?;
@@ -231,13 +242,22 @@ fn print_registry_plan(
         (Some(_), Some(_)) => unreachable!("clap prevents model and adapter together"),
     };
     let plan_summary = AssetPlanSummary::from_assets(&planned_assets);
-    let summary = serde_json::json!({
-        "ok": true,
-        "asset_count": plan_summary.asset_count,
-        "known_size_bytes": plan_summary.known_size_bytes,
-        "unknown_size_count": plan_summary.unknown_size_count,
-        "assets": planned_assets,
-    });
+    let summary = if summary_only {
+        serde_json::json!({
+            "ok": true,
+            "asset_count": plan_summary.asset_count,
+            "known_size_bytes": plan_summary.known_size_bytes,
+            "unknown_size_count": plan_summary.unknown_size_count,
+        })
+    } else {
+        serde_json::json!({
+            "ok": true,
+            "asset_count": plan_summary.asset_count,
+            "known_size_bytes": plan_summary.known_size_bytes,
+            "unknown_size_count": plan_summary.unknown_size_count,
+            "assets": planned_assets,
+        })
+    };
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
 }
