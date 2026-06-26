@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 use tokio::time::timeout;
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
-use vinput_protocol::{RecognitionPayload, dbus};
+use vinput_protocol::{AsrBackendState, RecognitionPayload, dbus};
 use zbus::{Message, Proxy};
 
 async fn spawn_service() -> anyhow::Result<zbus::Connection> {
@@ -92,6 +92,17 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         next_pair_signal(&mut notification_signals).await?,
         ("summary".to_owned(), "body".to_owned())
     );
+
+    let state_json: String = proxy.call(dbus::method::GET_ASR_BACKEND_STATE, &()).await?;
+    let state: AsrBackendState = serde_json::from_str(&state_json)?;
+    assert!(state.has_effective_backend);
+    assert_eq!(state.target_provider_id, "sherpa-onnx");
+    assert_eq!(state.effective_provider_id, "mock");
+
+    let reloaded_json: String = proxy.call(dbus::method::RELOAD_ASR_BACKEND, &()).await?;
+    let reloaded: AsrBackendState = serde_json::from_str(&reloaded_json)?;
+    assert!(reloaded.has_effective_backend);
+    assert_eq!(reloaded.effective_provider_id, "mock");
 
     let adapter_start: String = proxy
         .call(dbus::method::START_ADAPTER, &"mock-adapter")
