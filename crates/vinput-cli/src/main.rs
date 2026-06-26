@@ -16,6 +16,16 @@ struct Args {
     command: Command,
 }
 
+/// Config-related commands.
+#[derive(Debug, Subcommand)]
+enum ConfigCommand {
+    /// Validate a local config JSON file and print a summary.
+    Validate {
+        /// Path to a config JSON file.
+        path: PathBuf,
+    },
+}
+
 /// Registry-related commands.
 #[derive(Debug, Subcommand)]
 enum RegistryCommand {
@@ -31,8 +41,12 @@ enum RegistryCommand {
 enum Command {
     /// Print stable D-Bus names and methods.
     Protocol,
-    /// Validate the bundled upstream-compatible default config.
-    Config,
+    /// Inspect or validate vinput config metadata.
+    Config {
+        /// Config operation. Omitted to validate the bundled default config.
+        #[command(subcommand)]
+        command: Option<ConfigCommand>,
+    },
     /// Inspect or validate registry metadata.
     Registry {
         /// Registry operation. Omitted to print URL resolution for the bundled config.
@@ -56,7 +70,10 @@ fn main() -> anyhow::Result<()> {
 
     match args.command {
         Command::Protocol => print_protocol(),
-        Command::Config => validate_config(),
+        Command::Config { command } => match command {
+            Some(ConfigCommand::Validate { path }) => validate_config_file(&path),
+            None => validate_config(),
+        },
         Command::Registry { command } => match command {
             Some(RegistryCommand::Validate { path }) => validate_registry_index(&path),
             None => print_registry_summary(),
@@ -107,16 +124,20 @@ fn print_protocol() -> anyhow::Result<()> {
 fn validate_config() -> anyhow::Result<()> {
     let config = VinputConfig::bundled_default().context("parse bundled config")?;
     config.validate().context("validate bundled config")?;
-    let summary = serde_json::json!({
+    let summary = config_summary(&config);
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+fn config_summary(config: &VinputConfig) -> serde_json::Value {
+    serde_json::json!({
         "ok": true,
         "version": config.version,
         "active_scene": config.scenes.active_scene,
         "active_provider": config.asr.active_provider,
         "scene_count": config.scenes.definitions.len(),
         "provider_count": config.asr.providers.len(),
-    });
-    println!("{}", serde_json::to_string_pretty(&summary)?);
-    Ok(())
+    })
 }
 
 fn print_registry_summary() -> anyhow::Result<()> {
@@ -152,6 +173,19 @@ fn validate_registry_index(path: &PathBuf) -> anyhow::Result<()> {
         "adapter_count": index.adapters.len(),
         "asset_count": model_asset_count + adapter_asset_count,
     });
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+fn validate_config_file(path: &PathBuf) -> anyhow::Result<()> {
+    let input =
+        fs::read_to_string(path).with_context(|| format!("read config `{}`", path.display()))?;
+    let config = VinputConfig::from_json_str(&input)
+        .with_context(|| format!("parse config `{}`", path.display()))?;
+    config
+        .validate()
+        .with_context(|| format!("validate config `{}`", path.display()))?;
+    let summary = config_summary(&config);
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
 }
