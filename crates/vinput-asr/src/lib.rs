@@ -102,6 +102,49 @@ pub enum RecognitionEvent {
     Completed,
 }
 
+/// Recognition context passed to concrete ASR backends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RecognitionContext {
+    /// Optional BCP-47-like language tag from config or scene policy.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Scene id selected for this recognition session.
+    pub scene_id: String,
+    /// Whether this session is command mode.
+    pub command_mode: bool,
+    /// Optional selected text provided by the frontend for command mode.
+    #[serde(default)]
+    pub selected_text: Option<String>,
+}
+
+impl RecognitionContext {
+    /// Creates a normal recognition context.
+    #[must_use]
+    pub fn normal(scene_id: impl Into<String>, language: Option<String>) -> Self {
+        Self {
+            language,
+            scene_id: scene_id.into(),
+            command_mode: false,
+            selected_text: None,
+        }
+    }
+
+    /// Creates a command-mode recognition context.
+    #[must_use]
+    pub fn command(
+        scene_id: impl Into<String>,
+        language: Option<String>,
+        selected_text: impl Into<String>,
+    ) -> Self {
+        Self {
+            language,
+            scene_id: scene_id.into(),
+            command_mode: true,
+            selected_text: Some(selected_text.into()),
+        }
+    }
+}
+
 /// Mutable recognition session.
 pub trait RecognitionSession: Send {
     /// Push signed 16-bit mono PCM samples.
@@ -279,6 +322,16 @@ mod tests {
         AsrBackend, AsrError, AudioDeliveryMode, MockAsrBackend, RecognitionEvent,
         events_to_payload,
     };
+
+    #[test]
+    fn recognition_context_marks_command_sessions() {
+        let context =
+            super::RecognitionContext::command("__command__", Some("zh".to_owned()), "text");
+        assert!(context.command_mode);
+        assert_eq!(context.scene_id, "__command__");
+        assert_eq!(context.language.as_deref(), Some("zh"));
+        assert_eq!(context.selected_text.as_deref(), Some("text"));
+    }
 
     #[test]
     fn mock_buffered_backend_emits_final_text_on_finish() {
