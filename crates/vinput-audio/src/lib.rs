@@ -292,6 +292,9 @@ mod tests {
         let mut source = MockAudioSource::from_frames(vec![first.clone(), second.clone()]);
         assert_eq!(source.read_buffer().unwrap(), first);
         assert_eq!(source.read_buffer().unwrap(), second);
-        assert_eq!(source.read_buffer().unwrap_err(), AudioError::SourceExhausted);
+        assert_eq!(
+            source.read_buffer().unwrap_err(),
+            AudioError::SourceExhausted
+        );
     }
 }

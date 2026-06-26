@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use vinput_asr::{AsrBackend, AsrError, MockAsrBackend, RecognitionSession, events_to_payload};
-use vinput_audio::PcmBuffer;
+use vinput_audio::{AudioError, AudioSource, MockAudioSource, PcmBuffer};
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
 use vinput_text::{TextFinisher, TextRequest};
@@ -20,6 +20,7 @@ pub struct RuntimeState {
     selected_text: Option<String>,
     partial_text: Option<String>,
     asr_backend: Box<dyn AsrBackend>,
+    audio_source: Box<dyn AudioSource>,
     active_session: Option<Box<dyn RecognitionSession>>,
 }
 
@@ -35,6 +36,15 @@ impl RuntimeState {
         config: VinputConfig,
         asr_backend: Box<dyn AsrBackend>,
     ) -> Result<Self, RuntimeError> {
+        Self::with_backends(config, asr_backend, Box::new(default_mock_audio_source()))
+    }
+
+    /// Builds an idle runtime from validated config and injected backend seams.
+    pub fn with_backends(
+        config: VinputConfig,
+        asr_backend: Box<dyn AsrBackend>,
+        audio_source: Box<dyn AudioSource>,
+    ) -> Result<Self, RuntimeError> {
         config.validate().map_err(RuntimeError::InvalidConfig)?;
         Ok(Self {
             config,
@@ -44,6 +54,7 @@ impl RuntimeState {
             selected_text: None,
             partial_text: None,
             asr_backend,
+            audio_source,
             active_session: None,
         })
     }
@@ -95,7 +106,7 @@ impl RuntimeState {
             .active_session
             .take()
             .ok_or(RuntimeError::MissingAsrSession)?;
-        let pcm = self.mock_captured_pcm();
+        let pcm = self.read_captured_pcm()?;
         session
             .push_audio(pcm.samples())
             .map_err(RuntimeError::Asr)?;
@@ -150,7 +161,7 @@ impl RuntimeState {
             .asr_backend
             .create_session()
             .map_err(RuntimeError::Asr)?;
-        let pcm = self.mock_captured_pcm();
+        let pcm = self.read_captured_pcm()?;
         session
             .push_audio(pcm.samples())
             .map_err(RuntimeError::Asr)?;
@@ -174,9 +185,16 @@ impl RuntimeState {
         Ok(())
     }
 
-    fn mock_captured_pcm(&self) -> PcmBuffer {
-        let mut pcm =
-            PcmBuffer::at_default_rate(MOCK_PCM.to_vec()).trimmed_silence(MOCK_SILENCE_THRESHOLD);
+    fn read_captured_pcm(&mut self) -> Result<PcmBuffer, RuntimeError> {
+        let pcm = self
+            .audio_source
+            .read_buffer()
+            .map_err(RuntimeError::Audio)?;
+        Ok(self.process_captured_pcm(&pcm))
+    }
+
+    fn process_captured_pcm(&self, pcm: &PcmBuffer) -> PcmBuffer {
+        let mut pcm = pcm.trimmed_silence(MOCK_SILENCE_THRESHOLD);
         if self.config.asr.normalize_audio {
             pcm.normalize_to_peak(16_000);
         }
@@ -216,6 +234,11 @@ impl RuntimeState {
     }
 }
 
+fn default_mock_audio_source() -> MockAudioSource {
+    let frame = PcmBuffer::at_default_rate(MOCK_PCM.to_vec());
+    MockAudioSource::from_frames(vec![frame.clone(), frame])
+}
+
 /// Runtime errors.
 #[derive(Debug, Error)]
 pub enum RuntimeError {
@@ -234,6 +257,9 @@ pub enum RuntimeError {
     /// ASR backend/session failed.
     #[error("asr error: {0}")]
     Asr(#[source] AsrError),
+    /// Audio source failed.
+    #[error("audio error: {0}")]
+    Audio(#[source] AudioError),
     /// Result finishing failed.
     #[error("result finishing error: {0}")]
     Finish(#[source] vinput_text::TextError),
@@ -243,6 +269,7 @@ pub enum RuntimeError {
 mod tests {
     use super::RuntimeState;
     use vinput_asr::MockAsrBackend;
+    use vinput_audio::{MockAudioSource, PcmBuffer};
     use vinput_config::VinputConfig;
     use vinput_protocol::ServiceStatus;
 
@@ -265,6 +292,21 @@ mod tests {
         let mut runtime = RuntimeState::with_asr_backend(config, Box::new(backend)).unwrap();
         runtime.start_recording().unwrap();
         assert_eq!(runtime.partial_text(), Some("listening"));
+        let payload = runtime.stop_recording(None).unwrap();
+        assert_eq!(payload.commit_text, "custom final");
+    }
+
+    #[test]
+    fn injected_audio_source_is_used_by_runtime() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let backend = MockAsrBackend::streaming("listening", "custom final");
+        let source = MockAudioSource::from_frames(vec![
+            PcmBuffer::at_default_rate(vec![0, 32, -32, 0]),
+            PcmBuffer::at_default_rate(vec![0, 64, -64, 0]),
+        ]);
+        let mut runtime =
+            RuntimeState::with_backends(config, Box::new(backend), Box::new(source)).unwrap();
+        runtime.start_recording().unwrap();
         let payload = runtime.stop_recording(None).unwrap();
         assert_eq!(payload.commit_text, "custom final");
     }
