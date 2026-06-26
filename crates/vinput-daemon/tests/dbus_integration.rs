@@ -84,6 +84,31 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     assert_eq!(signal_payload.commit_text, "mock recognition result");
     assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
 
+    let status: String = proxy
+        .call(dbus::method::START_COMMAND_RECORDING, &"selected text")
+        .await?;
+    assert_eq!(status, "recording");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
+    assert_eq!(
+        next_string_signal(&mut partial_signals).await?,
+        "mock partial"
+    );
+
+    let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
+    let payload = RecognitionPayload::from_json_str(&payload_json)?;
+    assert_eq!(
+        payload.commit_text,
+        "mock command result for: selected text"
+    );
+    assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
+    let result_payload_json = next_string_signal(&mut result_signals).await?;
+    let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
+    assert_eq!(
+        signal_payload.commit_text,
+        "mock command result for: selected text"
+    );
+    assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
+
     let notification: String = proxy
         .call(dbus::method::NOTIFY, &("summary", "body"))
         .await?;

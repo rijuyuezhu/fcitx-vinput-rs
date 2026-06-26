@@ -265,7 +265,7 @@ impl RuntimeState {
 
 fn default_mock_audio_source() -> MockAudioSource {
     let frame = CapturedAudio::anonymous(PcmBuffer::at_default_rate(MOCK_PCM.to_vec()));
-    MockAudioSource::from_frames(vec![frame.clone(), frame])
+    MockAudioSource::from_frames(vec![frame.clone(), frame.clone(), frame.clone(), frame])
 }
 
 /// Runtime errors.
@@ -344,6 +344,24 @@ mod tests {
         assert_eq!(runtime.partial_text(), Some("mock partial"));
         let payload = runtime.stop_recording(None).unwrap();
         assert_eq!(payload.commit_text, "mock recognition result");
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
+    fn default_mock_audio_source_supports_two_roundtrips() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let mut runtime = RuntimeState::new(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        assert_eq!(
+            runtime.stop_recording(None).unwrap().commit_text,
+            "mock recognition result"
+        );
+        runtime.start_command_recording("selected text").unwrap();
+        assert_eq!(
+            runtime.stop_recording(None).unwrap().commit_text,
+            "mock command result for: selected text"
+        );
         assert_eq!(runtime.status(), ServiceStatus::Idle);
     }
 
