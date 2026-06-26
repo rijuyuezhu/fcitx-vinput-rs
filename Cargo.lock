@@ -981,6 +981,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vinput-audio"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "vinput-cli"
 version = "0.1.0"
 dependencies = [
@@ -1016,6 +1025,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vinput-asr",
+ "vinput-audio",
  "vinput-config",
  "vinput-protocol",
  "zbus",

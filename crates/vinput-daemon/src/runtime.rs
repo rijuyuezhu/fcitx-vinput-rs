@@ -3,10 +3,12 @@
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use vinput_asr::{AsrBackend, AsrError, MockAsrBackend, RecognitionSession, events_to_payload};
+use vinput_audio::PcmBuffer;
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
+const MOCK_SILENCE_THRESHOLD: i16 = 8;
 
 /// In-memory runtime state for the first daemon milestone.
 pub struct RuntimeState {
@@ -92,7 +94,10 @@ impl RuntimeState {
             .active_session
             .take()
             .ok_or(RuntimeError::MissingAsrSession)?;
-        session.push_audio(MOCK_PCM).map_err(RuntimeError::Asr)?;
+        let pcm = self.mock_captured_pcm();
+        session
+            .push_audio(pcm.samples())
+            .map_err(RuntimeError::Asr)?;
         self.capture_partial_events(&mut *session)?;
         session.finish().map_err(RuntimeError::Asr)?;
         let events = session.poll_events().map_err(RuntimeError::Asr)?;
@@ -147,7 +152,10 @@ impl RuntimeState {
             .asr_backend
             .create_session()
             .map_err(RuntimeError::Asr)?;
-        session.push_audio(MOCK_PCM).map_err(RuntimeError::Asr)?;
+        let pcm = self.mock_captured_pcm();
+        session
+            .push_audio(pcm.samples())
+            .map_err(RuntimeError::Asr)?;
         self.capture_partial_events(&mut *session)?;
         self.status = ServiceStatus::Recording;
         self.current_scene = Some(scene_id);
@@ -166,6 +174,16 @@ impl RuntimeState {
             }
         }
         Ok(())
+    }
+
+    fn mock_captured_pcm(&self) -> PcmBuffer {
+        let mut pcm =
+            PcmBuffer::at_default_rate(MOCK_PCM.to_vec()).trimmed_silence(MOCK_SILENCE_THRESHOLD);
+        if self.config.asr.normalize_audio {
+            pcm.normalize_to_peak(16_000);
+        }
+        pcm.apply_gain(self.config.asr.input_gain);
+        pcm
     }
 
     fn reset_to_idle(&mut self) {
