@@ -333,5 +333,5 @@ fn config_validate_fails_for_too_many_candidates() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.contains("scene `raw` requests 33 candidates"));
+    assert!(stderr.contains("scene `raw` asks for 33 candidates"));
 }

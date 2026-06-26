@@ -416,3 +416,53 @@ fn registry_plan_summary_only_omits_assets() {
     assert_eq!(value["unknown_size_count"], 0);
     assert!(value.get("assets").is_none());
 }
+
+#[test]
+fn registry_validate_fails_for_empty_model_ids() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"  ","label":"M","provider":"p","assets":[]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("registry id must not be empty"));
+}
+
+#[test]
+fn registry_validate_fails_for_empty_adapter_ids() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "adapters": [
+            {"id":"","label":"A","kind":"command","assets":[]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("registry id must not be empty"));
+}

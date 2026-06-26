@@ -159,8 +159,24 @@ fn print_protocol() -> anyhow::Result<()> {
 fn validate_config() -> anyhow::Result<()> {
     let config = VinputConfig::bundled_default().context("parse bundled config")?;
     config.validate().context("validate bundled config")?;
-    println!("{}", serde_json::to_string_pretty(&config.summary())?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&config_summary_json(&config))?
+    );
     Ok(())
+}
+
+fn config_summary_json(config: &VinputConfig) -> serde_json::Value {
+    let summary = config.summary();
+    serde_json::json!({
+        "ok": true,
+        "version": summary.version,
+        "active_scene": summary.active_scene,
+        "active_provider": summary.active_provider,
+        "scene_count": summary.scene_count,
+        "provider_count": summary.provider_count,
+        "registry_mirror_count": summary.registry_mirror_count,
+    })
 }
 
 fn print_registry_summary() -> anyhow::Result<()> {
@@ -208,7 +224,10 @@ fn validate_config_file(path: &PathBuf, _summary_only: bool) -> anyhow::Result<(
     config
         .validate()
         .with_context(|| format!("validate config `{}`", path.display()))?;
-    println!("{}", serde_json::to_string_pretty(&config.summary())?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&config_summary_json(&config))?
+    );
     Ok(())
 }
 
