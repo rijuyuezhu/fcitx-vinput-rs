@@ -136,3 +136,54 @@ fn registry_validate_fails_for_duplicate_asset_paths() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("duplicate asset path `m.tar`"));
 }
+
+#[test]
+fn registry_plan_prints_assets_with_resolved_urls() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {
+              "id": "m",
+              "label": "M",
+              "provider": "p",
+              "assets": [{"path":"models/m.tar"}]
+            }
+          ],
+          "adapters": [
+            {
+              "id":"a",
+              "label":"A",
+              "kind":"command",
+              "assets":[{"path":"adapters/a.tar"}]
+            }
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "plan"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["asset_count"], 2);
+    assert_eq!(value["assets"][0]["entry_kind"], "model");
+    assert_eq!(value["assets"][0]["entry_id"], "m");
+    assert_eq!(value["assets"][0]["path"], "models/m.tar");
+    assert!(
+        value["assets"][0]["urls"][0]
+            .as_str()
+            .expect("planned URL should be a string")
+            .ends_with("/models/m.tar")
+    );
+    assert_eq!(value["assets"][1]["entry_kind"], "adapter");
+    assert_eq!(value["assets"][1]["entry_id"], "a");
+}

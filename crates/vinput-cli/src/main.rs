@@ -34,6 +34,11 @@ enum RegistryCommand {
         /// Path to a registry index JSON file.
         path: PathBuf,
     },
+    /// Print planned registry assets using configured mirrors.
+    Plan {
+        /// Path to a registry index JSON file.
+        path: PathBuf,
+    },
 }
 
 /// Supported bootstrap commands.
@@ -76,6 +81,7 @@ fn main() -> anyhow::Result<()> {
         },
         Command::Registry { command } => match command {
             Some(RegistryCommand::Validate { path }) => validate_registry_index(&path),
+            Some(RegistryCommand::Plan { path }) => print_registry_plan(&path),
             None => print_registry_summary(),
         },
         Command::MockResult { text } => {
@@ -186,6 +192,22 @@ fn validate_config_file(path: &PathBuf) -> anyhow::Result<()> {
         .validate()
         .with_context(|| format!("validate config `{}`", path.display()))?;
     let summary = config_summary(&config);
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+fn print_registry_plan(path: &PathBuf) -> anyhow::Result<()> {
+    let input = fs::read_to_string(path)
+        .with_context(|| format!("read registry index `{}`", path.display()))?;
+    let index = RegistryIndex::from_json_str(&input)
+        .with_context(|| format!("validate registry index `{}`", path.display()))?;
+    let config = VinputConfig::bundled_default().context("parse bundled config")?;
+    let planned_assets = index.planned_assets(&config.registry);
+    let summary = serde_json::json!({
+        "ok": true,
+        "asset_count": planned_assets.len(),
+        "assets": planned_assets,
+    });
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
 }
