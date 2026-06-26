@@ -15,6 +15,58 @@ pub struct TextRequest<'a> {
     pub selected_text: Option<&'a str>,
 }
 
+/// Context available while rendering a deterministic text prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PromptContext<'a> {
+    /// Raw ASR text.
+    pub raw_text: &'a str,
+    /// Optional selected text used by command mode.
+    pub selected_text: &'a str,
+    /// Current scene id.
+    pub scene_id: &'a str,
+    /// Scene prompt text, if configured.
+    pub scene_prompt: &'a str,
+}
+
+impl<'a> PromptContext<'a> {
+    /// Creates prompt context from a text request.
+    #[must_use]
+    pub fn from_request(request: &'a TextRequest<'a>) -> Self {
+        Self {
+            raw_text: request.raw_text,
+            selected_text: request.selected_text.unwrap_or_default(),
+            scene_id: &request.scene.id,
+            scene_prompt: request.scene.prompt.as_deref().unwrap_or_default(),
+        }
+    }
+}
+
+/// Tiny deterministic template renderer for command placeholders and future adapters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptTemplate {
+    template: String,
+}
+
+impl PromptTemplate {
+    /// Creates a template with literal text and supported placeholders.
+    #[must_use]
+    pub fn new(template: impl Into<String>) -> Self {
+        Self {
+            template: template.into(),
+        }
+    }
+
+    /// Renders supported placeholders using prompt context.
+    #[must_use]
+    pub fn render(&self, context: &PromptContext<'_>) -> String {
+        self.template
+            .replace("{raw_text}", context.raw_text)
+            .replace("{selected_text}", context.selected_text)
+            .replace("{scene_id}", context.scene_id)
+            .replace("{scene_prompt}", context.scene_prompt)
+    }
+}
+
 /// Minimal text finisher used while adapter support is not ported yet.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TextFinisher;
@@ -32,10 +84,7 @@ impl TextFinisher {
             return Ok(RecognitionPayload::raw(request.raw_text));
         }
         if request.scene.id == COMMAND_SCENE_ID {
-            return Ok(RecognitionPayload::raw(command_placeholder_text(
-                request.raw_text,
-                request.selected_text.unwrap_or_default(),
-            )));
+            return Ok(RecognitionPayload::raw(command_placeholder_text(request)));
         }
         if request.scene.candidate_count == 0 {
             return Ok(RecognitionPayload::raw(request.raw_text));
@@ -52,17 +101,18 @@ pub enum TextError {
     AdapterRequired(String),
 }
 
-fn command_placeholder_text(raw_text: &str, selected_text: &str) -> String {
-    if selected_text.is_empty() {
-        format!("mock command result: {raw_text}")
+fn command_placeholder_text(request: &TextRequest<'_>) -> String {
+    let context = PromptContext::from_request(request);
+    if context.selected_text.is_empty() {
+        PromptTemplate::new("mock command result: {raw_text}").render(&context)
     } else {
-        format!("mock command result for: {selected_text}")
+        PromptTemplate::new("mock command result for: {selected_text}").render(&context)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TextError, TextFinisher, TextRequest};
+    use super::{PromptContext, PromptTemplate, TextError, TextFinisher, TextRequest};
     use vinput_config::{COMMAND_SCENE_ID, RAW_SCENE_ID, SceneDefinition};
 
     fn scene(id: &str, candidate_count: u8) -> SceneDefinition {
@@ -84,6 +134,28 @@ mod tests {
         })
         .unwrap();
         assert_eq!(payload.commit_text, "hello");
+    }
+
+    #[test]
+    fn prompt_template_replaces_supported_fields() {
+        let templated = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("rewrite", 1)
+        };
+        let request = TextRequest {
+            raw_text: "raw",
+            scene: &templated,
+            selected_text: Some("selected"),
+        };
+        let context = PromptContext::from_request(&request);
+        let rendered = PromptTemplate::new(
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}",
+        )
+        .render(&context);
+        assert_eq!(
+            rendered,
+            "scene=rewrite; prompt=polish; raw=raw; selected=selected"
+        );
     }
 
     #[test]
