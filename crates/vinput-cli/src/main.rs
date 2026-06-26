@@ -41,6 +41,12 @@ enum RegistryCommand {
         /// Optional config JSON file that provides registry mirrors.
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Only plan assets for this model id.
+        #[arg(long, conflicts_with = "adapter")]
+        model: Option<String>,
+        /// Only plan assets for this adapter id.
+        #[arg(long, conflicts_with = "model")]
+        adapter: Option<String>,
     },
 }
 
@@ -84,9 +90,12 @@ fn main() -> anyhow::Result<()> {
         },
         Command::Registry { command } => match command {
             Some(RegistryCommand::Validate { path }) => validate_registry_index(&path),
-            Some(RegistryCommand::Plan { path, config }) => {
-                print_registry_plan(&path, config.as_ref())
-            }
+            Some(RegistryCommand::Plan {
+                path,
+                config,
+                model,
+                adapter,
+            }) => print_registry_plan(&path, config.as_ref(), model.as_deref(), adapter.as_deref()),
             None => print_registry_summary(),
         },
         Command::MockResult { text } => {
@@ -201,7 +210,12 @@ fn validate_config_file(path: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_registry_plan(path: &PathBuf, config_path: Option<&PathBuf>) -> anyhow::Result<()> {
+fn print_registry_plan(
+    path: &PathBuf,
+    config_path: Option<&PathBuf>,
+    model_id: Option<&str>,
+    adapter_id: Option<&str>,
+) -> anyhow::Result<()> {
     let input = fs::read_to_string(path)
         .with_context(|| format!("read registry index `{}`", path.display()))?;
     let index = RegistryIndex::from_json_str(&input)
@@ -210,7 +224,12 @@ fn print_registry_plan(path: &PathBuf, config_path: Option<&PathBuf>) -> anyhow:
         Some(config_path) => load_config_file(config_path)?,
         None => VinputConfig::bundled_default().context("parse bundled config")?,
     };
-    let planned_assets = index.planned_assets(&config.registry);
+    let planned_assets = match (model_id, adapter_id) {
+        (Some(model_id), None) => index.planned_model_assets(model_id, &config.registry)?,
+        (None, Some(adapter_id)) => index.planned_adapter_assets(adapter_id, &config.registry)?,
+        (None, None) => index.planned_assets(&config.registry),
+        (Some(_), Some(_)) => unreachable!("clap prevents model and adapter together"),
+    };
     let summary = serde_json::json!({
         "ok": true,
         "asset_count": planned_assets.len(),

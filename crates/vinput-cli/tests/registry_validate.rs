@@ -251,3 +251,61 @@ fn registry_plan_uses_custom_config_mirrors() {
         "https://custom.invalid/root/models/m.tar"
     );
 }
+
+#[test]
+fn registry_plan_can_select_one_model() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}
+          ],
+          "adapters": [
+            {"id":"a","label":"A","kind":"command","assets":[{"path":"adapters/a.tar"}]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "plan"])
+        .arg(&path)
+        .args(["--model", "m"])
+        .output()
+        .expect("run vinput registry plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    assert_eq!(value["asset_count"], 1);
+    assert_eq!(value["assets"][0]["entry_kind"], "model");
+    assert_eq!(value["assets"][0]["entry_id"], "m");
+}
+
+#[test]
+fn registry_plan_fails_for_unknown_model() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"m","label":"M","provider":"p","assets":[]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "plan"])
+        .arg(&path)
+        .args(["--model", "missing"])
+        .output()
+        .expect("run vinput registry plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("unknown model id `missing`"));
+}
