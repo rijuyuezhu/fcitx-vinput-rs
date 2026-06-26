@@ -4,6 +4,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use vinput_config::VinputConfig;
 use vinput_protocol::{RecognitionPayload, ServiceStatus, dbus};
+use vinput_registry::AssetEntry;
 
 /// CLI for inspecting and controlling the vinput daemon.
 #[derive(Debug, Parser)]
@@ -20,6 +21,8 @@ enum Command {
     Protocol,
     /// Validate the bundled upstream-compatible default config.
     Config,
+    /// Print registry URL resolution for the bundled config.
+    Registry,
     /// Create a recognition JSON payload for tests/manual inspection.
     MockResult {
         /// Commit text for the payload.
@@ -38,6 +41,7 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         Command::Protocol => print_protocol(),
         Command::Config => validate_config(),
+        Command::Registry => print_registry_summary(),
         Command::MockResult { text } => {
             let payload = RecognitionPayload::raw(text);
             println!("{}", payload.to_json_string()?);
@@ -91,6 +95,21 @@ fn validate_config() -> anyhow::Result<()> {
         "active_provider": config.asr.active_provider,
         "scene_count": config.scenes.definitions.len(),
         "provider_count": config.asr.providers.len(),
+    });
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+fn print_registry_summary() -> anyhow::Result<()> {
+    let config = VinputConfig::bundled_default().context("parse bundled config")?;
+    let index_asset = AssetEntry {
+        path: "index.json".to_owned(),
+        sha256: None,
+        size_bytes: None,
+    };
+    let summary = serde_json::json!({
+        "base_url_count": config.registry.base_urls.len(),
+        "index_urls": index_asset.resolved_urls(&config.registry),
     });
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())

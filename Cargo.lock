@@ -998,6 +998,7 @@ dependencies = [
  "serde_json",
  "vinput-config",
  "vinput-protocol",
+ "vinput-registry",
 ]
 
 [[package]]
@@ -1042,6 +1043,17 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror",
+]
+
+[[package]]
+name = "vinput-registry"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "vinput-config",
 ]
 
 [[package]]
