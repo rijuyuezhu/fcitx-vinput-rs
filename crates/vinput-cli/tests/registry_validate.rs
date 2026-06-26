@@ -516,3 +516,21 @@ fn registry_validate_fails_for_empty_adapter_kind() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("adapter `a` has an empty kind"));
 }
+
+#[test]
+fn registry_prints_bundled_mirror_summary() {
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry"])
+        .output()
+        .expect("run vinput registry");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry summary should be JSON");
+    assert!(value["base_url_count"].as_u64().unwrap_or_default() > 0);
+    assert!(
+        value["index_urls"]
+            .as_array()
+            .is_some_and(|urls| !urls.is_empty())
+    );
+}
