@@ -117,6 +117,20 @@ impl VinputConfig {
         Ok(())
     }
 
+    /// Builds a compact summary for CLI and diagnostics.
+    #[must_use]
+    pub fn summary(&self) -> VinputConfigSummary {
+        VinputConfigSummary {
+            ok: true,
+            version: self.version,
+            active_scene: self.scenes.active_scene.clone(),
+            active_provider: self.asr.active_provider.clone(),
+            scene_count: self.scenes.definitions.len(),
+            provider_count: self.asr.providers.len(),
+            registry_mirror_count: self.registry.base_urls.len(),
+        }
+    }
+
     /// Returns the active scene definition, if it exists.
     #[must_use]
     pub fn active_scene(&self) -> Option<&SceneDefinition> {
@@ -125,6 +139,25 @@ impl VinputConfig {
             .iter()
             .find(|scene| scene.id == self.scenes.active_scene)
     }
+}
+
+/// Compact config summary for CLI and diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct VinputConfigSummary {
+    /// Whether validation succeeded.
+    pub ok: bool,
+    /// Config schema version.
+    pub version: u32,
+    /// Active scene id.
+    pub active_scene: String,
+    /// Active ASR provider id.
+    pub active_provider: String,
+    /// Number of configured scenes.
+    pub scene_count: usize,
+    /// Number of configured ASR providers.
+    pub provider_count: usize,
+    /// Number of configured registry mirrors.
+    pub registry_mirror_count: usize,
 }
 
 /// Registry mirror settings.
@@ -385,6 +418,22 @@ mod tests {
             .unwrap();
         assert_eq!(raw.default_candidate_source(), CandidateSource::Raw);
         assert_eq!(command.default_candidate_source(), CandidateSource::Llm);
+    }
+
+    #[test]
+    fn summary_reports_config_counts() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let summary = config.summary();
+        assert!(summary.ok);
+        assert_eq!(summary.version, 1);
+        assert_eq!(summary.active_scene, RAW_SCENE_ID);
+        assert_eq!(summary.active_provider, "sherpa-onnx");
+        assert_eq!(summary.scene_count, config.scenes.definitions.len());
+        assert_eq!(summary.provider_count, config.asr.providers.len());
+        assert_eq!(
+            summary.registry_mirror_count,
+            config.registry.base_urls.len()
+        );
     }
 
     #[test]
