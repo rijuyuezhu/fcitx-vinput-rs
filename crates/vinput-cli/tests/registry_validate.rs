@@ -387,7 +387,6 @@ fn registry_plan_fails_for_unknown_adapter() {
     assert!(stderr.contains("unknown adapter id `missing`"));
 }
 
-
 #[test]
 fn registry_plan_summary_only_omits_assets() {
     let path = write_temp_registry(
