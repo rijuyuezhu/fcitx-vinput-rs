@@ -158,12 +158,57 @@ impl PcmBuffer {
     }
 }
 
+/// Audio source abstraction used before a concrete desktop backend is wired in.
+pub trait AudioSource: Send {
+    /// Read one mono PCM buffer.
+    fn read_buffer(&mut self) -> Result<PcmBuffer, AudioError>;
+}
+
+/// Deterministic audio source for runtime wiring and tests.
+#[derive(Debug, Clone)]
+pub struct MockAudioSource {
+    frames: Vec<PcmBuffer>,
+    next: usize,
+}
+
+impl MockAudioSource {
+    /// Creates a mock source from a sequence of buffers.
+    #[must_use]
+    pub fn from_frames(frames: impl Into<Vec<PcmBuffer>>) -> Self {
+        Self {
+            frames: frames.into(),
+            next: 0,
+        }
+    }
+
+    /// Creates a mock source that returns one buffer.
+    #[must_use]
+    pub fn once(frame: PcmBuffer) -> Self {
+        Self::from_frames(vec![frame])
+    }
+}
+
+impl AudioSource for MockAudioSource {
+    fn read_buffer(&mut self) -> Result<PcmBuffer, AudioError> {
+        let frame = self
+            .frames
+            .get(self.next)
+            .cloned()
+            .ok_or(AudioError::SourceExhausted)?;
+        self.next += 1;
+        Ok(frame)
+    }
+}
+
 /// Audio helper errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AudioError {
     /// Sample rate must not be zero.
     #[error("invalid sample rate: {0}")]
     InvalidSampleRate(u32),
+    /// Empty mock buffer list.
+    #[error("no more buffers")]
+    SourceExhausted,
 }
 
 fn scale_sample(sample: i16, gain: f32) -> i16 {
@@ -236,5 +281,17 @@ mod tests {
         let pcm = PcmBuffer::at_default_rate(vec![0, 1, -1]).trimmed_silence(1);
         assert!(pcm.is_empty());
         assert_eq!(pcm.sample_rate_hz(), DEFAULT_SAMPLE_RATE_HZ);
+    }
+
+    #[test]
+    fn mock_audio_source_returns_frames_in_order() {
+        use super::{AudioSource, MockAudioSource};
+
+        let first = PcmBuffer::at_default_rate(vec![1]);
+        let second = PcmBuffer::at_default_rate(vec![2]);
+        let mut source = MockAudioSource::from_frames(vec![first.clone(), second.clone()]);
+        assert_eq!(source.read_buffer().unwrap(), first);
+        assert_eq!(source.read_buffer().unwrap(), second);
+        assert_eq!(source.read_buffer().unwrap_err(), AudioError::SourceExhausted);
     }
 }
