@@ -64,9 +64,13 @@ impl VinputConfig {
 
     /// Validates cross-field invariants that serde cannot express.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        let mut registry_base_urls = HashSet::new();
         for base_url in &self.registry.base_urls {
             if base_url.trim().is_empty() {
                 return Err(ConfigError::InvalidRegistryBaseUrl(base_url.clone()));
+            }
+            if !registry_base_urls.insert(base_url.as_str()) {
+                return Err(ConfigError::DuplicateRegistryBaseUrl(base_url.clone()));
             }
         }
 
@@ -292,6 +296,9 @@ pub enum ConfigError {
     /// Registry base URL is empty.
     #[error("invalid empty registry base URL")]
     InvalidRegistryBaseUrl(String),
+    /// Registry base URL is duplicated.
+    #[error("duplicate registry base URL `{0}`")]
+    DuplicateRegistryBaseUrl(String),
     /// Active scene is not listed in scene definitions.
     #[error("active scene `{0}` is not defined")]
     UnknownActiveScene(String),
@@ -378,6 +385,18 @@ mod tests {
             .unwrap();
         assert_eq!(raw.default_candidate_source(), CandidateSource::Raw);
         assert_eq!(command.default_candidate_source(), CandidateSource::Llm);
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_registry_base_urls() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        let duplicate = config.registry.base_urls[0].clone();
+        config.registry.base_urls.push(duplicate.clone());
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::DuplicateRegistryBaseUrl(url) if url == duplicate
+        ));
     }
 
     #[test]
