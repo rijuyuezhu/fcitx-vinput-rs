@@ -8,6 +8,7 @@ This milestone introduces the first real daemon-side D-Bus boundary while keepin
 - `crates/vinput-daemon/src/runtime.rs` remains the deterministic mock state machine.
 - `crates/vinput-daemon/src/dbus_service.rs` wraps `RuntimeState` in a `zbus` interface named `org.fcitx.Vinput.Service`.
 - `vinput-daemon --dbus` registers the legacy bus/object/interface on the session bus.
+- `crates/vinput-daemon/tests/dbus_integration.rs` uses `zbus::Proxy` under `dbus-run-session` to exercise real bus calls.
 
 The service exposes the legacy method names:
 
@@ -30,13 +31,19 @@ It also declares the legacy signal names:
 
 ## Current test coverage
 
-The first tests call the service facade directly and assert that the mock D-Bus methods exercise the same state transitions and JSON payloads as the runtime:
+Unit tests call the service facade directly and assert that the mock D-Bus methods exercise the same state transitions and JSON payloads as the runtime:
 
 - idle → recording → stop → idle
 - command recording with selected text context
 - ASR backend state JSON parsing
 
-A later milestone should add `dbus-run-session` integration tests with a `zbus` client proxy. That should happen before the C++ addon is pointed at the Rust daemon.
+The optional integration test runs through a real session bus:
+
+```sh
+dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
+```
+
+That test starts the Rust service, builds a `zbus::Proxy`, calls legacy methods by their exact wire names, and parses the returned recognition payload JSON.
 
 ## Compatibility rule
 

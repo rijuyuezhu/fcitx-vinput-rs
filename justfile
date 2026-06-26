@@ -12,7 +12,10 @@ lint:
 test:
     cargo test --workspace --all-targets
 
-check: fmt-check lint test
+dbus-test:
+    dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
+
+check: fmt-check lint test dbus-test
 
 ci: check
 
