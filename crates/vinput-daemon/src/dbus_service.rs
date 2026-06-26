@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use vinput_protocol::dbus;
-use zbus::{Connection, fdo};
+use zbus::{Connection, fdo, object_server::SignalEmitter};
 
 use crate::{RuntimeError, RuntimeState};
 
@@ -41,6 +41,45 @@ impl VinputDbusService {
     fn map_json_error(error: impl std::error::Error) -> fdo::Error {
         fdo::Error::Failed(format!("failed to serialize response: {error}"))
     }
+
+    fn map_signal_error(error: &zbus::Error) -> fdo::Error {
+        fdo::Error::Failed(format!("failed to emit signal: {error}"))
+    }
+
+    async fn start_recording_state(&self) -> fdo::Result<(String, Option<String>)> {
+        let mut runtime = self.runtime.lock().await;
+        runtime
+            .start_recording()
+            .map_err(|error| Self::map_runtime_error(&error))?;
+        Ok((
+            runtime.status().to_string(),
+            runtime.partial_text().map(ToOwned::to_owned),
+        ))
+    }
+
+    async fn start_command_recording_state(
+        &self,
+        selected_text: &str,
+    ) -> fdo::Result<(String, Option<String>)> {
+        let mut runtime = self.runtime.lock().await;
+        runtime
+            .start_command_recording(selected_text)
+            .map_err(|error| Self::map_runtime_error(&error))?;
+        Ok((
+            runtime.status().to_string(),
+            runtime.partial_text().map(ToOwned::to_owned),
+        ))
+    }
+
+    async fn stop_recording_payload(&self, scene_id: &str) -> fdo::Result<(String, String)> {
+        let scene = (!scene_id.is_empty()).then_some(scene_id);
+        let mut runtime = self.runtime.lock().await;
+        let payload = runtime
+            .stop_recording(scene)
+            .map_err(|error| Self::map_runtime_error(&error))?;
+        let payload_json = payload.to_json_string().map_err(Self::map_json_error)?;
+        Ok((payload_json, runtime.status().to_string()))
+    }
 }
 
 #[allow(missing_docs)]
@@ -48,33 +87,59 @@ impl VinputDbusService {
 impl VinputDbusService {
     /// Start normal speech recognition.
     #[zbus(name = "StartRecording")]
-    async fn start_recording(&self) -> fdo::Result<String> {
-        let mut runtime = self.runtime.lock().await;
-        runtime
-            .start_recording()
-            .map_err(|error| Self::map_runtime_error(&error))?;
-        Ok(runtime.status().to_string())
+    async fn start_recording(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<String> {
+        let (status, partial_text) = self.start_recording_state().await?;
+        Self::status_changed(&emitter, &status)
+            .await
+            .map_err(|error| Self::map_signal_error(&error))?;
+        if let Some(partial_text) = partial_text {
+            Self::recognition_partial(&emitter, &partial_text)
+                .await
+                .map_err(|error| Self::map_signal_error(&error))?;
+        }
+        Ok(status)
     }
 
     /// Start command-mode speech recognition with selected text context.
     #[zbus(name = "StartCommandRecording")]
-    async fn start_command_recording(&self, selected_text: &str) -> fdo::Result<String> {
-        let mut runtime = self.runtime.lock().await;
-        runtime
-            .start_command_recording(selected_text)
-            .map_err(|error| Self::map_runtime_error(&error))?;
-        Ok(runtime.status().to_string())
+    async fn start_command_recording(
+        &self,
+        selected_text: &str,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<String> {
+        let (status, partial_text) = self.start_command_recording_state(selected_text).await?;
+        Self::status_changed(&emitter, &status)
+            .await
+            .map_err(|error| Self::map_signal_error(&error))?;
+        if let Some(partial_text) = partial_text {
+            Self::recognition_partial(&emitter, &partial_text)
+                .await
+                .map_err(|error| Self::map_signal_error(&error))?;
+        }
+        Ok(status)
     }
 
     /// Stop current recording and return the legacy recognition JSON payload.
     #[zbus(name = "StopRecording")]
-    async fn stop_recording(&self, scene_id: &str) -> fdo::Result<String> {
-        let scene = (!scene_id.is_empty()).then_some(scene_id);
-        let mut runtime = self.runtime.lock().await;
-        let payload = runtime
-            .stop_recording(scene)
-            .map_err(|error| Self::map_runtime_error(&error))?;
-        payload.to_json_string().map_err(Self::map_json_error)
+    async fn stop_recording(
+        &self,
+        scene_id: &str,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<String> {
+        let (payload_json, status) = self.stop_recording_payload(scene_id).await?;
+        Self::status_changed(&emitter, "inferring")
+            .await
+            .map_err(|error| Self::map_signal_error(&error))?;
+        Self::recognition_result(&emitter, &payload_json)
+            .await
+            .map_err(|error| Self::map_signal_error(&error))?;
+        Self::status_changed(&emitter, &status)
+            .await
+            .map_err(|error| Self::map_signal_error(&error))?;
+        Ok(payload_json)
     }
 
     /// Return current daemon status.
@@ -168,9 +233,13 @@ mod tests {
     async fn dbus_facade_exercises_normal_mock_flow() {
         let service = service();
         assert_eq!(service.get_status().await, "idle");
-        assert_eq!(service.start_recording().await.unwrap(), "recording");
+        assert_eq!(
+            service.start_recording_state().await.unwrap().0,
+            "recording"
+        );
         let payload =
-            RecognitionPayload::from_json_str(&service.stop_recording("").await.unwrap()).unwrap();
+            RecognitionPayload::from_json_str(&service.stop_recording_payload("").await.unwrap().0)
+                .unwrap();
         assert_eq!(payload.commit_text, "mock recognition result");
         assert_eq!(service.get_status().await, "idle");
     }
@@ -180,13 +249,15 @@ mod tests {
         let service = service();
         assert_eq!(
             service
-                .start_command_recording("selected text")
+                .start_command_recording_state("selected text")
                 .await
-                .unwrap(),
+                .unwrap()
+                .0,
             "recording"
         );
         let payload =
-            RecognitionPayload::from_json_str(&service.stop_recording("").await.unwrap()).unwrap();
+            RecognitionPayload::from_json_str(&service.stop_recording_payload("").await.unwrap().0)
+                .unwrap();
         assert_eq!(
             payload.commit_text,
             "mock command result for: selected text"

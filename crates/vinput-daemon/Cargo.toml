@@ -29,4 +29,5 @@ vinput-text = { path = "../vinput-text" }
 zbus.workspace = true
 
 [dev-dependencies]
+futures-util.workspace = true
 insta.workspace = true
