@@ -65,6 +65,60 @@ impl RegistryIndex {
     pub fn adapter(&self, id: &str) -> Option<&AdapterEntry> {
         self.adapters.iter().find(|adapter| adapter.id == id)
     }
+    /// Expands registry assets into deterministic planning rows.
+    #[must_use]
+    pub fn planned_assets(&self, config: &RegistryConfig) -> Vec<PlannedAsset> {
+        let model_assets = self.models.iter().flat_map(|model| {
+            model.assets.iter().map(|asset| PlannedAsset {
+                entry_kind: RegistryEntryKind::Model,
+                entry_id: model.id.clone(),
+                path: asset.path.clone(),
+                urls: asset.resolved_urls(config),
+                sha256: asset.sha256.clone(),
+                size_bytes: asset.size_bytes,
+            })
+        });
+        let adapter_assets = self.adapters.iter().flat_map(|adapter| {
+            adapter.assets.iter().map(|asset| PlannedAsset {
+                entry_kind: RegistryEntryKind::Adapter,
+                entry_id: adapter.id.clone(),
+                path: asset.path.clone(),
+                urls: asset.resolved_urls(config),
+                sha256: asset.sha256.clone(),
+                size_bytes: asset.size_bytes,
+            })
+        });
+        model_assets.chain(adapter_assets).collect()
+    }
+}
+
+/// Registry entry kind that owns a planned asset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RegistryEntryKind {
+    /// ASR model entry.
+    Model,
+    /// Text adapter entry.
+    Adapter,
+}
+
+/// Planning information for one registry asset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlannedAsset {
+    /// Owning entry kind.
+    pub entry_kind: RegistryEntryKind,
+    /// Owning model or adapter id.
+    pub entry_id: String,
+    /// Registry-relative asset path.
+    pub path: String,
+    /// Candidate URLs resolved against configured mirrors.
+    pub urls: Vec<String>,
+    /// Optional sha256 checksum.
+    #[serde(default)]
+    pub sha256: Option<String>,
+    /// Optional size in bytes.
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
 }
 
 /// ASR model entry.
@@ -269,7 +323,13 @@ mod tests {
           "id": "mock-adapter",
           "label": "Mock adapter",
           "kind": "command",
-          "assets": []
+          "assets": [
+            {
+              "path": "adapters/mock-adapter.tar.zst",
+              "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "size_bytes": 7
+            }
+          ]
         }
       ]
     }
@@ -287,6 +347,27 @@ mod tests {
         assert!(index.model("missing").is_none());
     }
 
+    #[test]
+    fn plans_assets_with_entry_metadata_and_urls() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let plan = index.planned_assets(&RegistryConfig {
+            base_urls: vec!["https://registry.invalid/root".to_owned()],
+        });
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0].entry_kind, super::RegistryEntryKind::Model);
+        assert_eq!(plan[0].entry_id, "sherpa-zh-small");
+        assert_eq!(plan[0].path, "models/sherpa-zh-small.tar.zst");
+        assert_eq!(
+            plan[0].urls,
+            vec!["https://registry.invalid/root/models/sherpa-zh-small.tar.zst".to_owned()]
+        );
+        assert_eq!(plan[1].entry_kind, super::RegistryEntryKind::Adapter);
+        assert_eq!(plan[1].entry_id, "mock-adapter");
+        assert_eq!(
+            plan[1].urls,
+            vec!["https://registry.invalid/root/adapters/mock-adapter.tar.zst".to_owned()]
+        );
+    }
     #[test]
     fn resolves_asset_against_all_base_urls() {
         let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
