@@ -167,6 +167,7 @@ fn config_summary(config: &VinputConfig) -> serde_json::Value {
         "active_provider": config.asr.active_provider,
         "scene_count": config.scenes.definitions.len(),
         "provider_count": config.asr.providers.len(),
+        "registry_mirror_count": config.registry.base_urls.len(),
     })
 }
 

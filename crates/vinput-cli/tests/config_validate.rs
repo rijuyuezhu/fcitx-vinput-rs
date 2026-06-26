@@ -49,6 +49,7 @@ fn config_validate_prints_summary_for_valid_config() {
     assert_eq!(value["active_provider"], "p");
     assert_eq!(value["scene_count"], 1);
     assert_eq!(value["provider_count"], 1);
+    assert_eq!(value["registry_mirror_count"], 0);
 }
 
 #[test]
