@@ -90,9 +90,7 @@ impl ModelEntry {
         if self.provider.trim().is_empty() {
             return Err(RegistryError::EmptyProvider(self.id.clone()));
         }
-        for asset in &self.assets {
-            asset.validate()?;
-        }
+        validate_assets(&self.assets)?;
         Ok(())
     }
 }
@@ -117,9 +115,7 @@ impl AdapterEntry {
         if self.kind.trim().is_empty() {
             return Err(RegistryError::EmptyAdapterKind(self.id.clone()));
         }
-        for asset in &self.assets {
-            asset.validate()?;
-        }
+        validate_assets(&self.assets)?;
         Ok(())
     }
 }
@@ -189,6 +185,9 @@ pub enum RegistryError {
     /// Asset path must not be empty.
     #[error("asset path must not be empty")]
     EmptyAssetPath,
+    /// Duplicate asset path within one registry entry.
+    #[error("duplicate asset path `{0}`")]
+    DuplicateAssetPath(String),
     /// Asset path must be registry-relative and not traverse directories.
     #[error("unsafe asset path `{0}`")]
     UnsafeAssetPath(String),
@@ -201,6 +200,17 @@ impl From<serde_json::Error> for RegistryError {
     fn from(error: serde_json::Error) -> Self {
         Self::Json(error.to_string())
     }
+}
+
+fn validate_assets(assets: &[AssetEntry]) -> Result<(), RegistryError> {
+    let mut paths = HashSet::new();
+    for asset in assets {
+        asset.validate()?;
+        if !paths.insert(asset.path.as_str()) {
+            return Err(RegistryError::DuplicateAssetPath(asset.path.clone()));
+        }
+    }
+    Ok(())
 }
 
 fn validate_id(id: &str) -> Result<(), RegistryError> {
@@ -336,6 +346,27 @@ mod tests {
         assert_eq!(
             RegistryIndex::from_json_str(json).unwrap_err(),
             RegistryError::UnsafeAssetPath("../secret".to_owned())
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_asset_paths_within_entry() {
+        let json = r#"
+        {
+          "version": 1,
+          "models": [
+            {
+              "id":"m",
+              "label":"M",
+              "provider":"p",
+              "assets":[{"path":"m.tar"},{"path":"m.tar"}]
+            }
+          ]
+        }
+        "#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::DuplicateAssetPath("m.tar".to_owned())
         );
     }
 
