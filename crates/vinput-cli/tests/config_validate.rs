@@ -207,3 +207,36 @@ fn config_validate_fails_for_unknown_active_scene() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("active scene `missing` is not defined"));
 }
+
+#[test]
+fn config_validate_fails_for_duplicate_registry_mirrors() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "registry": {
+            "base_urls": ["https://mirror.invalid/root", "https://mirror.invalid/root"]
+          },
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("duplicate registry base URL `https://mirror.invalid/root`"));
+}
