@@ -129,10 +129,10 @@ impl VinputDbusService {
         scene_id: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<String> {
-        let (payload_json, status) = self.stop_recording_payload(scene_id).await?;
         Self::status_changed(&emitter, "inferring")
             .await
             .map_err(|error| Self::map_signal_error(&error))?;
+        let (payload_json, status) = self.stop_recording_payload(scene_id).await?;
         Self::recognition_result(&emitter, &payload_json)
             .await
             .map_err(|error| Self::map_signal_error(&error))?;
