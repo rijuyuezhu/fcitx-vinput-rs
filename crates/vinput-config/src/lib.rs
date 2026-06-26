@@ -4,6 +4,8 @@
 //! and focuses on typed deserialization plus lightweight validation. Later
 //! migrations can add versioned upgrades here without touching daemon code.
 
+use std::collections::HashSet;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -62,32 +64,13 @@ impl VinputConfig {
 
     /// Validates cross-field invariants that serde cannot express.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if !self
-            .scenes
-            .definitions
-            .iter()
-            .any(|scene| scene.id == self.scenes.active_scene)
-        {
-            return Err(ConfigError::UnknownActiveScene(
-                self.scenes.active_scene.clone(),
-            ));
-        }
-
-        if !self.asr.providers.is_empty()
-            && !self
-                .asr
-                .providers
-                .iter()
-                .any(|provider| provider.id == self.asr.active_provider)
-        {
-            return Err(ConfigError::UnknownActiveAsrProvider(
-                self.asr.active_provider.clone(),
-            ));
-        }
-
+        let mut scene_ids = HashSet::new();
         for scene in &self.scenes.definitions {
             if scene.id.trim().is_empty() {
                 return Err(ConfigError::InvalidSceneId(scene.id.clone()));
+            }
+            if !scene_ids.insert(scene.id.as_str()) {
+                return Err(ConfigError::DuplicateSceneId(scene.id.clone()));
             }
             if scene.candidate_count > 32 {
                 return Err(ConfigError::TooManyCandidates {
@@ -95,6 +78,30 @@ impl VinputConfig {
                     candidate_count: scene.candidate_count,
                 });
             }
+        }
+
+        if !scene_ids.contains(self.scenes.active_scene.as_str()) {
+            return Err(ConfigError::UnknownActiveScene(
+                self.scenes.active_scene.clone(),
+            ));
+        }
+
+        let mut provider_ids = HashSet::new();
+        for provider in &self.asr.providers {
+            if provider.id.trim().is_empty() {
+                return Err(ConfigError::InvalidAsrProviderId(provider.id.clone()));
+            }
+            if !provider_ids.insert(provider.id.as_str()) {
+                return Err(ConfigError::DuplicateAsrProviderId(provider.id.clone()));
+            }
+        }
+
+        if !self.asr.providers.is_empty()
+            && !provider_ids.contains(self.asr.active_provider.as_str())
+        {
+            return Err(ConfigError::UnknownActiveAsrProvider(
+                self.asr.active_provider.clone(),
+            ));
         }
 
         Ok(())
@@ -285,6 +292,15 @@ pub enum ConfigError {
     /// Empty scene id.
     #[error("invalid empty scene id")]
     InvalidSceneId(String),
+    /// Duplicate scene id.
+    #[error("duplicate scene id `{0}`")]
+    DuplicateSceneId(String),
+    /// Empty ASR provider id.
+    #[error("invalid empty ASR provider id")]
+    InvalidAsrProviderId(String),
+    /// Duplicate ASR provider id.
+    #[error("duplicate ASR provider id `{0}`")]
+    DuplicateAsrProviderId(String),
     /// Candidate count is above the safety cap.
     #[error("scene `{scene_id}` asks for {candidate_count} candidates, max is 32")]
     TooManyCandidates {
@@ -353,6 +369,30 @@ mod tests {
             .unwrap();
         assert_eq!(raw.default_candidate_source(), CandidateSource::Raw);
         assert_eq!(command.default_candidate_source(), CandidateSource::Llm);
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_scene_ids() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        let duplicate = config.scenes.definitions[0].clone();
+        config.scenes.definitions.push(duplicate);
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::DuplicateSceneId(id) if id == RAW_SCENE_ID
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_asr_provider_ids() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        let duplicate = config.asr.providers[0].clone();
+        config.asr.providers.push(duplicate);
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::DuplicateAsrProviderId(id) if id == "sherpa-onnx"
+        ));
     }
 
     #[test]
