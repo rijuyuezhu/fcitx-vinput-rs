@@ -265,7 +265,7 @@ impl RuntimeState {
 
 fn default_mock_audio_source() -> MockAudioSource {
     let frame = CapturedAudio::anonymous(PcmBuffer::at_default_rate(MOCK_PCM.to_vec()));
-    MockAudioSource::from_frames(vec![frame.clone(), frame.clone(), frame.clone(), frame])
+    MockAudioSource::from_frames(vec![frame; DEFAULT_MOCK_AUDIO_FRAMES])
 }
 
 /// Runtime errors.
@@ -349,6 +349,7 @@ mod tests {
 
     #[test]
     fn default_mock_audio_source_supports_two_roundtrips() {
+        assert_eq!(super::DEFAULT_MOCK_AUDIO_FRAMES, 4);
         let config = VinputConfig::bundled_default().unwrap();
         let mut runtime = RuntimeState::new(config).unwrap();
 
