@@ -83,3 +83,34 @@ fn config_validate_fails_for_duplicate_scene_ids() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("duplicate scene id `raw`"));
 }
+
+#[test]
+fn config_validate_fails_for_empty_registry_mirror() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "registry": {"base_urls": [""]},
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("invalid empty registry base URL"));
+}
