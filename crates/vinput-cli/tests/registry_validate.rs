@@ -148,7 +148,7 @@ fn registry_plan_prints_assets_with_resolved_urls() {
               "id": "m",
               "label": "M",
               "provider": "p",
-              "assets": [{"path":"models/m.tar"}]
+              "assets": [{"path":"models/m.tar","size_bytes":5}]
             }
           ],
           "adapters": [
@@ -175,6 +175,8 @@ fn registry_plan_prints_assets_with_resolved_urls() {
         serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
     assert_eq!(value["ok"], true);
     assert_eq!(value["asset_count"], 2);
+    assert_eq!(value["known_size_bytes"], 5);
+    assert_eq!(value["unknown_size_count"], 1);
     assert_eq!(value["assets"][0]["entry_kind"], "model");
     assert_eq!(value["assets"][0]["entry_id"], "m");
     assert_eq!(value["assets"][0]["path"], "models/m.tar");

@@ -230,9 +230,19 @@ fn print_registry_plan(
         (None, None) => index.planned_assets(&config.registry),
         (Some(_), Some(_)) => unreachable!("clap prevents model and adapter together"),
     };
+    let known_size_bytes: u64 = planned_assets
+        .iter()
+        .filter_map(|asset| asset.size_bytes)
+        .sum();
+    let unknown_size_count = planned_assets
+        .iter()
+        .filter(|asset| asset.size_bytes.is_none())
+        .count();
     let summary = serde_json::json!({
         "ok": true,
         "asset_count": planned_assets.len(),
+        "known_size_bytes": known_size_bytes,
+        "unknown_size_count": unknown_size_count,
         "assets": planned_assets,
     });
     println!("{}", serde_json::to_string_pretty(&summary)?);
