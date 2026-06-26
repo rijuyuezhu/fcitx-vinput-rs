@@ -80,3 +80,29 @@ fn registry_validate_fails_for_unsafe_asset_path() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("unsafe asset path `../bad`"));
 }
+
+#[test]
+fn registry_validate_fails_for_duplicate_model_ids() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"m","label":"M","provider":"p","assets":[]},
+            {"id":"m","label":"M again","provider":"p","assets":[]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("duplicate model id `m`"));
+}
