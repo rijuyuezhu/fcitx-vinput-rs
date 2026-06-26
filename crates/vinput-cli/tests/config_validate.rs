@@ -335,3 +335,19 @@ fn config_validate_fails_for_too_many_candidates() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("scene `raw` asks for 33 candidates"));
 }
+
+#[test]
+fn config_prints_bundled_summary() {
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config"])
+        .output()
+        .expect("run vinput config");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["active_scene"], "__raw__");
+    assert_eq!(value["active_provider"], "sherpa-onnx");
+    assert!(value["registry_mirror_count"].as_u64().unwrap_or_default() > 0);
+}
