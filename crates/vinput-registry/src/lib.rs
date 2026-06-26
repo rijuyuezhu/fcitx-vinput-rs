@@ -4,6 +4,8 @@
 //! yet.  This crate owns the pure data contract for registry indexes so later
 //! code can fetch, validate, and install assets behind tested boundaries.
 
+use std::collections::HashSet;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -35,11 +37,19 @@ impl RegistryIndex {
         if self.version == 0 {
             return Err(RegistryError::InvalidVersion);
         }
+        let mut model_ids = HashSet::new();
         for model in &self.models {
             model.validate()?;
+            if !model_ids.insert(model.id.as_str()) {
+                return Err(RegistryError::DuplicateModelId(model.id.clone()));
+            }
         }
+        let mut adapter_ids = HashSet::new();
         for adapter in &self.adapters {
             adapter.validate()?;
+            if !adapter_ids.insert(adapter.id.as_str()) {
+                return Err(RegistryError::DuplicateAdapterId(adapter.id.clone()));
+            }
         }
         Ok(())
     }
@@ -164,9 +174,15 @@ pub enum RegistryError {
     /// Registry ids must not be empty.
     #[error("registry id must not be empty")]
     EmptyId,
+    /// Duplicate model id.
+    #[error("duplicate model id `{0}`")]
+    DuplicateModelId(String),
     /// Model provider must not be empty.
     #[error("model `{0}` has an empty provider")]
     EmptyProvider(String),
+    /// Duplicate adapter id.
+    #[error("duplicate adapter id `{0}`")]
+    DuplicateAdapterId(String),
     /// Adapter kind must not be empty.
     #[error("adapter `{0}` has an empty kind")]
     EmptyAdapterKind(String),
@@ -277,6 +293,40 @@ mod tests {
                 "https://example.invalid/root/models/sherpa-zh-small.tar.zst".to_owned(),
                 "https://mirror.invalid/root/models/sherpa-zh-small.tar.zst".to_owned(),
             ]
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_model_ids() {
+        let json = r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"m","label":"M","provider":"p","assets":[]},
+            {"id":"m","label":"M again","provider":"p","assets":[]}
+          ]
+        }
+        "#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::DuplicateModelId("m".to_owned())
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_adapter_ids() {
+        let json = r#"
+        {
+          "version": 1,
+          "adapters": [
+            {"id":"a","label":"A","kind":"command","assets":[]},
+            {"id":"a","label":"A again","kind":"command","assets":[]}
+          ]
+        }
+        "#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::DuplicateAdapterId("a".to_owned())
         );
     }
 
