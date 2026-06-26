@@ -2,11 +2,13 @@
 
 use std::time::{Duration, Instant};
 use thiserror::Error;
+use vinput_asr::{AsrBackend, AsrError, MockAsrBackend, RecognitionSession, events_to_payload};
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
 
+const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
+
 /// In-memory runtime state for the first daemon milestone.
-#[derive(Debug, Clone)]
 pub struct RuntimeState {
     config: VinputConfig,
     status: ServiceStatus,
@@ -14,11 +16,22 @@ pub struct RuntimeState {
     current_scene: Option<String>,
     selected_text: Option<String>,
     partial_text: Option<String>,
+    asr_backend: Box<dyn AsrBackend>,
+    active_session: Option<Box<dyn RecognitionSession>>,
 }
 
 impl RuntimeState {
-    /// Builds an idle runtime from validated config.
+    /// Builds an idle runtime from validated config and a deterministic mock ASR backend.
     pub fn new(config: VinputConfig) -> Result<Self, RuntimeError> {
+        let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+        Self::with_asr_backend(config, Box::new(backend))
+    }
+
+    /// Builds an idle runtime from validated config and an injected ASR backend.
+    pub fn with_asr_backend(
+        config: VinputConfig,
+        asr_backend: Box<dyn AsrBackend>,
+    ) -> Result<Self, RuntimeError> {
         config.validate().map_err(RuntimeError::InvalidConfig)?;
         Ok(Self {
             config,
@@ -27,6 +40,8 @@ impl RuntimeState {
             current_scene: None,
             selected_text: None,
             partial_text: None,
+            asr_backend,
+            active_session: None,
         })
     }
 
@@ -44,12 +59,7 @@ impl RuntimeState {
 
     /// Starts normal recording.
     pub fn start_recording(&mut self) -> Result<(), RuntimeError> {
-        self.ensure_idle()?;
-        self.status = ServiceStatus::Recording;
-        self.current_scene = Some(self.config.scenes.active_scene.clone());
-        self.selected_text = None;
-        self.partial_text = Some("mock partial".to_owned());
-        Ok(())
+        self.start_recording_internal(self.config.scenes.active_scene.clone(), None)
     }
 
     /// Starts command-mode recording.
@@ -57,12 +67,10 @@ impl RuntimeState {
         &mut self,
         selected_text: impl Into<String>,
     ) -> Result<(), RuntimeError> {
-        self.ensure_idle()?;
-        self.status = ServiceStatus::Recording;
-        self.current_scene = Some(vinput_config::COMMAND_SCENE_ID.to_owned());
-        self.selected_text = Some(selected_text.into());
-        self.partial_text = Some("mock command partial".to_owned());
-        Ok(())
+        self.start_recording_internal(
+            vinput_config::COMMAND_SCENE_ID.to_owned(),
+            Some(selected_text.into()),
+        )
     }
 
     /// Stops recording and returns a deterministic mock result payload.
@@ -80,22 +88,28 @@ impl RuntimeState {
             .or_else(|| self.current_scene.clone())
             .unwrap_or_else(|| self.config.scenes.active_scene.clone());
 
-        let text = if scene == vinput_config::COMMAND_SCENE_ID {
+        let mut session = self
+            .active_session
+            .take()
+            .ok_or(RuntimeError::MissingAsrSession)?;
+        session.push_audio(MOCK_PCM).map_err(RuntimeError::Asr)?;
+        self.capture_partial_events(&mut *session)?;
+        session.finish().map_err(RuntimeError::Asr)?;
+        let events = session.poll_events().map_err(RuntimeError::Asr)?;
+        let mut payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
+
+        if scene == vinput_config::COMMAND_SCENE_ID {
             let selected = self.selected_text.as_deref().unwrap_or_default();
-            if selected.is_empty() {
-                "mock command result".to_owned()
+            let command_text = if selected.is_empty() {
+                format!("mock command result: {}", payload.commit_text)
             } else {
                 format!("mock command result for: {selected}")
-            }
-        } else {
-            "mock recognition result".to_owned()
-        };
+            };
+            payload = RecognitionPayload::raw(command_text);
+        }
 
-        self.status = ServiceStatus::Idle;
-        self.current_scene = None;
-        self.selected_text = None;
-        self.partial_text = None;
-        Ok(RecognitionPayload::raw(text))
+        self.reset_to_idle();
+        Ok(payload)
     }
 
     /// Returns the latest partial text, if any.
@@ -104,10 +118,15 @@ impl RuntimeState {
         self.partial_text.as_deref()
     }
 
-    /// Returns a mock ASR backend state derived from config.
+    /// Returns a mock ASR backend state derived from config and backend descriptor.
     #[must_use]
     pub fn asr_backend_state(&self) -> AsrBackendState {
-        AsrBackendState::ready(self.config.asr.active_provider.clone(), "mock-model")
+        let descriptor = self.asr_backend.describe();
+        let mut state = AsrBackendState::ready(descriptor.provider_id, descriptor.model_id);
+        state
+            .target_provider_id
+            .clone_from(&self.config.asr.active_provider);
+        state
     }
 
     /// Reloads the ASR backend. The mock implementation only validates config.
@@ -116,6 +135,45 @@ impl RuntimeState {
             .validate()
             .map_err(RuntimeError::InvalidConfig)?;
         Ok(self.asr_backend_state())
+    }
+
+    fn start_recording_internal(
+        &mut self,
+        scene_id: String,
+        selected_text: Option<String>,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_idle()?;
+        let mut session = self
+            .asr_backend
+            .create_session()
+            .map_err(RuntimeError::Asr)?;
+        session.push_audio(MOCK_PCM).map_err(RuntimeError::Asr)?;
+        self.capture_partial_events(&mut *session)?;
+        self.status = ServiceStatus::Recording;
+        self.current_scene = Some(scene_id);
+        self.selected_text = selected_text;
+        self.active_session = Some(session);
+        Ok(())
+    }
+
+    fn capture_partial_events(
+        &mut self,
+        session: &mut dyn RecognitionSession,
+    ) -> Result<(), RuntimeError> {
+        for event in session.poll_events().map_err(RuntimeError::Asr)? {
+            if let vinput_asr::RecognitionEvent::PartialText { text } = event {
+                self.partial_text = Some(text);
+            }
+        }
+        Ok(())
+    }
+
+    fn reset_to_idle(&mut self) {
+        self.status = ServiceStatus::Idle;
+        self.current_scene = None;
+        self.selected_text = None;
+        self.partial_text = None;
+        self.active_session = None;
     }
 
     fn ensure_idle(&self) -> Result<(), RuntimeError> {
@@ -139,11 +197,18 @@ pub enum RuntimeError {
     /// Stop was requested while not recording.
     #[error("runtime is not recording: {0}")]
     NotRecording(ServiceStatus),
+    /// Recording reached stop without an active ASR session.
+    #[error("runtime is missing an active ASR session")]
+    MissingAsrSession,
+    /// ASR backend/session failed.
+    #[error("asr error: {0}")]
+    Asr(#[source] AsrError),
 }
 
 #[cfg(test)]
 mod tests {
     use super::RuntimeState;
+    use vinput_asr::MockAsrBackend;
     use vinput_config::VinputConfig;
     use vinput_protocol::ServiceStatus;
 
@@ -157,6 +222,17 @@ mod tests {
         let payload = runtime.stop_recording(None).unwrap();
         assert_eq!(payload.commit_text, "mock recognition result");
         assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
+    fn injected_asr_backend_drives_normal_result() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let backend = MockAsrBackend::streaming("listening", "custom final");
+        let mut runtime = RuntimeState::with_asr_backend(config, Box::new(backend)).unwrap();
+        runtime.start_recording().unwrap();
+        assert_eq!(runtime.partial_text(), Some("listening"));
+        let payload = runtime.stop_recording(None).unwrap();
+        assert_eq!(payload.commit_text, "custom final");
     }
 
     #[test]

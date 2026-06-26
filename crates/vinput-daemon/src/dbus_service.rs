@@ -9,7 +9,7 @@ use zbus::{Connection, fdo};
 use crate::{RuntimeError, RuntimeState};
 
 /// Thread-safe D-Bus facade over the daemon runtime.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VinputDbusService {
     runtime: Arc<Mutex<RuntimeState>>,
 }
@@ -199,6 +199,7 @@ mod tests {
         let state: AsrBackendState =
             serde_json::from_str(&service.get_asr_backend_state().await.unwrap()).unwrap();
         assert!(state.has_effective_backend);
-        assert_eq!(state.effective_provider_id, "sherpa-onnx");
+        assert_eq!(state.target_provider_id, "sherpa-onnx");
+        assert_eq!(state.effective_provider_id, "mock");
     }
 }

@@ -971,6 +971,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
+name = "vinput-asr"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "thiserror",
+ "vinput-protocol",
+]
+
+[[package]]
 name = "vinput-cli"
 version = "0.1.0"
 dependencies = [
@@ -1005,6 +1015,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "vinput-asr",
  "vinput-config",
  "vinput-protocol",
  "zbus",
