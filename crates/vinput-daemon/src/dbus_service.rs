@@ -265,6 +265,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dbus_facade_exercises_timeout_mock_flow() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.active_scene = "timeout-scene".to_owned();
+        config
+            .scenes
+            .definitions
+            .push(vinput_config::SceneDefinition {
+                id: "timeout-scene".to_owned(),
+                label: "Timeout scene".to_owned(),
+                prompt: None,
+                provider_id: None,
+                model: None,
+                candidate_count: 0,
+                timeout_ms: Some(2500),
+                context_lines: 0,
+            });
+        let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
+
+        assert_eq!(
+            service.start_recording_state().await.unwrap().0,
+            "recording"
+        );
+        let payload =
+            RecognitionPayload::from_json_str(&service.stop_recording_payload("").await.unwrap().0)
+                .unwrap();
+        assert_eq!(
+            payload.commit_text,
+            "mock postprocess result: mock recognition result"
+        );
+    }
+
+    #[tokio::test]
     async fn dbus_facade_exercises_command_mock_flow() {
         let service = service();
         assert_eq!(
