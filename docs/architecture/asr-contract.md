@@ -9,39 +9,87 @@ This milestone introduces `vinput-asr`, the first backend seam after the D-Bus b
 - `AudioDeliveryMode`: buffered vs chunked delivery.
 - `BackendCapabilities`: partial-result support and delivery mode.
 - `BackendDescriptor`: provider/model/label/capability identity.
+- `RecognitionContext`: language, scene id, command-mode flag, and selected text.
 - `RecognitionEvent`: partial text, final text, backend error, and completed markers.
 - `RecognitionSession`: mutable session trait for push/finish/cancel/poll.
 - `AsrBackend`: backend factory trait.
 - `MockAsrBackend`: deterministic backend used by daemon runtime and tests.
+- `CommandAsrSpec`: parsed command-provider executable metadata from config.
+- `CommandAsrRequest`: buffered JSON request passed to command helpers.
+- `CommandAsrResponse`: JSON response decoded from command helpers.
+- `CommandAsrBackend`: buffered command backend that delegates to a runner on finish.
+- `ProcessCommandAsrRunner`: process-backed runner using stdin/stdout JSON.
 - `events_to_payload`: conversion from final ASR events to the legacy recognition payload JSON model.
 
-This mirrors the original C++ recognition contract without bringing over concrete sherpa-onnx or command-streaming implementation details yet.
+This mirrors the original C++ recognition contract while keeping concrete backends behind Rust trait boundaries. The command backend is now executable through a small JSON helper contract; sherpa-onnx remains a later feature-gated backend.
 
 ## Daemon integration
 
-`RuntimeState` now owns a boxed `AsrBackend` and an active `RecognitionSession` while recording. The default daemon still uses `MockAsrBackend`, but tests can inject a custom mock backend to prove the runtime is driven by the ASR trait boundary rather than hardcoded strings.
+`RuntimeState` now owns a boxed `AsrBackend` and an active `RecognitionSession` while recording. The default daemon still uses `MockAsrBackend`, but tests can inject a custom mock backend or build the active config-selected backend to prove the runtime is driven by the ASR trait boundary rather than hardcoded strings.
 
-The current mock flow is:
+The current runtime flow is:
 
 ```text
 StartRecording
   -> create_session
-  -> push mock PCM
+  -> push mock/processed PCM
   -> poll partial events
 StopRecording
-  -> push mock PCM
+  -> push mock/processed PCM
   -> finish session
   -> poll final events
   -> events_to_payload
+  -> text finishing
   -> reset Idle
 ```
 
-Command mode still performs a placeholder transform after ASR. That is intentional; command-scene prompt and post-processing should move to `vinput-postprocess` later.
+Command mode still carries selected text in `RecognitionContext`; command-scene post-processing can move to `vinput-postprocess` later without changing the ASR trait boundary.
+
+## Command helper JSON contract
+
+A command ASR provider is configured with `type = "command"`, a `command`, optional `args`, `env`, `model`, `hotwords_file`, and `timeout_ms`. At runtime the process runner:
+
+1. spawns `command` with `args` and `env`,
+2. writes one `CommandAsrRequest` JSON object to stdin,
+3. closes stdin,
+4. waits for stdout within `timeout_ms` when configured,
+5. decodes one `CommandAsrResponse` JSON object from stdout.
+
+The request shape is intentionally plain JSON so shell/Python/Rust helpers can implement it without a binary protocol:
+
+```json
+{
+  "provider_id": "cmd",
+  "model_id": "paraformer",
+  "hotwords_file": "/tmp/hotwords.txt",
+  "timeout_ms": 2500,
+  "context": {
+    "language": "zh",
+    "scene_id": "__command__",
+    "command_mode": true,
+    "selected_text": "selected text"
+  },
+  "samples": [10, -20, 30]
+}
+```
+
+A successful helper can return final text, and optionally a partial text:
+
+```json
+{"partial_text":"listening","text":"final text"}
+```
+
+A helper can also return an ASR-level error without a non-zero process exit:
+
+```json
+{"error":"asr failed"}
+```
+
+The deprecated `failure` response key is accepted as an alias for `error` while the contract is still settling. Non-zero exits, invalid JSON, missing final text, and timeout paths are surfaced as backend errors.
 
 ## Next ASR steps
 
-1. Add a richer `RecognitionRequest`/`RecognitionContext` type for language, scene, command mode, selected text, and model options.
-2. Add `vinput-audio` for real PCM buffers, sample rate metadata, gain, silence detection, and normalization.
-3. Add a command backend behind `AsrBackend` with fixture tests.
-4. Add a feature-gated sherpa-onnx backend only after the trait and mock tests are stable.
-5. Wire streaming partial events to `RecognitionPartial` D-Bus signals instead of only storing the latest partial text.
+1. Add real audio metadata to the command request once `vinput-audio` carries sample rate/channel information beyond the current mono i16 buffer.
+2. Wire streaming partial events to `RecognitionPartial` D-Bus signals instead of only storing the latest partial text.
+3. Move command-scene prompt and post-processing policy to `vinput-postprocess` while preserving `RecognitionContext` as the frontend/runtime seam.
+4. Add a feature-gated sherpa-onnx backend only after the command and mock contracts stay stable.
