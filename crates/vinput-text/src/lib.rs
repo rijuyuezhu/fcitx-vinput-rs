@@ -34,6 +34,8 @@ pub struct PromptContext<'a> {
     pub candidate_count: u8,
     /// Number of previous context lines requested by the scene.
     pub context_lines: u8,
+    /// Scene timeout in milliseconds, if configured.
+    pub timeout_ms: Option<u64>,
 }
 
 impl<'a> PromptContext<'a> {
@@ -49,6 +51,7 @@ impl<'a> PromptContext<'a> {
             model: request.scene.model.as_deref().unwrap_or_default(),
             candidate_count: request.scene.candidate_count,
             context_lines: request.scene.context_lines,
+            timeout_ms: request.scene.timeout_ms,
         }
     }
 }
@@ -71,6 +74,10 @@ impl PromptTemplate {
     /// Renders supported placeholders using prompt context.
     #[must_use]
     pub fn render(&self, context: &PromptContext<'_>) -> String {
+        let timeout_ms = context
+            .timeout_ms
+            .map(|timeout_ms| timeout_ms.to_string())
+            .unwrap_or_default();
         self.template
             .replace("{raw_text}", context.raw_text)
             .replace("{selected_text}", context.selected_text)
@@ -80,6 +87,7 @@ impl PromptTemplate {
             .replace("{model}", context.model)
             .replace("{candidate_count}", &context.candidate_count.to_string())
             .replace("{context_lines}", &context.context_lines.to_string())
+            .replace("{timeout_ms}", &timeout_ms)
     }
 
     /// Renders supported placeholders directly from a text request.
@@ -228,6 +236,7 @@ mod tests {
             provider_id: Some("p".to_owned()),
             model: Some("m".to_owned()),
             context_lines: 3,
+            timeout_ms: Some(2500),
             ..scene("rewrite", 1)
         };
         let request = TextRequest {
@@ -237,17 +246,17 @@ mod tests {
         };
         let context = PromptContext::from_request(&request);
         let rendered = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; candidates={candidate_count}; context={context_lines}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; candidates={candidate_count}; context={context_lines}; timeout={timeout_ms}",
         )
         .render(&context);
         let rendered_from_request = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; candidates={candidate_count}; context={context_lines}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; candidates={candidate_count}; context={context_lines}; timeout={timeout_ms}",
         )
         .render_request(&request);
         assert_eq!(rendered_from_request, rendered);
         assert_eq!(
             rendered,
-            "scene=rewrite; prompt=polish; raw=raw; selected=selected; provider=p; model=m; candidates=1; context=3"
+            "scene=rewrite; prompt=polish; raw=raw; selected=selected; provider=p; model=m; candidates=1; context=3; timeout=2500"
         );
     }
 
