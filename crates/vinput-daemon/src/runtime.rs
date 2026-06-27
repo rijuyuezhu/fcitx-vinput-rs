@@ -3,7 +3,8 @@
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use vinput_asr::{
-    AsrBackend, AsrError, MockAsrBackend, RecognitionContext, RecognitionSession, events_to_payload,
+    AsrBackend, AsrBackendFactory, AsrError, MockAsrBackend, RecognitionContext,
+    RecognitionSession, events_to_payload,
 };
 use vinput_audio::{
     AudioError, AudioProcessingOptions, AudioSource, CapturedAudio, MockAudioSource, PcmBuffer,
@@ -35,6 +36,12 @@ impl RuntimeState {
     pub fn new(config: VinputConfig) -> Result<Self, RuntimeError> {
         let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
         Self::with_asr_backend(config, Box::new(backend))
+    }
+
+    /// Builds an idle runtime from config-selected ASR provider.
+    pub fn with_configured_asr(config: VinputConfig) -> Result<Self, RuntimeError> {
+        let backend = AsrBackendFactory::build_active(&config.asr).map_err(RuntimeError::Asr)?;
+        Self::with_asr_backend(config, backend)
     }
 
     /// Builds an idle runtime from validated config and an injected ASR backend.
