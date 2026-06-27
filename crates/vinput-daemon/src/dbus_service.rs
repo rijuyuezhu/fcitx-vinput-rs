@@ -241,7 +241,7 @@ impl VinputDbusService {
 mod tests {
     use super::VinputDbusService;
     use crate::RuntimeState;
-    use vinput_config::VinputConfig;
+    use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
     use vinput_protocol::{AsrBackendState, RecognitionPayload};
 
     fn service() -> VinputDbusService {
@@ -282,6 +282,30 @@ mod tests {
             payload.commit_text,
             "mock command result for: selected text"
         );
+    }
+
+    #[tokio::test]
+    async fn dbus_facade_preserves_remote_asr_endpoint() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "remote".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "remote".to_owned(),
+            kind: AsrProviderKind::Remote,
+            timeout_ms: None,
+            model: Some("cloud".to_owned()),
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: Some("https://asr.example.test".to_owned()),
+        });
+        let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
+
+        let state: AsrBackendState =
+            serde_json::from_str(&service.get_asr_backend_state().await.unwrap()).unwrap();
+        assert_eq!(state.target_provider_id, "remote");
+        assert_eq!(state.target_model_id, "cloud");
+        assert_eq!(state.remote_endpoints, ["https://asr.example.test"]);
     }
 
     #[tokio::test]
