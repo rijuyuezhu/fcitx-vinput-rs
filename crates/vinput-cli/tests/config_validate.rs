@@ -547,6 +547,38 @@ fn config_validate_fails_for_empty_scene_prompt() {
 }
 
 #[test]
+fn config_validate_fails_for_empty_llm_adapter_id() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "llm": {
+            "adapters": [{"id":"   ","command":"vinput-adapter"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("invalid empty LLM adapter id"));
+}
+#[test]
 fn config_validate_fails_for_empty_llm_adapter_env_key() {
     let path = write_temp_config(
         r#"
