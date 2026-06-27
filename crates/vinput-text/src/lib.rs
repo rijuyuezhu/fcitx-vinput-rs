@@ -26,6 +26,12 @@ pub struct PromptContext<'a> {
     pub scene_id: &'a str,
     /// Scene prompt text, if configured.
     pub scene_prompt: &'a str,
+    /// Scene provider id, if configured.
+    pub provider_id: &'a str,
+    /// Scene model id, if configured.
+    pub model: &'a str,
+    /// Number of previous context lines requested by the scene.
+    pub context_lines: u8,
 }
 
 impl<'a> PromptContext<'a> {
@@ -37,6 +43,9 @@ impl<'a> PromptContext<'a> {
             selected_text: request.selected_text.unwrap_or_default(),
             scene_id: &request.scene.id,
             scene_prompt: request.scene.prompt.as_deref().unwrap_or_default(),
+            provider_id: request.scene.provider_id.as_deref().unwrap_or_default(),
+            model: request.scene.model.as_deref().unwrap_or_default(),
+            context_lines: request.scene.context_lines,
         }
     }
 }
@@ -64,6 +73,9 @@ impl PromptTemplate {
             .replace("{selected_text}", context.selected_text)
             .replace("{scene_id}", context.scene_id)
             .replace("{scene_prompt}", context.scene_prompt)
+            .replace("{provider_id}", context.provider_id)
+            .replace("{model}", context.model)
+            .replace("{context_lines}", &context.context_lines.to_string())
     }
 
     /// Renders supported placeholders directly from a text request.
@@ -209,6 +221,7 @@ mod tests {
     fn prompt_template_replaces_supported_fields() {
         let templated = SceneDefinition {
             prompt: Some("polish".to_owned()),
+            context_lines: 3,
             ..scene("rewrite", 1)
         };
         let request = TextRequest {
@@ -218,17 +231,17 @@ mod tests {
         };
         let context = PromptContext::from_request(&request);
         let rendered = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; context={context_lines}",
         )
         .render(&context);
         let rendered_from_request = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; context={context_lines}",
         )
         .render_request(&request);
         assert_eq!(rendered_from_request, rendered);
         assert_eq!(
             rendered,
-            "scene=rewrite; prompt=polish; raw=raw; selected=selected"
+            "scene=rewrite; prompt=polish; raw=raw; selected=selected; context=3"
         );
     }
 
