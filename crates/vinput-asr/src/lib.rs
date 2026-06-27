@@ -1387,6 +1387,37 @@ mod tests {
     }
 
     #[test]
+    fn process_command_asr_runner_maps_failure_response() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"failure":"asr failed"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("process runner should create a buffering session");
+        session.finish().unwrap();
+        let events = session.poll_events().unwrap();
+        assert_eq!(
+            events_to_payload(&events).unwrap().commit_text,
+            "asr failed"
+        );
+    }
+
+    #[test]
     fn command_asr_backend_runner_is_not_implemented_yet() {
         let backend = CommandAsrBackend::new(CommandAsrSpec {
             provider_id: "cmd".to_owned(),
