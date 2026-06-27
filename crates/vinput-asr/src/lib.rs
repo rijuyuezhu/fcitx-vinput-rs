@@ -636,6 +636,25 @@ mod tests {
     }
 
     #[test]
+    fn backend_factory_command_spec_uses_same_parser() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: Some("helper".to_owned()),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let spec = AsrBackendFactory::command_spec(&provider).unwrap();
+        assert_eq!(spec.provider_id, "cmd");
+        assert_eq!(spec.command, "helper");
+    }
+
+    #[test]
     fn command_asr_spec_rejects_missing_command() {
         let provider = AsrProviderConfig {
             id: "cmd".to_owned(),
