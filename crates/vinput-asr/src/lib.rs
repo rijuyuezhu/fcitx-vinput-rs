@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
-use vinput_protocol::{CandidateSource, RecognitionPayload};
+use vinput_protocol::{AsrBackendState, CandidateSource, RecognitionPayload};
 
 /// How audio should be delivered to an ASR session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -269,6 +269,35 @@ impl AsrBackendFactory {
         }
         unsupported_provider(&provider.id, &provider.kind)
     }
+
+    /// Builds a user-facing ASR state snapshot from config and load outcome.
+    #[must_use]
+    pub fn state_for_config(config: &AsrConfig) -> AsrBackendState {
+        let target_model_id = target_model_id(config);
+        match Self::build_active(config) {
+            Ok(backend) => {
+                let descriptor = backend.describe();
+                let mut state = AsrBackendState::ready(descriptor.provider_id, descriptor.model_id);
+                state.target_provider_id.clone_from(&config.active_provider);
+                state.target_model_id = target_model_id;
+                state
+            }
+            Err(error) => AsrBackendState::unavailable(
+                config.active_provider.clone(),
+                target_model_id,
+                error.to_string(),
+            ),
+        }
+    }
+}
+
+fn target_model_id(config: &AsrConfig) -> String {
+    config
+        .providers
+        .iter()
+        .find(|provider| provider.id == config.active_provider)
+        .and_then(|provider| provider.model.clone())
+        .unwrap_or_default()
 }
 
 fn unsupported_provider(
@@ -552,5 +581,30 @@ mod tests {
             AsrError::UnsupportedProviderKind { provider_id, kind }
                 if provider_id == "sherpa-onnx" && kind == "local"
         ));
+    }
+
+    #[test]
+    fn backend_factory_state_reports_unavailable_provider() {
+        let config = AsrConfig {
+            active_provider: "sherpa-onnx".to_owned(),
+            providers: vec![AsrProviderConfig {
+                id: "sherpa-onnx".to_owned(),
+                kind: AsrProviderKind::Local,
+                timeout_ms: None,
+                model: Some("paraformer".to_owned()),
+                hotwords_file: None,
+                command: None,
+                args: Vec::new(),
+                env: std::collections::HashMap::default(),
+                endpoint: None,
+            }],
+            ..AsrConfig::default()
+        };
+
+        let state = AsrBackendFactory::state_for_config(&config);
+        assert_eq!(state.target_provider_id, "sherpa-onnx");
+        assert_eq!(state.target_model_id, "paraformer");
+        assert!(!state.has_effective_backend);
+        assert!(state.last_error.contains("not implemented"));
     }
 }
