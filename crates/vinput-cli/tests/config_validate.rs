@@ -1283,6 +1283,40 @@ fn config_validate_fails_for_zero_asr_provider_timeout() {
     assert!(stderr.contains("ASR provider `p` has invalid timeout_ms 0"));
 }
 #[test]
+fn config_validate_accepts_command_asr_provider() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "cmd",
+            "providers": [{
+              "id":"cmd",
+              "type":"command",
+              "command":"vinput-asr-command",
+              "args":["--json"],
+              "env":{"ASR_MODE":"test"}
+            }]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+}
+
+#[test]
 fn config_validate_fails_for_command_provider_without_command() {
     let path = write_temp_config(
         r#"
