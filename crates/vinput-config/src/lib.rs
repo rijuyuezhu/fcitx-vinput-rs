@@ -1011,6 +1011,9 @@ mod tests {
                 "type": "command",
                 "command": "vinput-asr-helper",
                 "args": ["--json"],
+                "model": "paraformer",
+                "hotwords_file": "/tmp/hotwords.txt",
+                "timeout_ms": 1500,
                 "env": { "RUST_LOG": "info" }
               }
             ]
@@ -1051,6 +1054,9 @@ mod tests {
         let asr = &config.asr.providers[0];
         assert_eq!(asr.command.as_deref(), Some("vinput-asr-helper"));
         assert_eq!(asr.args, ["--json"]);
+        assert_eq!(asr.model.as_deref(), Some("paraformer"));
+        assert_eq!(asr.hotwords_file.as_deref(), Some("/tmp/hotwords.txt"));
+        assert_eq!(asr.timeout_ms, Some(1500));
         assert_eq!(asr.env.get("RUST_LOG").map(String::as_str), Some("info"));
 
         let provider = &config.llm.providers[0];
