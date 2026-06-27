@@ -181,6 +181,18 @@ mod tests {
     }
 
     #[test]
+    fn command_scene_without_selected_text_uses_raw_text_placeholder() {
+        let command = scene(COMMAND_SCENE_ID, 1);
+        let payload = TextFinisher::finish(&TextRequest {
+            raw_text: "replace it",
+            scene: &command,
+            selected_text: None,
+        })
+        .unwrap();
+        assert_eq!(payload.commit_text, "mock command result: replace it");
+    }
+
+    #[test]
     fn candidate_scene_requires_future_adapter() {
         let fancy = scene("rewrite", 2);
         let error = TextFinisher::finish(&TextRequest {
