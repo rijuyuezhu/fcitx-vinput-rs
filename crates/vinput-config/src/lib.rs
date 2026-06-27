@@ -4,7 +4,11 @@
 //! and focuses on typed deserialization plus lightweight validation. Later
 //! migrations can add versioned upgrades here without touching daemon code.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -43,6 +47,16 @@ impl VinputConfig {
     /// Parses config from JSON.
     pub fn from_json_str(input: &str) -> Result<Self, ConfigError> {
         Ok(serde_json::from_str::<Self>(input)?.normalized())
+    }
+
+    /// Reads and parses config from a JSON file.
+    pub fn from_json_file(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        let path = path.as_ref();
+        let input = fs::read_to_string(path).map_err(|source| ConfigError::ReadFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Self::from_json_str(&input)
     }
 
     /// Parses the bundled upstream-compatible default config.
@@ -534,6 +548,15 @@ pub enum ConfigError {
     /// JSON parsing failed.
     #[error("invalid config JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// Reading a config file failed.
+    #[error("failed to read config file `{}`: {source}", path.display())]
+    ReadFile {
+        /// Config file path.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: std::io::Error,
+    },
     /// Registry base URL is empty.
     #[error("invalid empty registry base URL")]
     InvalidRegistryBaseUrl(String),
@@ -668,6 +691,35 @@ fn default_json_object() -> serde_json::Value {
 mod tests {
     use super::{AsrProviderKind, COMMAND_SCENE_ID, RAW_SCENE_ID, VinputConfig};
     use vinput_protocol::CandidateSource;
+
+    #[test]
+    fn config_file_parses_and_normalizes() {
+        let path = std::env::temp_dir().join(format!(
+            "vinput-config-test-{}-file.json",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r#"{
+              "version": 1,
+              "asr": {
+                "active_provider": "p",
+                "providers": [{"id":"p","type":"local"}]
+              },
+              "scenes": {
+                "active_scene": "raw",
+                "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let config = VinputConfig::from_json_file(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(config.version, 1);
+        assert_eq!(config.asr.active_provider, "p");
+        config.validate().unwrap();
+    }
 
     #[test]
     fn bundled_default_parses_and_validates() {
