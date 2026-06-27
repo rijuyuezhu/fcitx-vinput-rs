@@ -4,7 +4,7 @@
 //! and focuses on typed deserialization plus lightweight validation. Later
 //! migrations can add versioned upgrades here without touching daemon code.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -114,6 +114,26 @@ impl VinputConfig {
             if !provider_ids.insert(provider.id.as_str()) {
                 return Err(ConfigError::DuplicateAsrProviderId(provider.id.clone()));
             }
+            if provider.kind == AsrProviderKind::Command
+                && provider
+                    .command
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .is_empty()
+            {
+                return Err(ConfigError::InvalidCommandAsrProviderCommand(
+                    provider.id.clone(),
+                ));
+            }
+            for key in provider.env.keys() {
+                if key.trim().is_empty() {
+                    return Err(ConfigError::InvalidProviderEnvKey {
+                        provider_id: provider.id.clone(),
+                        key: key.clone(),
+                    });
+                }
+            }
         }
 
         if self.asr.active_provider.trim().is_empty() {
@@ -126,6 +146,40 @@ impl VinputConfig {
             return Err(ConfigError::UnknownActiveAsrProvider(
                 self.asr.active_provider.clone(),
             ));
+        }
+
+        let mut llm_provider_ids = HashSet::new();
+        for provider in &self.llm.providers {
+            if provider.id.trim().is_empty() {
+                return Err(ConfigError::InvalidLlmProviderId(provider.id.clone()));
+            }
+            if !llm_provider_ids.insert(provider.id.as_str()) {
+                return Err(ConfigError::DuplicateLlmProviderId(provider.id.clone()));
+            }
+            if provider.base_url.trim().is_empty() {
+                return Err(ConfigError::InvalidLlmProviderBaseUrl(provider.id.clone()));
+            }
+        }
+
+        let mut adapter_ids = HashSet::new();
+        for adapter in &self.llm.adapters {
+            if adapter.id.trim().is_empty() {
+                return Err(ConfigError::InvalidLlmAdapterId(adapter.id.clone()));
+            }
+            if !adapter_ids.insert(adapter.id.as_str()) {
+                return Err(ConfigError::DuplicateLlmAdapterId(adapter.id.clone()));
+            }
+            if adapter.command.trim().is_empty() {
+                return Err(ConfigError::InvalidLlmAdapterCommand(adapter.id.clone()));
+            }
+            for key in adapter.env.keys() {
+                if key.trim().is_empty() {
+                    return Err(ConfigError::InvalidLlmAdapterEnvKey {
+                        adapter_id: adapter.id.clone(),
+                        key: key.clone(),
+                    });
+                }
+            }
         }
 
         Ok(())
@@ -274,17 +328,75 @@ pub struct AsrProviderConfig {
     /// Optional model id selected for this provider.
     #[serde(default)]
     pub model: Option<String>,
+    /// Optional hotwords file for local ASR backends.
+    #[serde(default)]
+    pub hotwords_file: Option<String>,
+    /// External command used by command ASR providers.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// Arguments passed to the external command ASR provider.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment variables passed to the external command ASR provider.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    /// Optional endpoint label or URL for remote ASR providers.
+    #[serde(default)]
+    pub endpoint: Option<String>,
 }
 
-/// LLM provider/adapter config. Detailed typing will move here during migration.
+/// LLM provider/adapter config.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 pub struct LlmConfig {
-    /// Provider entries preserved as JSON until the original shape is fully annotated.
+    /// Provider entries used by scene and command post-processing.
     #[serde(default)]
-    pub providers: Vec<serde_json::Value>,
-    /// Adapter entries preserved as JSON until the original shape is fully annotated.
+    pub providers: Vec<LlmProviderConfig>,
+    /// Adapter process entries used by local/remote text adapters.
     #[serde(default)]
-    pub adapters: Vec<serde_json::Value>,
+    pub adapters: Vec<LlmAdapterConfig>,
+}
+
+/// OpenAI-compatible or adapter-backed LLM provider config.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LlmProviderConfig {
+    /// Stable provider id.
+    pub id: String,
+    /// Base URL for OpenAI-compatible providers.
+    #[serde(default)]
+    pub base_url: String,
+    /// API key or environment-reference expression.
+    #[serde(default)]
+    pub api_key: String,
+    /// Optional default model name.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Extra JSON body merged into provider requests.
+    #[serde(default = "default_json_object")]
+    pub extra_body: serde_json::Value,
+    /// Forward-compatible unknown provider fields.
+    #[serde(default, flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+/// External text adapter process config.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LlmAdapterConfig {
+    /// Stable adapter id.
+    pub id: String,
+    /// Adapter executable path or command name.
+    pub command: String,
+    /// Arguments passed to the adapter process.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment variables passed to the adapter process.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    /// Optional working directory for the adapter process.
+    #[serde(default)]
+    pub working_dir: Option<String>,
+    /// Forward-compatible unknown adapter fields.
+    #[serde(default, flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Scene collection.
@@ -376,6 +488,43 @@ pub enum ConfigError {
     /// Duplicate ASR provider id.
     #[error("duplicate ASR provider id `{0}`")]
     DuplicateAsrProviderId(String),
+    /// Command ASR provider requires a command.
+    #[error("command ASR provider `{0}` must configure a command")]
+    InvalidCommandAsrProviderCommand(String),
+    /// Provider environment contains an empty key.
+    #[error("provider `{provider_id}` has an invalid environment key `{key}`")]
+    InvalidProviderEnvKey {
+        /// Provider id.
+        provider_id: String,
+        /// Invalid environment key.
+        key: String,
+    },
+    /// Empty LLM provider id.
+    #[error("invalid empty LLM provider id")]
+    InvalidLlmProviderId(String),
+    /// Duplicate LLM provider id.
+    #[error("duplicate LLM provider id `{0}`")]
+    DuplicateLlmProviderId(String),
+    /// LLM provider base URL is empty.
+    #[error("LLM provider `{0}` must configure a base URL")]
+    InvalidLlmProviderBaseUrl(String),
+    /// Empty LLM adapter id.
+    #[error("invalid empty LLM adapter id")]
+    InvalidLlmAdapterId(String),
+    /// Duplicate LLM adapter id.
+    #[error("duplicate LLM adapter id `{0}`")]
+    DuplicateLlmAdapterId(String),
+    /// LLM adapter command is empty.
+    #[error("LLM adapter `{0}` must configure a command")]
+    InvalidLlmAdapterCommand(String),
+    /// LLM adapter environment contains an empty key.
+    #[error("LLM adapter `{adapter_id}` has an invalid environment key `{key}`")]
+    InvalidLlmAdapterEnvKey {
+        /// Adapter id.
+        adapter_id: String,
+        /// Invalid environment key.
+        key: String,
+    },
     /// Candidate count is above the safety cap.
     #[error("scene `{scene_id}` asks for {candidate_count} candidates, max is 32")]
     TooManyCandidates {
@@ -408,6 +557,10 @@ const fn default_true() -> bool {
 
 const fn default_input_gain() -> f32 {
     1.0
+}
+
+fn default_json_object() -> serde_json::Value {
+    serde_json::json!({})
 }
 
 #[cfg(test)]
@@ -554,5 +707,131 @@ mod tests {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.scenes.active_scene = "missing".to_owned();
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn typed_llm_and_command_provider_config_parses() {
+        let input = r#"
+        {
+          "version": 1,
+          "global": { "default_language": "zh", "capture_device": "default" },
+          "asr": {
+            "active_provider": "cmd",
+            "providers": [
+              {
+                "id": "cmd",
+                "type": "command",
+                "command": "vinput-asr-helper",
+                "args": ["--json"],
+                "env": { "RUST_LOG": "info" }
+              }
+            ]
+          },
+          "llm": {
+            "providers": [
+              {
+                "id": "openai",
+                "base_url": "https://example.invalid/v1",
+                "api_key": "env:OPENAI_API_KEY",
+                "model": "gpt-test",
+                "extra_body": { "temperature": 0.2 },
+                "future_field": "preserved"
+              }
+            ],
+            "adapters": [
+              {
+                "id": "local-adapter",
+                "command": "vinput-adapter",
+                "args": ["serve"],
+                "env": { "ADAPTER_MODE": "test" },
+                "working_dir": "/tmp"
+              }
+            ]
+          },
+          "scenes": {
+            "active_scene": "__raw__",
+            "definitions": [
+              { "id": "__raw__", "label": "Raw", "candidate_count": 0 },
+              { "id": "__command__", "label": "Command", "candidate_count": 1 }
+            ]
+          }
+        }
+        "#;
+
+        let config = VinputConfig::from_json_str(input).unwrap();
+        config.validate().unwrap();
+        let asr = &config.asr.providers[0];
+        assert_eq!(asr.command.as_deref(), Some("vinput-asr-helper"));
+        assert_eq!(asr.args, ["--json"]);
+        assert_eq!(asr.env.get("RUST_LOG").map(String::as_str), Some("info"));
+
+        let provider = &config.llm.providers[0];
+        assert_eq!(provider.id, "openai");
+        assert_eq!(provider.model.as_deref(), Some("gpt-test"));
+        assert_eq!(provider.extra_body["temperature"], serde_json::json!(0.2));
+        assert_eq!(
+            provider.extra["future_field"],
+            serde_json::json!("preserved")
+        );
+
+        let adapter = &config.llm.adapters[0];
+        assert_eq!(adapter.command, "vinput-adapter");
+        assert_eq!(adapter.working_dir.as_deref(), Some("/tmp"));
+    }
+
+    #[test]
+    fn validation_rejects_command_asr_without_command() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(super::AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: Default::default(),
+            endpoint: None,
+        });
+
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidCommandAsrProviderCommand(id) if id == "cmd"
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_invalid_llm_entries() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.providers.push(super::LlmProviderConfig {
+            id: "llm".to_owned(),
+            base_url: "  ".to_owned(),
+            api_key: String::new(),
+            model: None,
+            extra_body: serde_json::json!({}),
+            extra: Default::default(),
+        });
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidLlmProviderBaseUrl(id) if id == "llm"
+        ));
+
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(super::LlmAdapterConfig {
+            id: "adapter".to_owned(),
+            command: "  ".to_owned(),
+            args: Vec::new(),
+            env: Default::default(),
+            working_dir: None,
+            extra: Default::default(),
+        });
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidLlmAdapterCommand(id) if id == "adapter"
+        ));
     }
 }
