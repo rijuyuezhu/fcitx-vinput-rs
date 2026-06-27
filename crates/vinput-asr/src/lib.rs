@@ -375,15 +375,15 @@ impl CommandAsrResponse {
     /// Converts a helper response into recognition events.
     pub fn into_events(self) -> Result<Vec<RecognitionEvent>, AsrError> {
         let mut events = Vec::new();
-        if let Some(partial_text) = self.partial_text.filter(|text| !text.is_empty()) {
+        if let Some(partial_text) = self.partial_text.filter(|text| !text.trim().is_empty()) {
             events.push(RecognitionEvent::PartialText { text: partial_text });
         }
-        if let Some(message) = self.error.filter(|message| !message.is_empty()) {
+        if let Some(message) = self.error.filter(|message| !message.trim().is_empty()) {
             events.push(RecognitionEvent::Error { message });
             events.push(RecognitionEvent::Completed);
             return Ok(events);
         }
-        let Some(text) = self.text.filter(|text| !text.is_empty()) else {
+        let Some(text) = self.text.filter(|text| !text.trim().is_empty()) else {
             return Err(AsrError::Backend(
                 "command ASR response missing final text".to_owned(),
             ));
@@ -1757,6 +1757,41 @@ mod tests {
             partial_text: Some(String::new()),
             text: Some("final".to_owned()),
             error: None,
+        }
+        .into_events()
+        .unwrap();
+
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::FinalText {
+                    text: "final".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
+        );
+    }
+
+    #[test]
+    fn command_asr_response_rejects_blank_final_text() {
+        let error = CommandAsrResponse {
+            text: Some("   	".to_owned()),
+            ..CommandAsrResponse::default()
+        }
+        .into_events()
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message) if message.contains("missing final text")
+        ));
+    }
+
+    #[test]
+    fn command_asr_response_ignores_blank_partial_and_error_text() {
+        let events = CommandAsrResponse {
+            partial_text: Some("   ".to_owned()),
+            text: Some("final".to_owned()),
+            error: Some("   ".to_owned()),
         }
         .into_events()
         .unwrap();
