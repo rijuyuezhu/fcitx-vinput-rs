@@ -553,6 +553,16 @@ impl AdapterRegistry {
     pub fn command_adapter(&self, id: &str) -> Option<&CommandTextAdapter> {
         self.command_adapters.get(id)
     }
+
+    /// Returns the only configured command adapter when exactly one exists.
+    #[must_use]
+    pub fn single_command_adapter(&self) -> Option<&CommandTextAdapter> {
+        if self.command_adapters.len() == 1 {
+            self.command_adapters.values().next()
+        } else {
+            None
+        }
+    }
 }
 
 /// Adapter placeholder used until concrete local adapters are ported.
@@ -978,6 +988,41 @@ mod tests {
         assert_eq!(adapter.working_dir(), Some("/tmp/vinput"));
         assert!(!registry.contains_command_adapter("missing"));
         assert!(registry.command_adapter("missing").is_none());
+        assert_eq!(
+            registry
+                .single_command_adapter()
+                .map(CommandTextAdapter::command),
+            Some("vinput-postprocess")
+        );
+    }
+
+    #[test]
+    fn adapter_registry_returns_no_single_adapter_for_empty_config() {
+        let registry = super::AdapterRegistry::new();
+        assert!(registry.single_command_adapter().is_none());
+    }
+
+    #[test]
+    fn adapter_registry_returns_no_single_adapter_for_multiple_configs() {
+        let registry = super::AdapterRegistry::from_configs(&[
+            LlmAdapterConfig {
+                id: "first".to_owned(),
+                command: "first-command".to_owned(),
+                args: Vec::new(),
+                env: std::collections::HashMap::default(),
+                working_dir: None,
+                extra: std::collections::HashMap::default(),
+            },
+            LlmAdapterConfig {
+                id: "second".to_owned(),
+                command: "second-command".to_owned(),
+                args: Vec::new(),
+                env: std::collections::HashMap::default(),
+                working_dir: None,
+                extra: std::collections::HashMap::default(),
+            },
+        ]);
+        assert!(registry.single_command_adapter().is_none());
     }
 
     #[test]
