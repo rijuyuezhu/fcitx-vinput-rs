@@ -1439,6 +1439,64 @@ mod tests {
     }
 
     #[test]
+    fn command_asr_response_rejects_missing_final_text() {
+        let error = CommandAsrResponse::default().into_events().unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message) if message.contains("missing final text")
+        ));
+    }
+
+    #[test]
+    fn command_asr_response_ignores_empty_partial_text() {
+        let events = CommandAsrResponse {
+            partial_text: Some(String::new()),
+            text: Some("final".to_owned()),
+            error: None,
+        }
+        .into_events()
+        .unwrap();
+
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::FinalText {
+                    text: "final".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
+        );
+    }
+
+    #[test]
+    fn command_asr_response_error_takes_priority_over_final_text() {
+        let events = CommandAsrResponse {
+            partial_text: Some("listening".to_owned()),
+            text: Some("final".to_owned()),
+            error: Some("asr failed".to_owned()),
+        }
+        .into_events()
+        .unwrap();
+
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::PartialText {
+                    text: "listening".to_owned()
+                },
+                RecognitionEvent::Error {
+                    message: "asr failed".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
+        );
+        assert_eq!(
+            events_to_payload(&events).unwrap().commit_text,
+            "asr failed"
+        );
+    }
+
+    #[test]
     fn process_command_asr_runner_maps_failure_response() {
         let provider = AsrProviderConfig {
             id: "cmd".to_owned(),
