@@ -385,6 +385,15 @@ mod tests {
     }
 
     #[test]
+    fn error_event_maps_to_payload() {
+        let payload = events_to_payload(&[RecognitionEvent::Error {
+            message: "err".to_owned(),
+        }])
+        .unwrap();
+        assert_eq!(payload.commit_text, "err");
+    }
+
+    #[test]
     fn events_without_final_text_return_error() {
         let error = events_to_payload(&[RecognitionEvent::Completed]).unwrap_err();
         assert!(
