@@ -261,6 +261,19 @@ mod tests {
     }
 
     #[test]
+    fn prompt_template_renders_missing_timeout_as_empty() {
+        let raw = scene("raw", 0);
+        let request = TextRequest {
+            raw_text: "raw",
+            scene: &raw,
+            selected_text: None,
+        };
+
+        let rendered = PromptTemplate::new("timeout={timeout_ms}").render_request(&request);
+        assert_eq!(rendered, "timeout=");
+    }
+
+    #[test]
     fn command_scene_requires_adapter_in_production_finisher() {
         let command = scene(COMMAND_SCENE_ID, 0);
         let error = TextFinisher::finish(&TextRequest {
