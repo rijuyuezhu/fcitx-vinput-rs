@@ -364,10 +364,10 @@ mod tests {
 
     use super::RuntimeState;
     use vinput_asr::{
-        AsrBackend, AsrError, BackendDescriptor, MockAsrBackend, RecognitionContext,
-        RecognitionSession,
+        AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, CommandAsrRequest,
+        MockAsrBackend, RecognitionContext, RecognitionSession,
     };
-    use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
+    use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
     use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
     use vinput_protocol::ServiceStatus;
     use vinput_text::TextFinisher;
@@ -570,6 +570,69 @@ mod tests {
         let payload = runtime.stop_recording(None).unwrap();
 
         assert_eq!(payload.commit_text, "runtime command final");
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
+    fn configured_command_asr_provider_forwards_runtime_pcm_metadata() {
+        let mut capture_path = std::env::temp_dir();
+        capture_path.push(format!(
+            "vinput-runtime-command-asr-request-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat > "$ASR_REQUEST"; printf '%s
+' '{"text":"runtime command final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::from([(
+                "ASR_REQUEST".to_owned(),
+                capture_path.to_string_lossy().into_owned(),
+            )]),
+            endpoint: None,
+        });
+        let backend = AsrBackendFactory::build_active(&config.asr).unwrap();
+        let pcm = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 48_000,
+                channels: 2,
+            },
+            vec![16, -32, 48, -64],
+        )
+        .unwrap();
+        let audio = CapturedAudio::named(pcm, "fixture");
+        let mut runtime = RuntimeState::with_backends(
+            config,
+            backend,
+            Box::new(MockAudioSource::from_frames(vec![audio.clone(), audio])),
+        )
+        .unwrap();
+
+        runtime.start_recording().unwrap();
+        let payload = runtime.stop_recording(None).unwrap();
+        assert_eq!(payload.commit_text, "runtime command final");
+
+        let request: CommandAsrRequest =
+            serde_json::from_str(&std::fs::read_to_string(&capture_path).unwrap()).unwrap();
+        std::fs::remove_file(&capture_path).unwrap();
+        assert_eq!(request.pcm.sample_rate_hz, 48_000);
+        assert_eq!(request.pcm.channels, 2);
+        assert_eq!(request.samples.len(), 8);
         assert_eq!(runtime.status(), ServiceStatus::Idle);
     }
 
