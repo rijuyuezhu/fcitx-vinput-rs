@@ -1008,6 +1008,25 @@ mod tests {
     }
 
     #[test]
+    fn validation_accepts_remote_asr_with_endpoint() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "remote".to_owned();
+        config.asr.providers.push(super::AsrProviderConfig {
+            id: "remote".to_owned(),
+            kind: AsrProviderKind::Remote,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: Some("https://asr.example.test".to_owned()),
+        });
+
+        config.validate().unwrap();
+    }
+
+    #[test]
     fn validation_rejects_invalid_llm_entries() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.llm.providers.push(super::LlmProviderConfig {
