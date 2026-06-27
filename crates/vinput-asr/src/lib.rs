@@ -328,19 +328,25 @@ impl AsrBackendFactory {
     #[must_use]
     pub fn state_for_config(config: &AsrConfig) -> AsrBackendState {
         let target_model_id = target_model_id(config);
+        let remote_endpoints = remote_endpoints(config);
         match Self::build_active(config) {
             Ok(backend) => {
                 let descriptor = backend.describe();
                 let mut state = AsrBackendState::ready(descriptor.provider_id, descriptor.model_id);
                 state.target_provider_id.clone_from(&config.active_provider);
                 state.target_model_id = target_model_id;
+                state.remote_endpoints = remote_endpoints;
                 state
             }
-            Err(error) => AsrBackendState::unavailable(
-                config.active_provider.clone(),
-                target_model_id,
-                error.to_string(),
-            ),
+            Err(error) => {
+                let mut state = AsrBackendState::unavailable(
+                    config.active_provider.clone(),
+                    target_model_id,
+                    error.to_string(),
+                );
+                state.remote_endpoints = remote_endpoints;
+                state
+            }
         }
     }
 }
@@ -351,6 +357,18 @@ fn target_model_id(config: &AsrConfig) -> String {
         .iter()
         .find(|provider| provider.id == config.active_provider)
         .and_then(|provider| provider.model.clone())
+        .unwrap_or_default()
+}
+
+fn remote_endpoints(config: &AsrConfig) -> Vec<String> {
+    config
+        .providers
+        .iter()
+        .find(|provider| provider.id == config.active_provider)
+        .and_then(|provider| provider.endpoint.as_deref())
+        .map(str::trim)
+        .filter(|endpoint| !endpoint.is_empty())
+        .map(|endpoint| vec![endpoint.to_owned()])
         .unwrap_or_default()
 }
 
@@ -721,5 +739,30 @@ mod tests {
         assert_eq!(state.target_model_id, "paraformer");
         assert!(!state.has_effective_backend);
         assert!(state.last_error.contains("not implemented"));
+    }
+
+    #[test]
+    fn backend_factory_state_preserves_remote_endpoint() {
+        let config = AsrConfig {
+            active_provider: "remote".to_owned(),
+            providers: vec![AsrProviderConfig {
+                id: "remote".to_owned(),
+                kind: AsrProviderKind::Remote,
+                timeout_ms: None,
+                model: Some("cloud-model".to_owned()),
+                hotwords_file: None,
+                command: None,
+                args: Vec::new(),
+                env: std::collections::HashMap::default(),
+                endpoint: Some("https://asr.example.test".to_owned()),
+            }],
+            ..AsrConfig::default()
+        };
+
+        let state = AsrBackendFactory::state_for_config(&config);
+        assert_eq!(state.target_provider_id, "remote");
+        assert_eq!(state.target_model_id, "cloud-model");
+        assert!(!state.has_effective_backend);
+        assert_eq!(state.remote_endpoints, ["https://asr.example.test"]);
     }
 }
