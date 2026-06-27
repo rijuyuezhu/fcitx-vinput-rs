@@ -199,6 +199,11 @@ mod tests {
     }
 
     #[test]
+    fn candidate_source_rejects_bad_wire() {
+        assert!(CandidateSource::parse_wire("bad").is_err());
+    }
+
+    #[test]
     fn empty_payload_has_no_default_candidate() {
         let payload = RecognitionPayload {
             commit_text: String::new(),
