@@ -1176,6 +1176,67 @@ mod tests {
     }
 
     #[test]
+    fn process_command_text_runner_uses_working_dir() {
+        let mut work_dir = std::env::temp_dir();
+        work_dir.push(format!(
+            "vinput-command-text-workdir-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir(&work_dir).unwrap();
+        let mut capture_path = std::env::temp_dir();
+        capture_path.push(format!(
+            "vinput-command-text-cwd-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                r#"pwd > "$TEXT_CWD"; cat >/dev/null; printf '%s\n' '{"text":"cwd final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::from([(
+                "TEXT_CWD".to_owned(),
+                capture_path.to_string_lossy().into_owned(),
+            )]),
+            working_dir: Some(work_dir.to_string_lossy().into_owned()),
+            extra: std::collections::HashMap::default(),
+        };
+
+        let payload = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "cwd final");
+        assert_eq!(
+            std::fs::read_to_string(&capture_path).unwrap().trim(),
+            work_dir.to_string_lossy()
+        );
+        std::fs::remove_file(&capture_path).unwrap();
+        std::fs::remove_dir(&work_dir).unwrap();
+    }
+
+    #[test]
     fn command_text_adapter_returns_unsupported_until_runner_lands() {
         let prompted = SceneDefinition {
             prompt: Some("polish".to_owned()),
