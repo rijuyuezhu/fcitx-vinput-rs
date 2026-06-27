@@ -385,6 +385,14 @@ mod tests {
     }
 
     #[test]
+    fn events_without_final_text_return_error() {
+        let error = events_to_payload(&[RecognitionEvent::Completed]).unwrap_err();
+        assert!(
+            matches!(error, AsrError::Backend(message) if message.contains("without final text"))
+        );
+    }
+
+    #[test]
     fn session_rejects_work_after_cancel() {
         let backend = MockAsrBackend::buffered("done");
         let mut session = backend
