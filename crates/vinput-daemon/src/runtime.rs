@@ -565,6 +565,41 @@ mod tests {
     }
 
     #[test]
+    fn timeout_scene_finish_error_returns_runtime_to_idle() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.active_scene = "timeout-scene".to_owned();
+        config
+            .scenes
+            .definitions
+            .push(vinput_config::SceneDefinition {
+                id: "timeout-scene".to_owned(),
+                label: "Timeout scene".to_owned(),
+                prompt: None,
+                provider_id: None,
+                model: None,
+                candidate_count: 0,
+                timeout_ms: Some(2500),
+                context_lines: 0,
+            });
+        let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+        let audio = super::default_mock_audio_source();
+        let mut runtime = RuntimeState::with_components(
+            config,
+            Box::new(backend),
+            Box::new(audio),
+            Box::new(TextFinisher::new()),
+        )
+        .unwrap();
+
+        runtime.start_recording().unwrap();
+        let error = runtime.stop_recording(None).unwrap_err();
+
+        assert!(matches!(error, super::RuntimeError::Finish(_)));
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
+    }
+
+    #[test]
     fn failed_text_finishing_returns_runtime_to_idle() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.scenes.active_scene = "needs-adapter".to_owned();
