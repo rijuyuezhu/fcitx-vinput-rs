@@ -53,6 +53,41 @@ fn config_validate_prints_summary_for_valid_config() {
 }
 
 #[test]
+fn config_validate_accepts_object_llm_provider_extra_body() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "llm": {
+            "providers": [{
+              "id":"llm",
+              "base_url":"https://example.invalid/v1",
+              "extra_body":{"temperature":0.1}
+            }]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+}
+
+#[test]
 fn config_validate_fails_for_duplicate_scene_ids() {
     let path = write_temp_config(
         r#"
