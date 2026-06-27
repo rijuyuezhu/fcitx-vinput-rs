@@ -30,6 +30,8 @@ pub struct PromptContext<'a> {
     pub provider_id: &'a str,
     /// Scene model id, if configured.
     pub model: &'a str,
+    /// Number of candidates requested by the scene.
+    pub candidate_count: u8,
     /// Number of previous context lines requested by the scene.
     pub context_lines: u8,
 }
@@ -45,6 +47,7 @@ impl<'a> PromptContext<'a> {
             scene_prompt: request.scene.prompt.as_deref().unwrap_or_default(),
             provider_id: request.scene.provider_id.as_deref().unwrap_or_default(),
             model: request.scene.model.as_deref().unwrap_or_default(),
+            candidate_count: request.scene.candidate_count,
             context_lines: request.scene.context_lines,
         }
     }
@@ -75,6 +78,7 @@ impl PromptTemplate {
             .replace("{scene_prompt}", context.scene_prompt)
             .replace("{provider_id}", context.provider_id)
             .replace("{model}", context.model)
+            .replace("{candidate_count}", &context.candidate_count.to_string())
             .replace("{context_lines}", &context.context_lines.to_string())
     }
 
@@ -233,17 +237,17 @@ mod tests {
         };
         let context = PromptContext::from_request(&request);
         let rendered = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; context={context_lines}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; candidates={candidate_count}; context={context_lines}",
         )
         .render(&context);
         let rendered_from_request = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; context={context_lines}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; candidates={candidate_count}; context={context_lines}",
         )
         .render_request(&request);
         assert_eq!(rendered_from_request, rendered);
         assert_eq!(
             rendered,
-            "scene=rewrite; prompt=polish; raw=raw; selected=selected; provider=p; model=m; context=3"
+            "scene=rewrite; prompt=polish; raw=raw; selected=selected; provider=p; model=m; candidates=1; context=3"
         );
     }
 
