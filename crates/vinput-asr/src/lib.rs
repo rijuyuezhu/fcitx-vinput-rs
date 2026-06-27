@@ -7,6 +7,8 @@
 use std::{
     io::Write,
     process::{Child, Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
 use schemars::JsonSchema;
@@ -463,13 +465,45 @@ impl CommandAsrRunner for ProcessCommandAsrRunner {
     }
 }
 
-fn wait_for_command_output(spec: &CommandAsrSpec, child: Child) -> Result<Output, AsrError> {
-    child.wait_with_output().map_err(|error| {
-        AsrError::Backend(format!(
-            "failed to wait for command ASR provider `{}`: {error}",
-            spec.provider_id
-        ))
-    })
+fn wait_for_command_output(spec: &CommandAsrSpec, mut child: Child) -> Result<Output, AsrError> {
+    let Some(timeout_ms) = spec.timeout_ms else {
+        return child.wait_with_output().map_err(|error| {
+            AsrError::Backend(format!(
+                "failed to wait for command ASR provider `{}`: {error}",
+                spec.provider_id
+            ))
+        });
+    };
+
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    loop {
+        if child
+            .try_wait()
+            .map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to poll command ASR provider `{}`: {error}",
+                    spec.provider_id
+                ))
+            })?
+            .is_some()
+        {
+            return child.wait_with_output().map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to collect command ASR provider `{}` output: {error}",
+                    spec.provider_id
+                ))
+            });
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(AsrError::Backend(format!(
+                "command ASR provider `{}` timed out after {} ms",
+                spec.provider_id, timeout_ms
+            )));
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
 }
 
 /// Command-backed ASR backend skeleton.
