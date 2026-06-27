@@ -368,10 +368,16 @@ fn text_adapter_exit_error(
     output: &Output,
 ) -> Result<RecognitionPayload, TextError> {
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        return Err(TextError::AdapterFailed(format!(
+            "text adapter `{adapter_id}` exited with {}",
+            output.status
+        )));
+    }
     Err(TextError::AdapterFailed(format!(
-        "text adapter `{adapter_id}` exited with {}: {}",
-        output.status,
-        stderr.trim()
+        "text adapter `{adapter_id}` exited with {}: {stderr}",
+        output.status
     )))
 }
 
@@ -1261,6 +1267,39 @@ mod tests {
                 if message.contains("exited with")
                     && message.contains("early adapter boom")
                     && !message.contains("failed to write")
+        ));
+    }
+
+    #[test]
+    fn process_command_text_runner_reports_empty_stderr_exit_cleanly() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "cat >/dev/null; exit 7".to_owned()],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let error = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message)
+                if message.contains("exited with") && !message.ends_with(':')
         ));
     }
 
