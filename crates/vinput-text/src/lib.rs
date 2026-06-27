@@ -149,6 +149,7 @@ pub enum TextError {
 fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
     scene.id == COMMAND_SCENE_ID
         || scene.candidate_count > 0
+        || scene.context_lines > 0
         || scene
             .prompt
             .as_deref()
@@ -318,6 +319,24 @@ mod tests {
         assert_eq!(
             error,
             TextError::AdapterRequired("provider-scene".to_owned())
+        );
+    }
+
+    #[test]
+    fn context_scene_requires_future_adapter() {
+        let context_scene = SceneDefinition {
+            context_lines: 2,
+            ..scene("context-scene", 0)
+        };
+        let error = TextFinisher::finish(&TextRequest {
+            raw_text: "hello",
+            scene: &context_scene,
+            selected_text: None,
+        })
+        .unwrap_err();
+        assert_eq!(
+            error,
+            TextError::AdapterRequired("context-scene".to_owned())
         );
     }
 
