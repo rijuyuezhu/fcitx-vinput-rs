@@ -517,6 +517,33 @@ fn registry_plan_fails_for_unknown_adapter() {
 }
 
 #[test]
+fn registry_install_plan_fails_for_unknown_adapter() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "adapters": [
+            {"id":"a","label":"A","kind":"command","assets":[]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "install-plan"])
+        .arg(&path)
+        .args(["--target-root", "/tmp/vinput-assets"])
+        .args(["--adapter", "missing"])
+        .output()
+        .expect("run vinput registry install-plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("unknown adapter id `missing`"));
+}
+
+#[test]
 fn registry_plan_summary_only_omits_assets() {
     let path = write_temp_registry(
         r#"
