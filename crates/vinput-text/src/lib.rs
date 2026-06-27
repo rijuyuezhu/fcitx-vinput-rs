@@ -419,6 +419,22 @@ mod tests {
     }
 
     #[test]
+    fn mock_processor_handles_timeout_scene() {
+        let timeout_scene = SceneDefinition {
+            timeout_ms: Some(2500),
+            ..scene("timeout-scene", 0)
+        };
+        let payload = MockTextProcessor::new()
+            .finish(&TextRequest {
+                raw_text: "hello",
+                scene: &timeout_scene,
+                selected_text: None,
+            })
+            .unwrap();
+        assert_eq!(payload.commit_text, "mock postprocess result: hello");
+    }
+
+    #[test]
     fn mock_processor_handles_candidate_scene() {
         let fancy = scene("rewrite", 2);
         let payload = MockTextProcessor::new()
