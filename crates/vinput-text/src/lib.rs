@@ -237,6 +237,34 @@ mod tests {
     }
 
     #[test]
+    fn prompt_context_exposes_scene_metadata() {
+        let templated = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            provider_id: Some("p".to_owned()),
+            model: Some("m".to_owned()),
+            context_lines: 3,
+            timeout_ms: Some(2500),
+            ..scene("rewrite", 1)
+        };
+        let request = TextRequest {
+            raw_text: "raw",
+            scene: &templated,
+            selected_text: Some("selected"),
+        };
+
+        let context = PromptContext::from_request(&request);
+        assert_eq!(context.raw_text, "raw");
+        assert_eq!(context.selected_text, "selected");
+        assert_eq!(context.scene_id, "rewrite");
+        assert_eq!(context.scene_prompt, "polish");
+        assert_eq!(context.provider_id, "p");
+        assert_eq!(context.model, "m");
+        assert_eq!(context.candidate_count, 1);
+        assert_eq!(context.context_lines, 3);
+        assert_eq!(context.timeout_ms, Some(2500));
+    }
+
+    #[test]
     fn prompt_template_replaces_supported_fields() {
         let templated = SceneDefinition {
             prompt: Some("polish".to_owned()),
