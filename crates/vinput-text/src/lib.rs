@@ -884,6 +884,29 @@ mod tests {
     }
 
     #[test]
+    fn command_text_response_prefers_error_over_payload() {
+        let response: CommandTextResponse = serde_json::from_str(
+            r#"{"payload":{"commit_text":"choice","candidates":[]},"error":"adapter boom"}"#,
+        )
+        .unwrap();
+        let error = response.into_payload().unwrap_err();
+
+        assert_eq!(error, TextError::AdapterFailed("adapter boom".to_owned()));
+    }
+
+    #[test]
+    fn command_text_response_prefers_payload_over_text() {
+        let response: CommandTextResponse = serde_json::from_str(
+            r#"{"payload":{"commit_text":"payload","candidates":[]},"text":"text fallback"}"#,
+        )
+        .unwrap();
+        let payload = response.into_payload().unwrap();
+
+        assert_eq!(payload.commit_text, "payload");
+        assert_eq!(payload.candidates[0].text, "payload");
+    }
+
+    #[test]
     fn command_text_response_accepts_failure_alias() {
         let response: CommandTextResponse =
             serde_json::from_str(r#"{"failure":"adapter boom"}"#).unwrap();
