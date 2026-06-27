@@ -357,6 +357,9 @@ mod tests {
     fn trim_removes_leading_and_trailing_silence() {
         let pcm = PcmBuffer::at_default_rate(vec![0, 1, 5, -6, 1, 0]).trimmed_silence(1);
         assert_eq!(pcm.samples(), &[5, -6]);
+        let negative_threshold =
+            PcmBuffer::at_default_rate(vec![0, 1, 5, -6, 1, 0]).trimmed_silence(-1);
+        assert_eq!(negative_threshold.samples(), &[5, -6]);
     }
 
     #[test]
