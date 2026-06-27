@@ -470,8 +470,7 @@ impl RecognitionSession for MockRecognitionSession {
 #[cfg(test)]
 mod tests {
     use super::{
-        AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrSpec,
-        MockAsrBackend,
+        AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrSpec, MockAsrBackend,
         RecognitionContext, RecognitionEvent, events_to_payload,
     };
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
