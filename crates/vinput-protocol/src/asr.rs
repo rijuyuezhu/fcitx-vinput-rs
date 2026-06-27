@@ -124,4 +124,22 @@ mod tests {
         assert!(state.effective_model_id.is_empty());
         assert!(state.remote_endpoints.is_empty());
     }
+
+    #[test]
+    fn unavailable_state_serializes_command_target_metadata() {
+        let state = AsrBackendState::unavailable("cmd", "cmd-model", "command missing");
+        let value = serde_json::to_value(&state).unwrap();
+
+        assert_eq!(value["target_provider_id"], "cmd");
+        assert_eq!(value["target_model_id"], "cmd-model");
+        assert_eq!(value["effective_provider_id"], "");
+        assert_eq!(value["effective_model_id"], "");
+        assert_eq!(value["last_error"], "command missing");
+        assert_eq!(value["has_effective_backend"], false);
+        assert_eq!(value["remote_endpoints"], serde_json::json!([]));
+        assert_eq!(
+            serde_json::from_value::<AsrBackendState>(value).unwrap(),
+            state
+        );
+    }
 }
