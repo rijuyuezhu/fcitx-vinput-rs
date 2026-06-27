@@ -4,6 +4,11 @@
 //! trait boundary. Real backends such as sherpa-onnx and command execution
 //! should implement these traits after their contracts are covered by tests.
 
+use std::{
+    io::Write,
+    process::{Command, Stdio},
+};
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -393,6 +398,76 @@ impl CommandAsrRunner for UnsupportedCommandAsrRunner {
     }
 }
 
+/// Process runner for command-backed ASR providers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ProcessCommandAsrRunner;
+
+impl CommandAsrRunner for ProcessCommandAsrRunner {
+    fn recognize(
+        &self,
+        spec: &CommandAsrSpec,
+        request: &CommandAsrRequest,
+    ) -> Result<Vec<RecognitionEvent>, AsrError> {
+        let mut child = Command::new(&spec.command)
+            .args(&spec.args)
+            .envs(&spec.env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to spawn command ASR provider `{}`: {error}",
+                    spec.provider_id
+                ))
+            })?;
+
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            AsrError::Backend(format!(
+                "command ASR provider `{}` did not expose stdin",
+                spec.provider_id
+            ))
+        })?;
+        serde_json::to_writer(&mut stdin, request).map_err(|error| {
+            AsrError::Backend(format!(
+                "failed to encode command ASR request for `{}`: {error}",
+                spec.provider_id
+            ))
+        })?;
+        stdin.write_all(b"\n").map_err(|error| {
+            AsrError::Backend(format!(
+                "failed to write command ASR request for `{}`: {error}",
+                spec.provider_id
+            ))
+        })?;
+        drop(stdin);
+
+        let output = child.wait_with_output().map_err(|error| {
+            AsrError::Backend(format!(
+                "failed to wait for command ASR provider `{}`: {error}",
+                spec.provider_id
+            ))
+        })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AsrError::Backend(format!(
+                "command ASR provider `{}` exited with {}: {}",
+                spec.provider_id,
+                output.status,
+                stderr.trim()
+            )));
+        }
+        let response: CommandAsrResponse =
+            serde_json::from_slice(&output.stdout).map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to decode command ASR response for `{}`: {error}",
+                    spec.provider_id
+                ))
+            })?;
+        response.into_events()
+    }
+}
+
 /// Command-backed ASR backend skeleton.
 #[derive(Debug, Clone)]
 pub struct CommandAsrBackend<R = UnsupportedCommandAsrRunner> {
@@ -502,7 +577,7 @@ impl AsrBackendFactory {
         if provider.kind == AsrProviderKind::Command {
             return Ok(Box::new(CommandAsrBackend::with_config(
                 provider,
-                UnsupportedCommandAsrRunner,
+                ProcessCommandAsrRunner,
             )?));
         }
         unsupported_provider(&provider.id, &provider.kind)
@@ -1133,6 +1208,63 @@ mod tests {
             payload.commit_text,
             "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh|0"
         );
+    }
+
+    #[test]
+    fn process_command_asr_runner_writes_request_and_reads_response() {
+        let mut capture_path = std::env::temp_dir();
+        capture_path.push(format!(
+            "vinput-command-asr-request-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(2_500),
+            model: Some("paraformer".to_owned()),
+            hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat > "$ASR_REQUEST"; printf '%s\n' '{"text":"process final"}'"#.to_owned(),
+            ],
+            env: std::collections::HashMap::from([(
+                "ASR_REQUEST".to_owned(),
+                capture_path.to_string_lossy().into_owned(),
+            )]),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::command(
+                "__command__",
+                Some("zh".to_owned()),
+                "selected text",
+            ))
+            .expect("process runner should create a buffering session");
+        session.push_audio(&[10, -20, 30]).unwrap();
+        session.finish().unwrap();
+        let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
+        assert_eq!(payload.commit_text, "process final");
+
+        let request: CommandAsrRequest =
+            serde_json::from_str(&std::fs::read_to_string(&capture_path).unwrap()).unwrap();
+        std::fs::remove_file(&capture_path).unwrap();
+        assert_eq!(request.provider_id, "cmd");
+        assert_eq!(request.model_id.as_deref(), Some("paraformer"));
+        assert_eq!(request.hotwords_file.as_deref(), Some("/tmp/hotwords.txt"));
+        assert_eq!(request.timeout_ms, Some(2_500));
+        assert!(request.context.command_mode);
+        assert_eq!(
+            request.context.selected_text.as_deref(),
+            Some("selected text")
+        );
+        assert_eq!(request.samples, [10, -20, 30]);
     }
 
     #[test]
