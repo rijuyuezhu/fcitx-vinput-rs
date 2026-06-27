@@ -350,6 +350,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dbus_facade_preserves_command_asr_metadata() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_500),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
+            command: Some("helper".to_owned()),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        });
+        let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
+
+        let state: AsrBackendState =
+            serde_json::from_str(&service.get_asr_backend_state().await.unwrap()).unwrap();
+        assert!(state.has_effective_backend);
+        assert_eq!(state.target_provider_id, "cmd");
+        assert_eq!(state.target_model_id, "cmd-model");
+        assert_eq!(state.effective_provider_id, "cmd");
+        assert_eq!(state.effective_model_id, "cmd-model");
+    }
+
+    #[tokio::test]
     async fn dbus_facade_reports_adapter_placeholders() {
         let service = service();
         assert_eq!(
