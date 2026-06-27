@@ -347,6 +347,14 @@ impl<R> CommandAsrBackend<R> {
         }
     }
 
+    /// Creates a command ASR backend from typed provider config with an injected runner.
+    pub fn with_config(provider: &AsrProviderConfig, runner: R) -> Result<Self, AsrError> {
+        Ok(Self::with_runner(
+            CommandAsrSpec::try_from(provider)?,
+            runner,
+        ))
+    }
+
     /// Returns the parsed command provider spec.
     #[must_use]
     pub const fn spec(&self) -> &CommandAsrSpec {
@@ -885,6 +893,40 @@ mod tests {
             },
             ConfigEchoCommandRunner,
         );
+
+        let mut session = backend
+            .create_session(RecognitionContext::normal(
+                "dictation",
+                Some("zh".to_owned()),
+            ))
+            .expect("mock runner should create a session");
+        session.finish().unwrap();
+
+        let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
+        assert_eq!(
+            payload.commit_text,
+            "cmd|helper|--format,json|fast|paraformer|2500|dictation|zh"
+        );
+    }
+
+    #[test]
+    fn command_asr_backend_builds_from_provider_config_with_runner() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(2_500),
+            model: Some("paraformer".to_owned()),
+            hotwords_file: None,
+            command: Some("helper".to_owned()),
+            args: vec!["--format".to_owned(), "json".to_owned()],
+            env: std::collections::HashMap::from([("ASR_MODE".to_owned(), "fast".to_owned())]),
+            endpoint: None,
+        };
+
+        let backend = CommandAsrBackend::with_config(&provider, ConfigEchoCommandRunner)
+            .expect("command provider config should build");
+        assert_eq!(backend.spec().provider_id, "cmd");
+        assert_eq!(backend.spec().model_id.as_deref(), Some("paraformer"));
 
         let mut session = backend
             .create_session(RecognitionContext::normal(
