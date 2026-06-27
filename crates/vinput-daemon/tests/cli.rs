@@ -2,18 +2,31 @@
 
 use std::{fs, path::PathBuf, process::Command};
 
-fn temp_config_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "vinput-daemon-test-{}-{name}.json",
-        std::process::id()
-    ))
+struct TempConfig {
+    path: PathBuf,
+}
+
+impl TempConfig {
+    fn write(name: &str, contents: &str) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "vinput-daemon-test-{}-{name}.json",
+            std::process::id()
+        ));
+        fs::write(&path, contents).expect("write temporary daemon config");
+        Self { path }
+    }
+}
+
+impl Drop for TempConfig {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 #[test]
 fn asr_state_uses_config_file() {
-    let path = temp_config_path("asr-state");
-    fs::write(
-        &path,
+    let config = TempConfig::write(
+        "asr-state",
         r#"
         {
           "version": 1,
@@ -27,16 +40,14 @@ fn asr_state_uses_config_file() {
           }
         }
         "#,
-    )
-    .expect("write temporary daemon config");
+    );
 
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--config")
-        .arg(&path)
+        .arg(&config.path)
         .arg("asr-state")
         .output()
         .expect("run vinput-daemon asr-state");
-    fs::remove_file(&path).expect("remove temporary daemon config");
 
     assert!(output.status.success());
     let value: serde_json::Value =
@@ -48,9 +59,8 @@ fn asr_state_uses_config_file() {
 
 #[test]
 fn asr_state_preserves_remote_endpoint() {
-    let path = temp_config_path("remote-asr-state");
-    fs::write(
-        &path,
+    let config = TempConfig::write(
+        "remote-asr-state",
         r#"
         {
           "version": 1,
@@ -64,16 +74,14 @@ fn asr_state_preserves_remote_endpoint() {
           }
         }
         "#,
-    )
-    .expect("write temporary daemon config");
+    );
 
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--config")
-        .arg(&path)
+        .arg(&config.path)
         .arg("asr-state")
         .output()
         .expect("run vinput-daemon asr-state");
-    fs::remove_file(&path).expect("remove temporary daemon config");
 
     assert!(output.status.success());
     let value: serde_json::Value =
