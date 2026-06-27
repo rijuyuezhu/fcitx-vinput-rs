@@ -9,7 +9,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use vinput_config::{RegistryConfig, VinputConfig};
 use vinput_protocol::{RecognitionPayload, ServiceStatus, dbus};
-use vinput_registry::{AssetEntry, AssetPlanSummary, InstallPlan, PlannedAsset, RegistryIndex};
+use vinput_registry::{AssetEntry, AssetPlanSummary, PlannedAsset, RegistryIndex};
 
 /// CLI for inspecting and controlling the vinput daemon.
 #[derive(Debug, Parser)]
@@ -317,9 +317,17 @@ fn print_registry_install_plan(
         Some(config_path) => load_config_file(config_path)?,
         None => VinputConfig::bundled_default().context("parse bundled config")?,
     };
-    let planned_assets = selected_registry_assets(&index, &config.registry, model_id, adapter_id)?;
     let target_root = target_root.to_string_lossy();
-    let plan = InstallPlan::from_assets(&planned_assets, &target_root);
+    let plan = match (model_id, adapter_id) {
+        (Some(model_id), None) => {
+            index.install_model_plan(model_id, &config.registry, &target_root)?
+        }
+        (None, Some(adapter_id)) => {
+            index.install_adapter_plan(adapter_id, &config.registry, &target_root)?
+        }
+        (None, None) => index.install_plan(&config.registry, &target_root),
+        (Some(_), Some(_)) => unreachable!("clap prevents model and adapter together"),
+    };
     let summary = if summary_only {
         serde_json::json!({
             "ok": true,
