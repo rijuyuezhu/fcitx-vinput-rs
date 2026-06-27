@@ -549,6 +549,35 @@ mod tests {
     }
 
     #[test]
+    fn configured_command_asr_provider_runs_process_helper() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"text":"runtime command final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let mut runtime = RuntimeState::with_configured_asr(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let payload = runtime.stop_recording(None).unwrap();
+
+        assert_eq!(payload.commit_text, "runtime command final");
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
     fn configured_asr_state_preserves_command_provider_metadata() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "cmd".to_owned();
