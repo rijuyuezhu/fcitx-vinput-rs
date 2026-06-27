@@ -331,6 +331,13 @@ fn validate_llm_adapter<'a>(
     if adapter.command.trim().is_empty() {
         return Err(ConfigError::InvalidLlmAdapterCommand(adapter.id.clone()));
     }
+    if adapter
+        .working_dir
+        .as_deref()
+        .is_some_and(|working_dir| working_dir.trim().is_empty())
+    {
+        return Err(ConfigError::InvalidLlmAdapterWorkingDir(adapter.id.clone()));
+    }
     for key in adapter.env.keys() {
         if key.trim().is_empty() {
             return Err(ConfigError::InvalidLlmAdapterEnvKey {
@@ -711,6 +718,9 @@ pub enum ConfigError {
     /// LLM adapter command is empty.
     #[error("LLM adapter `{0}` must configure a command")]
     InvalidLlmAdapterCommand(String),
+    /// LLM adapter working directory is present but empty.
+    #[error("LLM adapter `{0}` has an invalid empty working_dir")]
+    InvalidLlmAdapterWorkingDir(String),
     /// LLM adapter environment contains an empty key.
     #[error("LLM adapter `{adapter_id}` has an invalid environment key `{key}`")]
     InvalidLlmAdapterEnvKey {
@@ -1155,6 +1165,21 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidLlmAdapterCommand(id) if id == "adapter"
+        ));
+
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(super::LlmAdapterConfig {
+            id: "adapter".to_owned(),
+            command: "vinput-adapter".to_owned(),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            working_dir: Some("  ".to_owned()),
+            extra: std::collections::HashMap::default(),
+        });
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidLlmAdapterWorkingDir(id) if id == "adapter"
         ));
     }
 
