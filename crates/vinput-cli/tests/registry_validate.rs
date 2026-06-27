@@ -16,6 +16,20 @@ fn write_temp_registry(contents: &str) -> std::path::PathBuf {
     path
 }
 
+fn write_temp_config(contents: &str) -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "vinput-plan-config-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos()
+    ));
+    fs::write(&path, contents).expect("write temporary config fixture");
+    path
+}
+
 #[test]
 fn registry_validate_prints_summary_for_valid_index() {
     let path = write_temp_registry(
@@ -381,6 +395,32 @@ fn registry_plan_uses_custom_config_mirrors() {
         value["assets"][0]["urls"][0],
         "https://custom.invalid/root/models/m.tar"
     );
+}
+
+#[test]
+fn registry_install_plan_uses_custom_config_mirrors() {
+    let registry_path = write_temp_registry(
+        r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}]}"#,
+    );
+    let config_path = write_temp_config(
+        r#"{"version":1,"registry":{"base_urls":["mirror"]},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "install-plan"])
+        .arg(&registry_path)
+        .args(["--target-root", "/tmp/vinput-assets"])
+        .args(["--config"])
+        .arg(&config_path)
+        .output()
+        .expect("run vinput registry install-plan");
+    fs::remove_file(&registry_path).expect("remove temporary registry fixture");
+    fs::remove_file(&config_path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry install plan should be JSON");
+    assert_eq!(value["assets"][0]["urls"][0], "mirror/models/m.tar");
 }
 
 #[test]
