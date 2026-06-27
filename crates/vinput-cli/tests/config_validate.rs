@@ -537,7 +537,6 @@ fn asr_state_reports_unavailable_provider() {
     );
 }
 
-
 #[test]
 fn config_validate_fails_for_command_provider_without_command() {
     let path = write_temp_config(
