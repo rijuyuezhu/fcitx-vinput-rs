@@ -333,6 +333,13 @@ mod tests {
     }
 
     #[test]
+    fn non_finite_gain_is_ignored() {
+        let original = PcmBuffer::at_default_rate(vec![100, -100]);
+        assert_eq!(original.with_gain(f32::NAN), original);
+        assert_eq!(original.with_gain(f32::INFINITY), original);
+    }
+
+    #[test]
     fn normalization_scales_peak() {
         let pcm = PcmBuffer::at_default_rate(vec![0, 1_000, -2_000]).normalized_to_peak(10_000);
         assert_eq!(pcm.samples(), &[0, 5_000, -10_000]);
