@@ -658,3 +658,33 @@ fn config_prints_bundled_summary() {
     assert_eq!(value["active_provider"], "sherpa-onnx");
     assert!(value["registry_mirror_count"].as_u64().unwrap_or_default() > 0);
 }
+
+#[test]
+fn config_validate_fails_for_remote_provider_without_endpoint() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "remote",
+            "providers": [{"id":"remote","type":"remote"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("remote ASR provider `remote` must configure an endpoint"));
+}
