@@ -65,6 +65,12 @@ impl PromptTemplate {
             .replace("{scene_id}", context.scene_id)
             .replace("{scene_prompt}", context.scene_prompt)
     }
+
+    /// Renders supported placeholders directly from a text request.
+    #[must_use]
+    pub fn render_request<'a>(&self, request: &'a TextRequest<'a>) -> String {
+        self.render(&PromptContext::from_request(request))
+    }
 }
 
 /// Minimal text finisher used while adapter support is not ported yet.
@@ -102,11 +108,10 @@ pub enum TextError {
 }
 
 fn command_placeholder_text(request: &TextRequest<'_>) -> String {
-    let context = PromptContext::from_request(request);
-    if context.selected_text.is_empty() {
-        PromptTemplate::new("mock command result: {raw_text}").render(&context)
+    if request.selected_text.unwrap_or_default().is_empty() {
+        PromptTemplate::new("mock command result: {raw_text}").render_request(request)
     } else {
-        PromptTemplate::new("mock command result for: {selected_text}").render(&context)
+        PromptTemplate::new("mock command result for: {selected_text}").render_request(request)
     }
 }
 
@@ -152,6 +157,11 @@ mod tests {
             "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}",
         )
         .render(&context);
+        let rendered_from_request = PromptTemplate::new(
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}",
+        )
+        .render_request(&request);
+        assert_eq!(rendered_from_request, rendered);
         assert_eq!(
             rendered,
             "scene=rewrite; prompt=polish; raw=raw; selected=selected"
