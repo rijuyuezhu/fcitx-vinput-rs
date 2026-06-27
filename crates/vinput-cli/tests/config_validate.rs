@@ -426,7 +426,6 @@ fn config_validate_fails_for_too_many_candidates() {
     assert!(stderr.contains("scene `raw` asks for 33 candidates"));
 }
 
-
 #[test]
 fn config_validate_fails_for_unknown_scene_provider() {
     let path = write_temp_config(
