@@ -251,6 +251,14 @@ fn validate_asr_provider<'a>(
             provider.id.clone(),
         ));
     }
+    if provider.kind != AsrProviderKind::Command
+        && provider
+            .command
+            .as_deref()
+            .is_some_and(|command| command.trim().is_empty())
+    {
+        return Err(ConfigError::InvalidAsrProviderCommand(provider.id.clone()));
+    }
     if provider
         .endpoint
         .as_deref()
@@ -704,6 +712,9 @@ pub enum ConfigError {
     /// ASR provider hotwords file is present but empty.
     #[error("ASR provider `{0}` has an invalid empty hotwords_file")]
     InvalidAsrProviderHotwordsFile(String),
+    /// ASR provider command is present but empty for a non-command backend.
+    #[error("ASR provider `{0}` has an invalid empty command")]
+    InvalidAsrProviderCommand(String),
     /// ASR provider endpoint is present but empty.
     #[error("ASR provider `{0}` has an invalid empty endpoint")]
     InvalidAsrProviderEndpoint(String),
@@ -1098,6 +1109,17 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidAsrProviderHotwordsFile(id) if id == "sherpa-onnx"
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_empty_asr_provider_command_for_non_command_backend() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.providers[0].command = Some("  ".to_owned());
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidAsrProviderCommand(id) if id == "sherpa-onnx"
         ));
     }
 
