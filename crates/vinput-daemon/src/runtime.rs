@@ -193,7 +193,11 @@ impl RuntimeState {
         state
     }
 
-    /// Reloads the ASR backend. The mock implementation only validates config.
+    /// Reloads the ASR backend state after validating config.
+    ///
+    /// The prototype keeps the injected runtime backend, but the returned
+    /// state includes the config-selected target provider, model, and remote
+    /// endpoint metadata.
     pub fn reload_asr_backend(&mut self) -> Result<AsrBackendState, RuntimeError> {
         self.config
             .validate()
