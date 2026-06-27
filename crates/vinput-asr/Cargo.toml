@@ -15,3 +15,6 @@ serde.workspace = true
 thiserror.workspace = true
 vinput-protocol = { path = "../vinput-protocol" }
 vinput-config = { path = "../vinput-config" }
+
+[dev-dependencies]
+serde_json.workspace = true

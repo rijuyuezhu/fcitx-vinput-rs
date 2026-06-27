@@ -290,14 +290,52 @@ impl TryFrom<&AsrProviderConfig> for CommandAsrSpec {
     }
 }
 
+/// Buffered request passed to command-backed ASR runners.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CommandAsrRequest {
+    /// Provider id selected for this request.
+    pub provider_id: String,
+    /// Optional model id selected for this provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    /// Optional hotwords file configured for this provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotwords_file: Option<String>,
+    /// Optional request timeout in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Recognition context from the active scene or command mode.
+    pub context: RecognitionContext,
+    /// Buffered signed 16-bit mono PCM samples.
+    pub samples: Vec<i16>,
+}
+
+impl CommandAsrRequest {
+    /// Creates a buffered request from parsed provider metadata and runtime context.
+    #[must_use]
+    pub fn from_spec(
+        spec: &CommandAsrSpec,
+        context: RecognitionContext,
+        samples: Vec<i16>,
+    ) -> Self {
+        Self {
+            provider_id: spec.provider_id.clone(),
+            model_id: spec.model_id.clone(),
+            hotwords_file: spec.hotwords_file.clone(),
+            timeout_ms: spec.timeout_ms,
+            context,
+            samples,
+        }
+    }
+}
+
 /// Runner seam for command-backed ASR providers.
 pub trait CommandAsrRunner: Send + Sync {
     /// Recognizes one buffered command ASR request.
     fn recognize(
         &self,
         spec: &CommandAsrSpec,
-        context: &RecognitionContext,
-        samples: &[i16],
+        request: &CommandAsrRequest,
     ) -> Result<Vec<RecognitionEvent>, AsrError>;
 }
 
@@ -309,8 +347,7 @@ impl CommandAsrRunner for UnsupportedCommandAsrRunner {
     fn recognize(
         &self,
         spec: &CommandAsrSpec,
-        _context: &RecognitionContext,
-        _samples: &[i16],
+        _request: &CommandAsrRequest,
     ) -> Result<Vec<RecognitionEvent>, AsrError> {
         Err(AsrError::Backend(format!(
             "command ASR provider `{}` runner is not implemented yet",
@@ -571,9 +608,9 @@ impl<R: CommandAsrRunner> RecognitionSession for CommandRecognitionSession<R> {
             return Err(AsrError::AlreadyFinished);
         }
         self.finished = true;
-        self.events = self
-            .runner
-            .recognize(&self.spec, &self.context, &self.samples)?;
+        let request =
+            CommandAsrRequest::from_spec(&self.spec, self.context.clone(), self.samples.clone());
+        self.events = self.runner.recognize(&self.spec, &request)?;
         Ok(())
     }
 
@@ -648,8 +685,8 @@ impl RecognitionSession for MockRecognitionSession {
 mod tests {
     use super::{
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
-        CommandAsrRunner, CommandAsrSpec, MockAsrBackend, RecognitionContext, RecognitionEvent,
-        events_to_payload,
+        CommandAsrRequest, CommandAsrRunner, CommandAsrSpec, MockAsrBackend, RecognitionContext,
+        RecognitionEvent, events_to_payload,
     };
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 
@@ -660,12 +697,16 @@ mod tests {
         fn recognize(
             &self,
             spec: &CommandAsrSpec,
-            context: &RecognitionContext,
-            samples: &[i16],
+            request: &CommandAsrRequest,
         ) -> Result<Vec<RecognitionEvent>, AsrError> {
             Ok(vec![
                 RecognitionEvent::FinalText {
-                    text: format!("{}:{}:{}", spec.command, context.scene_id, samples.len()),
+                    text: format!(
+                        "{}:{}:{}",
+                        spec.command,
+                        request.context.scene_id,
+                        request.samples.len()
+                    ),
                 },
                 RecognitionEvent::Completed,
             ])
@@ -679,11 +720,10 @@ mod tests {
         fn recognize(
             &self,
             spec: &CommandAsrSpec,
-            context: &RecognitionContext,
-            samples: &[i16],
+            request: &CommandAsrRequest,
         ) -> Result<Vec<RecognitionEvent>, AsrError> {
-            let scene_id = context.scene_id.clone();
-            let language = context.language.clone().unwrap_or_default();
+            let scene_id = request.context.scene_id.clone();
+            let language = request.context.language.clone().unwrap_or_default();
             let env_value = spec
                 .env
                 .get("ASR_MODE")
@@ -693,16 +733,16 @@ mod tests {
                 RecognitionEvent::FinalText {
                     text: format!(
                         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-                        spec.provider_id,
+                        request.provider_id,
                         spec.command,
                         spec.args.join(","),
                         env_value,
-                        spec.model_id.as_deref().unwrap_or_default(),
-                        spec.hotwords_file.as_deref().unwrap_or_default(),
-                        spec.timeout_ms.unwrap_or_default(),
+                        request.model_id.as_deref().unwrap_or_default(),
+                        request.hotwords_file.as_deref().unwrap_or_default(),
+                        request.timeout_ms.unwrap_or_default(),
                         scene_id,
                         language,
-                        samples.len(),
+                        request.samples.len(),
                     ),
                 },
                 RecognitionEvent::Completed,
@@ -870,6 +910,37 @@ mod tests {
         assert_eq!(spec.model_id.as_deref(), Some("paraformer"));
         assert_eq!(spec.hotwords_file.as_deref(), Some("/tmp/hotwords.txt"));
         assert_eq!(spec.timeout_ms, Some(1_500));
+    }
+    #[test]
+    fn command_asr_request_serializes_metadata_context_and_audio() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "helper".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: Some("paraformer".to_owned()),
+            hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
+            timeout_ms: Some(1_500),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::command("__command__", Some("zh".to_owned()), "selected"),
+            vec![1, -2, 3],
+        );
+        let value = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(value["provider_id"], "cmd");
+        assert_eq!(value["model_id"], "paraformer");
+        assert_eq!(value["hotwords_file"], "/tmp/hotwords.txt");
+        assert_eq!(value["timeout_ms"], 1_500);
+        assert_eq!(value["context"]["scene_id"], "__command__");
+        assert_eq!(value["context"]["command_mode"], true);
+        assert_eq!(value["context"]["selected_text"], "selected");
+        assert_eq!(value["samples"], serde_json::json!([1, -2, 3]));
+        assert_eq!(
+            serde_json::from_value::<CommandAsrRequest>(value).unwrap(),
+            request
+        );
     }
 
     #[test]
