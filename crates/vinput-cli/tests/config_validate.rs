@@ -427,6 +427,81 @@ fn config_validate_fails_for_too_many_candidates() {
 }
 
 #[test]
+fn asr_state_reports_mock_provider_ready() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "mock",
+            "providers": [{"id":"mock","type":"local","model":"fixture-model"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .arg("asr-state")
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .expect("run vinput asr-state");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "mock");
+    assert_eq!(value["target_model_id"], "fixture-model");
+    assert_eq!(value["effective_provider_id"], "mock");
+    assert_eq!(value["has_effective_backend"], true);
+}
+
+#[test]
+fn asr_state_reports_unavailable_provider() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "sherpa-onnx",
+            "providers": [{"id":"sherpa-onnx","type":"local","model":"paraformer"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .arg("asr-state")
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .expect("run vinput asr-state");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "sherpa-onnx");
+    assert_eq!(value["target_model_id"], "paraformer");
+    assert_eq!(value["has_effective_backend"], false);
+    assert!(
+        value["last_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("not implemented")
+    );
+}
+
+#[test]
 fn config_prints_bundled_summary() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
         .args(["config"])

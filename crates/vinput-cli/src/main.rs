@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use vinput_asr::AsrBackendFactory;
 use vinput_config::{RegistryConfig, VinputConfig};
 use vinput_protocol::{RecognitionPayload, ServiceStatus, dbus};
 use vinput_registry::{AssetEntry, AssetPlanSummary, PlannedAsset, RegistryIndex};
@@ -96,6 +97,12 @@ enum Command {
         #[command(subcommand)]
         command: Option<RegistryCommand>,
     },
+    /// Print ASR backend availability diagnostics from config.
+    AsrState {
+        /// Optional config JSON file. Omitted to inspect the bundled default config.
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
     /// Create a recognition JSON payload for tests/manual inspection.
     MockResult {
         /// Commit text for the payload.
@@ -151,6 +158,7 @@ fn main() -> anyhow::Result<()> {
             ),
             None => print_registry_summary(),
         },
+        Command::AsrState { config } => print_asr_state(config.as_ref()),
         Command::MockResult { text } => {
             let payload = RecognitionPayload::raw(text);
             println!("{}", payload.to_json_string()?);
@@ -201,6 +209,17 @@ fn validate_config() -> anyhow::Result<()> {
         "{}",
         serde_json::to_string_pretty(&config_summary_json(&config))?
     );
+    Ok(())
+}
+
+fn print_asr_state(config_path: Option<&PathBuf>) -> anyhow::Result<()> {
+    let config = match config_path {
+        Some(path) => load_config_file(path)?,
+        None => VinputConfig::bundled_default().context("parse bundled config")?,
+    };
+    config.validate().context("validate config for ASR state")?;
+    let state = AsrBackendFactory::state_for_config(&config.asr);
+    println!("{}", serde_json::to_string_pretty(&state)?);
     Ok(())
 }
 

@@ -1009,6 +1009,7 @@ dependencies = [
  "anyhow",
  "clap",
  "serde_json",
+ "vinput-asr",
  "vinput-config",
  "vinput-protocol",
  "vinput-registry",
