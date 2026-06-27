@@ -180,6 +180,9 @@ fn validate_scene_definition<'a>(
             });
         }
     }
+    if scene.timeout_ms == Some(0) {
+        return Err(ConfigError::InvalidSceneTimeoutMs(scene.id.clone()));
+    }
     if scene.context_lines > 32 {
         return Err(ConfigError::TooManyContextLines {
             scene_id: scene.id.clone(),
@@ -610,6 +613,9 @@ pub enum ConfigError {
         /// Missing provider id.
         provider_id: String,
     },
+    /// Scene timeout must be positive when configured.
+    #[error("scene `{0}` has invalid timeout_ms 0")]
+    InvalidSceneTimeoutMs(String),
     /// Scene asks for too many recent context lines.
     #[error("scene `{scene_id}` asks for {context_lines} context lines, max is 32")]
     TooManyContextLines {
@@ -1069,6 +1075,13 @@ mod tests {
             super::ConfigError::InvalidSceneProviderId(id) if id == RAW_SCENE_ID
         ));
 
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.definitions[0].timeout_ms = Some(0);
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidSceneTimeoutMs(id) if id == RAW_SCENE_ID
+        ));
         let mut config = VinputConfig::bundled_default().unwrap();
         config.scenes.definitions[0].context_lines = 33;
         let error = config.validate().unwrap_err();
