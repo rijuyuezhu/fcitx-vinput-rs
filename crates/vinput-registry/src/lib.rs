@@ -698,6 +698,22 @@ mod tests {
     }
 
     #[test]
+    fn install_plan_preserves_multiple_mirror_urls() {
+        let index = RegistryIndex::from_json_str(
+            r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"a.bin"}]}]}"#,
+        )
+        .unwrap();
+        let plan = index.install_plan(
+            &RegistryConfig {
+                base_urls: vec!["m1".to_owned(), "m2".to_owned()],
+            },
+            "cache",
+        );
+
+        assert_eq!(plan.assets[0].urls, ["m1/a.bin", "m2/a.bin"]);
+    }
+
+    #[test]
     fn install_plan_tracks_missing_checksums() {
         let index = RegistryIndex::from_json_str(
             r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}]}"#,
