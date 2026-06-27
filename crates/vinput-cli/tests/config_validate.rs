@@ -729,6 +729,37 @@ fn asr_state_reports_command_provider_skeleton_ready() {
 }
 
 #[test]
+fn config_validate_accepts_positive_asr_provider_timeout() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local","timeout_ms":1}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["active_provider"], "p");
+}
+#[test]
 fn config_validate_fails_for_zero_asr_provider_timeout() {
     let path = write_temp_config(
         r#"
