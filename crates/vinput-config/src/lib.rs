@@ -324,6 +324,11 @@ fn validate_llm_provider<'a>(
     {
         return Err(ConfigError::InvalidLlmProviderModelId(provider.id.clone()));
     }
+    if !provider.extra_body.is_object() {
+        return Err(ConfigError::InvalidLlmProviderExtraBody(
+            provider.id.clone(),
+        ));
+    }
     Ok(())
 }
 
@@ -721,6 +726,9 @@ pub enum ConfigError {
     /// LLM provider model id is present but empty.
     #[error("LLM provider `{0}` has an invalid empty model id")]
     InvalidLlmProviderModelId(String),
+    /// LLM provider `extra_body` must be a JSON object.
+    #[error("LLM provider `{0}` has invalid non-object extra_body")]
+    InvalidLlmProviderExtraBody(String),
     /// Empty LLM adapter id.
     #[error("invalid empty LLM adapter id")]
     InvalidLlmAdapterId(String),
@@ -1173,6 +1181,20 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidLlmProviderModelId(id) if id == "llm"
+        ));
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.providers.push(super::LlmProviderConfig {
+            id: "llm".to_owned(),
+            base_url: "https://example.invalid/v1".to_owned(),
+            api_key: String::new(),
+            model: None,
+            extra_body: serde_json::json!(["not", "object"]),
+            extra: std::collections::HashMap::default(),
+        });
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidLlmProviderExtraBody(id) if id == "llm"
         ));
 
         let mut config = VinputConfig::bundled_default().unwrap();
