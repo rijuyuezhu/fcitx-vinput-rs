@@ -87,6 +87,8 @@ fn asr_state_preserves_remote_endpoint() {
     let value: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
     assert_eq!(value["target_provider_id"], "remote");
+    assert_eq!(value["target_model_id"], "cloud");
+    assert_eq!(value["has_effective_backend"], false);
     assert_eq!(
         value["remote_endpoints"],
         serde_json::json!(["https://asr.example.test"])
