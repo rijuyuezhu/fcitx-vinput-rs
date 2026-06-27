@@ -538,6 +538,43 @@ fn asr_state_reports_unavailable_provider() {
 }
 
 #[test]
+fn asr_state_reports_remote_provider_endpoint() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "remote",
+            "providers": [{"id":"remote","type":"remote","model":"cloud","endpoint":"https://asr.example.test"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .arg("asr-state")
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .expect("run vinput asr-state");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "remote");
+    assert_eq!(value["target_model_id"], "cloud");
+    assert_eq!(
+        value["remote_endpoints"],
+        serde_json::json!(["https://asr.example.test"])
+    );
+}
+
+#[test]
 fn asr_state_reports_command_provider_unavailable() {
     let path = write_temp_config(
         r#"
