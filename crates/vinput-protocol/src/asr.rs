@@ -79,6 +79,17 @@ mod tests {
     }
 
     #[test]
+    fn ready_state_has_effective_backend_without_remote_endpoints() {
+        let state = AsrBackendState::ready("mock", "mock-streaming");
+        assert_eq!(state.target_provider_id, "mock");
+        assert_eq!(state.target_model_id, "mock-streaming");
+        assert_eq!(state.effective_provider_id, "mock");
+        assert_eq!(state.effective_model_id, "mock-streaming");
+        assert!(state.has_effective_backend);
+        assert!(state.remote_endpoints.is_empty());
+    }
+
+    #[test]
     fn unavailable_state_keeps_target_without_effective_backend() {
         let state = AsrBackendState::unavailable("sherpa-onnx", "paraformer", "load failed");
         assert_eq!(state.target_provider_id, "sherpa-onnx");
