@@ -1387,6 +1387,17 @@ mod tests {
     }
 
     #[test]
+    fn command_asr_response_accepts_failure_alias() {
+        let response: CommandAsrResponse =
+            serde_json::from_str(r#"{"failure":"legacy failed"}"#).unwrap();
+        let events = response.into_events().unwrap();
+        assert_eq!(
+            events_to_payload(&events).unwrap().commit_text,
+            "legacy failed"
+        );
+    }
+
+    #[test]
     fn process_command_asr_runner_maps_failure_response() {
         let provider = AsrProviderConfig {
             id: "cmd".to_owned(),
