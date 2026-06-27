@@ -143,31 +143,66 @@ impl<A: TextAdapter> TextProcessor for LlmTextProcessor<A> {
     }
 }
 
-/// Command-backed text adapter skeleton.
-///
-/// It owns the command configuration shape but intentionally does not spawn a
-/// process yet; process execution will be added behind a runner trait so tests
-/// can stay deterministic.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandTextAdapter {
-    command: String,
-    args: Vec<String>,
+/// Runner seam for command-backed text adapters.
+pub trait CommandTextRunner: Send + Sync {
+    /// Executes the configured command adapter for one post-processing request.
+    fn run(
+        &self,
+        command: &str,
+        args: &[String],
+        request: &TextRequest<'_>,
+    ) -> Result<RecognitionPayload, TextError>;
 }
 
-impl CommandTextAdapter {
+/// Runner placeholder used until process execution is ported.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UnsupportedCommandTextRunner;
+
+impl CommandTextRunner for UnsupportedCommandTextRunner {
+    fn run(
+        &self,
+        _command: &str,
+        _args: &[String],
+        request: &TextRequest<'_>,
+    ) -> Result<RecognitionPayload, TextError> {
+        Err(TextError::UnsupportedAdapter(request.scene.id.clone()))
+    }
+}
+
+/// Command-backed text adapter skeleton.
+///
+/// It owns the command configuration shape and delegates execution to a runner
+/// seam so real process spawning can be added without making tests flaky.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandTextAdapter<R = UnsupportedCommandTextRunner> {
+    command: String,
+    args: Vec<String>,
+    runner: R,
+}
+
+impl CommandTextAdapter<UnsupportedCommandTextRunner> {
     /// Creates a command adapter skeleton from executable and arguments.
     #[must_use]
     pub fn new(command: impl Into<String>, args: Vec<String>) -> Self {
-        Self {
-            command: command.into(),
-            args,
-        }
+        Self::with_runner(command, args, UnsupportedCommandTextRunner)
     }
 
     /// Creates a command adapter skeleton from typed config.
     #[must_use]
     pub fn from_config(config: &LlmAdapterConfig) -> Self {
         Self::new(config.command.clone(), config.args.clone())
+    }
+}
+
+impl<R> CommandTextAdapter<R> {
+    /// Creates a command adapter with an injected runner.
+    #[must_use]
+    pub fn with_runner(command: impl Into<String>, args: Vec<String>, runner: R) -> Self {
+        Self {
+            command: command.into(),
+            args,
+            runner,
+        }
     }
 
     /// Returns the configured command path or name.
@@ -181,11 +216,17 @@ impl CommandTextAdapter {
     pub fn args(&self) -> &[String] {
         &self.args
     }
+
+    /// Returns the configured command runner.
+    #[must_use]
+    pub const fn runner(&self) -> &R {
+        &self.runner
+    }
 }
 
-impl TextAdapter for CommandTextAdapter {
+impl<R: CommandTextRunner> TextAdapter for CommandTextAdapter<R> {
     fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
-        Err(TextError::UnsupportedAdapter(request.scene.id.clone()))
+        self.runner.run(&self.command, &self.args, request)
     }
 }
 
@@ -308,10 +349,31 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandTextAdapter, LlmTextProcessor, MockTextProcessor, PromptContext, PromptTemplate,
-        TextError, TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
+        CommandTextAdapter, CommandTextRunner, LlmTextProcessor, MockTextProcessor, PromptContext,
+        PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
+        UnsupportedTextAdapter,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
+    use vinput_protocol::RecognitionPayload;
+
+    #[derive(Debug, Clone, Copy)]
+    struct EchoCommandRunner;
+
+    impl CommandTextRunner for EchoCommandRunner {
+        fn run(
+            &self,
+            command: &str,
+            args: &[String],
+            request: &TextRequest<'_>,
+        ) -> Result<RecognitionPayload, TextError> {
+            Ok(RecognitionPayload::raw(format!(
+                "{} {}: {}",
+                command,
+                args.join(" "),
+                request.raw_text
+            )))
+        }
+    }
 
     fn scene(id: &str, candidate_count: u8) -> SceneDefinition {
         SceneDefinition {
@@ -436,6 +498,27 @@ mod tests {
 
         assert_eq!(adapter.command(), "vinput-postprocess");
         assert_eq!(adapter.args(), ["--json"]);
+    }
+
+    #[test]
+    fn command_text_adapter_delegates_to_injected_runner() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let payload = LlmTextProcessor::new(CommandTextAdapter::with_runner(
+            "vinput-postprocess",
+            vec!["--json".to_owned()],
+            EchoCommandRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "hello",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "vinput-postprocess --json: hello");
     }
 
     #[test]
