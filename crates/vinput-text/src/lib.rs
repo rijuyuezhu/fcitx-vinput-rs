@@ -1,7 +1,7 @@
 //! Deterministic text finishing helpers and adapter seams.
 
 use thiserror::Error;
-use vinput_config::{COMMAND_SCENE_ID, RAW_SCENE_ID, SceneDefinition};
+use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
 use vinput_protocol::RecognitionPayload;
 
 /// Input to the text finishing stage.
@@ -143,7 +143,53 @@ impl<A: TextAdapter> TextProcessor for LlmTextProcessor<A> {
     }
 }
 
-/// Adapter placeholder used until concrete local/command adapters are ported.
+/// Command-backed text adapter skeleton.
+///
+/// It owns the command configuration shape but intentionally does not spawn a
+/// process yet; process execution will be added behind a runner trait so tests
+/// can stay deterministic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandTextAdapter {
+    command: String,
+    args: Vec<String>,
+}
+
+impl CommandTextAdapter {
+    /// Creates a command adapter skeleton from executable and arguments.
+    #[must_use]
+    pub fn new(command: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            command: command.into(),
+            args,
+        }
+    }
+
+    /// Creates a command adapter skeleton from typed config.
+    #[must_use]
+    pub fn from_config(config: &LlmAdapterConfig) -> Self {
+        Self::new(config.command.clone(), config.args.clone())
+    }
+
+    /// Returns the configured command path or name.
+    #[must_use]
+    pub fn command(&self) -> &str {
+        &self.command
+    }
+
+    /// Returns configured command arguments.
+    #[must_use]
+    pub fn args(&self) -> &[String] {
+        &self.args
+    }
+}
+
+impl TextAdapter for CommandTextAdapter {
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        Err(TextError::UnsupportedAdapter(request.scene.id.clone()))
+    }
+}
+
+/// Adapter placeholder used until concrete local adapters are ported.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UnsupportedTextAdapter;
 
@@ -262,10 +308,10 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        LlmTextProcessor, MockTextProcessor, PromptContext, PromptTemplate, TextError,
-        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
+        CommandTextAdapter, LlmTextProcessor, MockTextProcessor, PromptContext, PromptTemplate,
+        TextError, TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
     };
-    use vinput_config::{COMMAND_SCENE_ID, RAW_SCENE_ID, SceneDefinition};
+    use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
 
     fn scene(id: &str, candidate_count: u8) -> SceneDefinition {
         SceneDefinition {
@@ -375,6 +421,41 @@ mod tests {
 
         let rendered = PromptTemplate::new("x={x}").render_request(&request);
         assert_eq!(rendered, "x={x}");
+    }
+
+    #[test]
+    fn command_text_adapter_copies_typed_config() {
+        let adapter = CommandTextAdapter::from_config(&LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "vinput-postprocess".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+
+        assert_eq!(adapter.command(), "vinput-postprocess");
+        assert_eq!(adapter.args(), ["--json"]);
+    }
+
+    #[test]
+    fn command_text_adapter_returns_unsupported_until_runner_lands() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let error = LlmTextProcessor::new(CommandTextAdapter::new(
+            "vinput-postprocess",
+            vec!["--json".to_owned()],
+        ))
+        .finish(&TextRequest {
+            raw_text: "hello",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert_eq!(error, TextError::UnsupportedAdapter("polish".to_owned()));
     }
 
     #[test]
