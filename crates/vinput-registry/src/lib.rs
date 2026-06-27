@@ -714,6 +714,22 @@ mod tests {
     }
 
     #[test]
+    fn install_plan_summarizes_empty_indexes() {
+        let index = RegistryIndex::from_json_str(r#"{"version":1}"#).unwrap();
+        let plan = index.install_plan(
+            &RegistryConfig {
+                base_urls: vec!["m".to_owned()],
+            },
+            "cache",
+        );
+
+        assert_eq!(plan.summary.asset_count, 0);
+        assert_eq!(plan.summary.known_size_bytes, 0);
+        assert_eq!(plan.summary.missing_checksum_count, 0);
+        assert!(plan.assets.is_empty());
+    }
+
+    #[test]
     fn install_plan_tracks_missing_checksums() {
         let index = RegistryIndex::from_json_str(
             r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}]}"#,
