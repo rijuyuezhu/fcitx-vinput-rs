@@ -181,14 +181,15 @@ impl RuntimeState {
         self.partial_text.as_deref()
     }
 
-    /// Returns a mock ASR backend state derived from config and backend descriptor.
+    /// Returns an ASR backend state derived from config and backend descriptor.
     #[must_use]
     pub fn asr_backend_state(&self) -> AsrBackendState {
         let descriptor = self.asr_backend.describe();
+        let configured = Self::configured_asr_state(&self.config);
         let mut state = AsrBackendState::ready(descriptor.provider_id, descriptor.model_id);
-        state
-            .target_provider_id
-            .clone_from(&self.config.asr.active_provider);
+        state.target_provider_id = configured.target_provider_id;
+        state.target_model_id = configured.target_model_id;
+        state.remote_endpoints = configured.remote_endpoints;
         state
     }
 
@@ -477,6 +478,31 @@ mod tests {
         });
         let runtime = RuntimeState::with_configured_asr(config).unwrap();
         assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
+    }
+
+    #[test]
+    fn runtime_asr_state_preserves_configured_target_metadata() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "remote".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "remote".to_owned(),
+            kind: AsrProviderKind::Remote,
+            timeout_ms: None,
+            model: Some("cloud-model".to_owned()),
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::new(),
+            endpoint: Some("https://asr.example.test".to_owned()),
+        });
+        let runtime = RuntimeState::new(config).unwrap();
+
+        let state = runtime.asr_backend_state();
+        assert_eq!(state.target_provider_id, "remote");
+        assert_eq!(state.target_model_id, "cloud-model");
+        assert_eq!(state.effective_provider_id, "mock");
+        assert_eq!(state.effective_model_id, "mock-streaming");
+        assert_eq!(state.remote_endpoints, ["https://asr.example.test"]);
     }
 
     #[test]
