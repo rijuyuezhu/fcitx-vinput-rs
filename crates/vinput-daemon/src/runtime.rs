@@ -10,7 +10,7 @@ use vinput_audio::{
 };
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
-use vinput_text::{TextFinisher, TextRequest};
+use vinput_text::{MockTextProcessor, TextProcessor, TextRequest};
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
 const MOCK_SILENCE_THRESHOLD: i16 = 8;
@@ -26,6 +26,7 @@ pub struct RuntimeState {
     partial_text: Option<String>,
     asr_backend: Box<dyn AsrBackend>,
     audio_source: Box<dyn AudioSource>,
+    text_processor: Box<dyn TextProcessor>,
     active_session: Option<Box<dyn RecognitionSession>>,
 }
 
@@ -41,7 +42,12 @@ impl RuntimeState {
         config: VinputConfig,
         asr_backend: Box<dyn AsrBackend>,
     ) -> Result<Self, RuntimeError> {
-        Self::with_backends(config, asr_backend, Box::new(default_mock_audio_source()))
+        Self::with_components(
+            config,
+            asr_backend,
+            Box::new(default_mock_audio_source()),
+            Box::new(MockTextProcessor::new()),
+        )
     }
 
     /// Builds an idle runtime from validated config and injected backend seams.
@@ -49,6 +55,21 @@ impl RuntimeState {
         config: VinputConfig,
         asr_backend: Box<dyn AsrBackend>,
         audio_source: Box<dyn AudioSource>,
+    ) -> Result<Self, RuntimeError> {
+        Self::with_components(
+            config,
+            asr_backend,
+            audio_source,
+            Box::new(MockTextProcessor::new()),
+        )
+    }
+
+    /// Builds an idle runtime from validated config and injected component seams.
+    pub fn with_components(
+        config: VinputConfig,
+        asr_backend: Box<dyn AsrBackend>,
+        audio_source: Box<dyn AudioSource>,
+        text_processor: Box<dyn TextProcessor>,
     ) -> Result<Self, RuntimeError> {
         config.validate().map_err(RuntimeError::InvalidConfig)?;
         Ok(Self {
@@ -60,6 +81,7 @@ impl RuntimeState {
             partial_text: None,
             asr_backend,
             audio_source,
+            text_processor,
             active_session: None,
         })
     }
@@ -121,12 +143,13 @@ impl RuntimeState {
             let events = session.poll_events().map_err(RuntimeError::Asr)?;
             let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
             let scene_definition = self.scene_definition(&scene);
-            TextFinisher::finish(&TextRequest {
-                raw_text: &raw_payload.commit_text,
-                scene: &scene_definition,
-                selected_text: self.selected_text.as_deref(),
-            })
-            .map_err(RuntimeError::Finish)
+            self.text_processor
+                .finish(&TextRequest {
+                    raw_text: &raw_payload.commit_text,
+                    scene: &scene_definition,
+                    selected_text: self.selected_text.as_deref(),
+                })
+                .map_err(RuntimeError::Finish)
         })();
 
         self.reset_to_idle();
@@ -311,6 +334,7 @@ mod tests {
     use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
     use vinput_config::VinputConfig;
     use vinput_protocol::ServiceStatus;
+    use vinput_text::TextFinisher;
 
     struct ContextRecordingBackend {
         inner: MockAsrBackend,
@@ -471,7 +495,15 @@ mod tests {
                 timeout_ms: None,
                 context_lines: 0,
             });
-        let mut runtime = RuntimeState::new(config).unwrap();
+        let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+        let audio = super::default_mock_audio_source();
+        let mut runtime = RuntimeState::with_components(
+            config,
+            Box::new(backend),
+            Box::new(audio),
+            Box::new(TextFinisher::new()),
+        )
+        .unwrap();
 
         runtime.start_recording().unwrap();
         let error = runtime.stop_recording(None).unwrap_err();

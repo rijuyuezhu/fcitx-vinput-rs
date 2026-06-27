@@ -73,7 +73,17 @@ impl PromptTemplate {
     }
 }
 
-/// Minimal text finisher used while adapter support is not ported yet.
+/// Synchronous text post-processing seam used by daemon runtime and tests.
+pub trait TextProcessor: Send {
+    /// Finishes raw recognition text into a payload suitable for the frontend.
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError>;
+}
+
+/// Production-safe text finisher used before real LLM/adapter support lands.
+///
+/// It only commits scenes that do not require post-processing. Command scenes,
+/// prompted scenes, provider/model-bound scenes, and candidate scenes return a
+/// typed error instead of fabricating mock text.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TextFinisher;
 
@@ -84,18 +94,47 @@ impl TextFinisher {
         Self
     }
 
-    /// Finishes raw recognition text into a legacy payload.
+    /// Finishes raw recognition text into a payload.
     pub fn finish(request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        <Self as TextProcessor>::finish(&Self, request)
+    }
+}
+
+impl TextProcessor for TextFinisher {
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        if request.scene.id == RAW_SCENE_ID || !scene_needs_postprocessing(request.scene) {
+            return Ok(RecognitionPayload::raw(request.raw_text));
+        }
+        Err(TextError::AdapterRequired(request.scene.id.clone()))
+    }
+}
+
+/// Mock text processor for daemon prototypes and tests.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MockTextProcessor;
+
+impl MockTextProcessor {
+    /// Creates a mock text processor.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl TextProcessor for MockTextProcessor {
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
         if request.scene.id == RAW_SCENE_ID {
             return Ok(RecognitionPayload::raw(request.raw_text));
         }
         if request.scene.id == COMMAND_SCENE_ID {
             return Ok(RecognitionPayload::raw(command_placeholder_text(request)));
         }
-        if request.scene.candidate_count == 0 {
+        if request.scene.candidate_count == 0 && !scene_needs_postprocessing(request.scene) {
             return Ok(RecognitionPayload::raw(request.raw_text));
         }
-        Err(TextError::AdapterRequired(request.scene.id.clone()))
+        Ok(RecognitionPayload::raw(
+            PromptTemplate::new("mock postprocess result: {raw_text}").render_request(request),
+        ))
     }
 }
 
@@ -105,6 +144,23 @@ pub enum TextError {
     /// A non-raw scene with candidates needs adapter support that is not ported yet.
     #[error("scene `{0}` requires adapter text finishing")]
     AdapterRequired(String),
+}
+
+fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
+    scene.id == COMMAND_SCENE_ID
+        || scene.candidate_count > 0
+        || scene
+            .prompt
+            .as_deref()
+            .is_some_and(|prompt| !prompt.trim().is_empty())
+        || scene
+            .provider_id
+            .as_deref()
+            .is_some_and(|provider_id| !provider_id.trim().is_empty())
+        || scene
+            .model
+            .as_deref()
+            .is_some_and(|model| !model.trim().is_empty())
 }
 
 fn command_placeholder_text(request: &TextRequest<'_>) -> String {
@@ -117,7 +173,10 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PromptContext, PromptTemplate, TextError, TextFinisher, TextRequest};
+    use super::{
+        MockTextProcessor, PromptContext, PromptTemplate, TextError, TextFinisher, TextProcessor,
+        TextRequest,
+    };
     use vinput_config::{COMMAND_SCENE_ID, RAW_SCENE_ID, SceneDefinition};
 
     fn scene(id: &str, candidate_count: u8) -> SceneDefinition {
@@ -173,26 +232,46 @@ mod tests {
     }
 
     #[test]
-    fn command_scene_uses_selected_text_placeholder() {
-        let command = scene(COMMAND_SCENE_ID, 1);
-        let payload = TextFinisher::finish(&TextRequest {
+    fn command_scene_requires_adapter_in_production_finisher() {
+        let command = scene(COMMAND_SCENE_ID, 0);
+        let error = TextFinisher::finish(&TextRequest {
             raw_text: "replace it",
             scene: &command,
-            selected_text: Some("source text"),
+            selected_text: Some("selected source"),
         })
-        .unwrap();
-        assert_eq!(payload.commit_text, "mock command result for: source text");
+        .unwrap_err();
+        assert_eq!(
+            error,
+            TextError::AdapterRequired(COMMAND_SCENE_ID.to_owned())
+        );
     }
 
     #[test]
-    fn command_scene_without_selected_text_uses_raw_text_placeholder() {
+    fn mock_processor_handles_command_scene_with_selected_text() {
         let command = scene(COMMAND_SCENE_ID, 1);
-        let payload = TextFinisher::finish(&TextRequest {
-            raw_text: "replace it",
-            scene: &command,
-            selected_text: None,
-        })
-        .unwrap();
+        let payload = MockTextProcessor::new()
+            .finish(&TextRequest {
+                raw_text: "replace it",
+                scene: &command,
+                selected_text: Some("selected source"),
+            })
+            .unwrap();
+        assert_eq!(
+            payload.commit_text,
+            "mock command result for: selected source"
+        );
+    }
+
+    #[test]
+    fn mock_processor_handles_command_scene_without_selected_text() {
+        let command = scene(COMMAND_SCENE_ID, 1);
+        let payload = MockTextProcessor::new()
+            .finish(&TextRequest {
+                raw_text: "replace it",
+                scene: &command,
+                selected_text: None,
+            })
+            .unwrap();
         assert_eq!(payload.commit_text, "mock command result: replace it");
     }
 
@@ -206,5 +285,18 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(error, TextError::AdapterRequired("rewrite".to_owned()));
+    }
+
+    #[test]
+    fn mock_processor_handles_candidate_scene() {
+        let fancy = scene("rewrite", 2);
+        let payload = MockTextProcessor::new()
+            .finish(&TextRequest {
+                raw_text: "hello",
+                scene: &fancy,
+                selected_text: None,
+            })
+            .unwrap();
+        assert_eq!(payload.commit_text, "mock postprocess result: hello");
     }
 }
