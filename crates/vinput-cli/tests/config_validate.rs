@@ -885,6 +885,36 @@ fn config_validate_accepts_positive_asr_provider_timeout() {
     assert_eq!(value["ok"], true);
     assert_eq!(value["active_provider"], "p");
 }
+
+#[test]
+fn config_validate_fails_for_empty_asr_provider_env_key() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local","env":{"":"bad"}}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("provider `p` has an invalid environment key ``"));
+}
 #[test]
 fn config_validate_fails_for_zero_asr_provider_timeout() {
     let path = write_temp_config(
