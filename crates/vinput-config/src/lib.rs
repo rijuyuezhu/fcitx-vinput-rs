@@ -308,6 +308,13 @@ fn validate_llm_provider<'a>(
     if provider.base_url.trim().is_empty() {
         return Err(ConfigError::InvalidLlmProviderBaseUrl(provider.id.clone()));
     }
+    if provider
+        .model
+        .as_deref()
+        .is_some_and(|model| model.trim().is_empty())
+    {
+        return Err(ConfigError::InvalidLlmProviderModelId(provider.id.clone()));
+    }
     Ok(())
 }
 
@@ -692,6 +699,9 @@ pub enum ConfigError {
     /// LLM provider base URL is empty.
     #[error("LLM provider `{0}` must configure a base URL")]
     InvalidLlmProviderBaseUrl(String),
+    /// LLM provider model id is present but empty.
+    #[error("LLM provider `{0}` has an invalid empty model id")]
+    InvalidLlmProviderModelId(String),
     /// Empty LLM adapter id.
     #[error("invalid empty LLM adapter id")]
     InvalidLlmAdapterId(String),
@@ -1115,6 +1125,21 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidLlmProviderBaseUrl(id) if id == "llm"
+        ));
+
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.providers.push(super::LlmProviderConfig {
+            id: "llm".to_owned(),
+            base_url: "https://example.invalid/v1".to_owned(),
+            api_key: String::new(),
+            model: Some("  ".to_owned()),
+            extra_body: serde_json::json!({}),
+            extra: std::collections::HashMap::default(),
+        });
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidLlmProviderModelId(id) if id == "llm"
         ));
 
         let mut config = VinputConfig::bundled_default().unwrap();

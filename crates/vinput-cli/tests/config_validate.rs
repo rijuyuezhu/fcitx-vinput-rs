@@ -545,6 +545,39 @@ fn config_validate_fails_for_empty_scene_prompt() {
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
     assert!(stderr.contains("scene `raw` has an invalid empty prompt"));
 }
+
+#[test]
+fn config_validate_fails_for_empty_llm_provider_model() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "llm": {
+            "providers": [{"id":"llm","base_url":"https://example.invalid/v1","model":"   "}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("LLM provider `llm` has an invalid empty model id"));
+}
 #[test]
 fn config_validate_fails_for_unknown_scene_provider() {
     let path = write_temp_config(
