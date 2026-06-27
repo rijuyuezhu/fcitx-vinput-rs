@@ -694,7 +694,7 @@ fn asr_state_reports_remote_provider_endpoint() {
 }
 
 #[test]
-fn asr_state_reports_command_provider_unavailable() {
+fn asr_state_reports_command_provider_skeleton_ready() {
     let path = write_temp_config(
         r#"
         {
@@ -723,13 +723,9 @@ fn asr_state_reports_command_provider_unavailable() {
     let value: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
     assert_eq!(value["target_provider_id"], "cmd");
-    assert_eq!(value["has_effective_backend"], false);
-    assert!(
-        value["last_error"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("not implemented")
-    );
+    assert_eq!(value["effective_provider_id"], "cmd");
+    assert_eq!(value["has_effective_backend"], true);
+    assert_eq!(value["last_error"], "");
 }
 
 #[test]

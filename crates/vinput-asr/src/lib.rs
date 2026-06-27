@@ -1,8 +1,8 @@
-//! ASR backend contract and deterministic mock implementation.
+//! ASR backend contract, deterministic mock, and backend skeletons.
 //!
 //! This crate mirrors the original C++ daemon's recognition contract at a Rust
-//! trait boundary.  Real backends such as sherpa-onnx and command streaming
-//! should implement these traits after the mock contract is covered by tests.
+//! trait boundary. Real backends such as sherpa-onnx and command execution
+//! should implement these traits after their contracts are covered by tests.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -249,6 +249,8 @@ pub struct CommandAsrSpec {
     pub args: Vec<String>,
     /// Environment variables passed to the command.
     pub env: std::collections::HashMap<String, String>,
+    /// Optional model id selected for this provider.
+    pub model_id: Option<String>,
     /// Optional timeout in milliseconds.
     pub timeout_ms: Option<u64>,
 }
@@ -279,8 +281,52 @@ impl TryFrom<&AsrProviderConfig> for CommandAsrSpec {
             command: command.to_owned(),
             args: provider.args.clone(),
             env: provider.env.clone(),
+            model_id: provider.model.clone(),
             timeout_ms: provider.timeout_ms,
         })
+    }
+}
+
+/// Command-backed ASR backend skeleton.
+#[derive(Debug, Clone)]
+pub struct CommandAsrBackend {
+    spec: CommandAsrSpec,
+    descriptor: BackendDescriptor,
+}
+
+impl CommandAsrBackend {
+    /// Creates a command ASR backend skeleton from a parsed spec.
+    #[must_use]
+    pub fn new(spec: CommandAsrSpec) -> Self {
+        let descriptor = BackendDescriptor::new(
+            spec.provider_id.clone(),
+            spec.model_id.clone().unwrap_or_default(),
+            "Command ASR",
+            BackendCapabilities::buffered(),
+        );
+        Self { spec, descriptor }
+    }
+
+    /// Returns the parsed command provider spec.
+    #[must_use]
+    pub const fn spec(&self) -> &CommandAsrSpec {
+        &self.spec
+    }
+}
+
+impl AsrBackend for CommandAsrBackend {
+    fn describe(&self) -> BackendDescriptor {
+        self.descriptor.clone()
+    }
+
+    fn create_session(
+        &self,
+        _context: RecognitionContext,
+    ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+        Err(AsrError::Backend(format!(
+            "command ASR provider `{}` runner is not implemented yet",
+            self.spec.provider_id
+        )))
     }
 }
 
@@ -316,7 +362,9 @@ impl AsrBackendFactory {
             )));
         }
         if provider.kind == AsrProviderKind::Command {
-            let _spec = Self::command_spec(provider)?;
+            return Ok(Box::new(CommandAsrBackend::new(Self::command_spec(
+                provider,
+            )?)));
         }
         unsupported_provider(&provider.id, &provider.kind)
     }
@@ -486,8 +534,8 @@ impl RecognitionSession for MockRecognitionSession {
 #[cfg(test)]
 mod tests {
     use super::{
-        AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrSpec, MockAsrBackend,
-        RecognitionContext, RecognitionEvent, events_to_payload,
+        AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
+        CommandAsrSpec, MockAsrBackend, RecognitionContext, RecognitionEvent, events_to_payload,
     };
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 
@@ -648,6 +696,7 @@ mod tests {
         assert_eq!(spec.command, "helper");
         assert_eq!(spec.args, ["--json"]);
         assert_eq!(spec.env.get("RUST_LOG").map(String::as_str), Some("info"));
+        assert_eq!(spec.model_id, None);
         assert_eq!(spec.timeout_ms, Some(1_500));
     }
 
@@ -688,6 +737,67 @@ mod tests {
         assert!(
             matches!(error, AsrError::Backend(message) if message.contains("must configure a command"))
         );
+    }
+
+    #[test]
+    fn command_asr_backend_describes_configured_provider() {
+        let backend = CommandAsrBackend::new(CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "helper".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: Some("cmd-model".to_owned()),
+            timeout_ms: Some(1_000),
+        });
+
+        let descriptor = backend.describe();
+        assert_eq!(descriptor.provider_id, "cmd");
+        assert_eq!(descriptor.model_id, "cmd-model");
+        assert_eq!(
+            descriptor.capabilities.delivery_mode,
+            AudioDeliveryMode::Buffered
+        );
+        assert_eq!(backend.spec().command, "helper");
+    }
+
+    #[test]
+    fn command_asr_backend_runner_is_not_implemented_yet() {
+        let backend = CommandAsrBackend::new(CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "helper".to_owned(),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            timeout_ms: None,
+        });
+
+        let Err(error) = backend.create_session(RecognitionContext::normal("raw", None)) else {
+            panic!("command ASR runner should not be implemented yet");
+        };
+        assert!(matches!(
+            error,
+            AsrError::Backend(message) if message.contains("runner is not implemented yet")
+        ));
+    }
+
+    #[test]
+    fn backend_factory_builds_command_backend_skeleton() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("helper".to_owned()),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let descriptor = backend.describe();
+        assert_eq!(descriptor.provider_id, "cmd");
+        assert_eq!(descriptor.model_id, "cmd-model");
     }
 
     #[test]
