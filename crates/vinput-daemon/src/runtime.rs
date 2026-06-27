@@ -496,6 +496,8 @@ mod tests {
         let registry = runtime.configured_text_adapters();
 
         assert_eq!(registry.len(), 1);
+        assert!(registry.contains_command_adapter("cmd-adapter"));
+        assert!(!registry.contains_command_adapter("missing"));
         assert_eq!(
             registry
                 .command_adapter("cmd-adapter")
