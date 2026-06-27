@@ -44,6 +44,49 @@ fn asr_state_uses_config_file() {
 }
 
 #[test]
+fn asr_state_preserves_remote_endpoint() {
+    let path = std::env::temp_dir().join(format!(
+        "vinput-daemon-test-{}-{}.json",
+        std::process::id(),
+        "remote-asr-state"
+    ));
+    fs::write(
+        &path,
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "remote",
+            "providers": [{"id":"remote","type":"remote","model":"cloud","endpoint":"https://asr.example.test"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    )
+    .expect("write temporary daemon config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&path)
+        .arg("asr-state")
+        .output()
+        .expect("run vinput-daemon asr-state");
+    fs::remove_file(&path).expect("remove temporary daemon config");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "remote");
+    assert_eq!(
+        value["remote_endpoints"],
+        serde_json::json!(["https://asr.example.test"])
+    );
+}
+
+#[test]
 fn help_lists_config_option() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")
