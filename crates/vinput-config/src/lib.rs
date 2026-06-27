@@ -1152,6 +1152,21 @@ mod tests {
     }
 
     #[test]
+    fn validation_accepts_object_llm_provider_extra_body() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.providers.push(super::LlmProviderConfig {
+            id: "llm".to_owned(),
+            base_url: "https://example.invalid/v1".to_owned(),
+            api_key: String::new(),
+            model: None,
+            extra_body: serde_json::json!({"temperature": 0.1}),
+            extra: std::collections::HashMap::default(),
+        });
+
+        config.validate().unwrap();
+    }
+
+    #[test]
     fn validation_rejects_invalid_llm_entries() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.llm.providers.push(super::LlmProviderConfig {
