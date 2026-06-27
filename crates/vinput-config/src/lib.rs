@@ -1080,6 +1080,13 @@ mod tests {
     }
 
     #[test]
+    fn validation_accepts_max_context_lines() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.definitions[0].context_lines = 32;
+        config.validate().unwrap();
+    }
+
+    #[test]
     fn validation_rejects_unknown_scene_provider() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.scenes.definitions[0].provider_id = Some("missing-provider".to_owned());
