@@ -808,9 +808,9 @@ mod tests {
         let provider = AsrProviderConfig {
             id: "cmd".to_owned(),
             kind: AsrProviderKind::Command,
-            timeout_ms: None,
-            model: None,
-            hotwords_file: None,
+            timeout_ms: Some(1_500),
+            model: Some("paraformer".to_owned()),
+            hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
             command: Some("helper".to_owned()),
             args: Vec::new(),
             env: std::collections::HashMap::default(),
@@ -820,6 +820,9 @@ mod tests {
         let spec = AsrBackendFactory::command_spec(&provider).unwrap();
         assert_eq!(spec.provider_id, "cmd");
         assert_eq!(spec.command, "helper");
+        assert_eq!(spec.model_id.as_deref(), Some("paraformer"));
+        assert_eq!(spec.hotwords_file.as_deref(), Some("/tmp/hotwords.txt"));
+        assert_eq!(spec.timeout_ms, Some(1_500));
     }
 
     #[test]
