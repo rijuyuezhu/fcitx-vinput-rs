@@ -47,6 +47,22 @@ impl AsrBackendState {
             ..Self::default()
         }
     }
+
+    /// Creates an unavailable backend snapshot for config-selected providers that failed to load.
+    #[must_use]
+    pub fn unavailable(
+        target_provider_id: impl Into<String>,
+        target_model_id: impl Into<String>,
+        error: impl Into<String>,
+    ) -> Self {
+        Self {
+            target_provider_id: target_provider_id.into(),
+            target_model_id: target_model_id.into(),
+            last_error: error.into(),
+            has_effective_backend: false,
+            ..Self::default()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -60,5 +76,16 @@ mod tests {
         assert_eq!(state.target_provider_id, "sherpa-onnx");
         assert!(!state.has_effective_backend);
         assert!(state.remote_endpoints.is_empty());
+    }
+
+    #[test]
+    fn unavailable_state_keeps_target_without_effective_backend() {
+        let state = AsrBackendState::unavailable("sherpa-onnx", "paraformer", "load failed");
+        assert_eq!(state.target_provider_id, "sherpa-onnx");
+        assert_eq!(state.target_model_id, "paraformer");
+        assert_eq!(state.last_error, "load failed");
+        assert!(!state.has_effective_backend);
+        assert!(state.effective_provider_id.is_empty());
+        assert!(state.effective_model_id.is_empty());
     }
 }
