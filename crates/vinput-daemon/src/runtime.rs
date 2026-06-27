@@ -211,6 +211,16 @@ impl RuntimeState {
         Ok(self.asr_backend_state())
     }
 
+    /// Rebuilds the runtime ASR backend from the validated active provider.
+    pub fn reload_configured_asr_backend(&mut self) -> Result<AsrBackendState, RuntimeError> {
+        self.config
+            .validate()
+            .map_err(RuntimeError::InvalidConfig)?;
+        self.asr_backend =
+            AsrBackendFactory::build_active(&self.config.asr).map_err(RuntimeError::Asr)?;
+        Ok(self.asr_backend_state())
+    }
+
     fn start_recording_internal(
         &mut self,
         scene_id: String,
@@ -511,6 +521,47 @@ mod tests {
         });
         let runtime = RuntimeState::with_configured_asr(config).unwrap();
         assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
+    }
+
+    #[test]
+    fn reload_configured_asr_backend_swaps_to_configured_provider() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "mock".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "mock".to_owned(),
+            kind: AsrProviderKind::Local,
+            timeout_ms: None,
+            model: Some("mock-model".to_owned()),
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let mut runtime = RuntimeState::new(config).unwrap();
+        assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
+
+        let state = runtime.reload_configured_asr_backend().unwrap();
+        assert_eq!(state.effective_provider_id, "mock");
+        assert_eq!(state.effective_model_id, "mock-streaming");
+        assert_eq!(state.target_model_id, "mock-model");
+        assert!(state.has_effective_backend);
+    }
+
+    #[test]
+    fn reload_configured_asr_backend_reports_build_errors_without_swapping() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let mut runtime = RuntimeState::new(config).unwrap();
+        let before = runtime.asr_backend_state();
+
+        let Err(error) = runtime.reload_configured_asr_backend() else {
+            panic!("default unsupported configured ASR should fail to build");
+        };
+
+        assert!(matches!(error, super::RuntimeError::Asr(_)));
+        let after = runtime.asr_backend_state();
+        assert_eq!(after.effective_provider_id, before.effective_provider_id);
+        assert_eq!(after.effective_model_id, before.effective_model_id);
     }
 
     #[test]
