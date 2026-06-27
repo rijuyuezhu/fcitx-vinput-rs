@@ -325,6 +325,24 @@ fn config_validate_fails_for_empty_capture_device() {
 }
 
 #[test]
+fn config_validate_fails_for_empty_active_provider() {
+    let path = write_temp_config(
+        r#"{"version":1,"asr":{"active_provider":"   ","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("invalid empty active ASR provider id"));
+}
+
+#[test]
 fn config_validate_fails_for_empty_default_language() {
     let path = write_temp_config(
         r#"{"version":1,"global":{"default_language":"   "},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,

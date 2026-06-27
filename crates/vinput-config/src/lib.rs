@@ -106,6 +106,7 @@ impl VinputConfig {
             ));
         }
 
+
         let mut provider_ids = HashSet::new();
         for provider in &self.asr.providers {
             if provider.id.trim().is_empty() {
@@ -114,6 +115,10 @@ impl VinputConfig {
             if !provider_ids.insert(provider.id.as_str()) {
                 return Err(ConfigError::DuplicateAsrProviderId(provider.id.clone()));
             }
+        }
+
+        if self.asr.active_provider.trim().is_empty() {
+            return Err(ConfigError::InvalidActiveAsrProviderId);
         }
 
         if !self.asr.providers.is_empty()
@@ -351,6 +356,9 @@ pub enum ConfigError {
     /// Active scene is not listed in scene definitions.
     #[error("active scene `{0}` is not defined")]
     UnknownActiveScene(String),
+    /// Active ASR provider id is empty.
+    #[error("invalid empty active ASR provider id")]
+    InvalidActiveAsrProviderId,
     /// Active ASR provider is not listed in provider definitions.
     #[error("active ASR provider `{0}` is not defined")]
     UnknownActiveAsrProvider(String),
@@ -494,6 +502,17 @@ mod tests {
         config.global.default_language = "  ".to_owned();
         let error = config.validate().unwrap_err();
         assert!(matches!(error, super::ConfigError::InvalidDefaultLanguage));
+    }
+
+    #[test]
+    fn validation_rejects_empty_active_provider() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "  ".to_owned();
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidActiveAsrProviderId
+        ));
     }
 
     #[test]
