@@ -250,33 +250,30 @@ impl AsrBackendFactory {
     }
 
     /// Builds the active backend from ASR config.
-    pub fn build_active(&self, config: &AsrConfig) -> Result<Box<dyn AsrBackend>, AsrError> {
+    pub fn build_active(config: &AsrConfig) -> Result<Box<dyn AsrBackend>, AsrError> {
         let provider = config
             .providers
             .iter()
             .find(|provider| provider.id == config.active_provider)
             .ok_or_else(|| AsrError::UnknownProvider(config.active_provider.clone()))?;
-        self.build_provider(provider)
+        Self::build_provider(provider)
     }
 
     /// Builds a backend from one provider entry.
-    pub fn build_provider(
-        &self,
-        provider: &AsrProviderConfig,
-    ) -> Result<Box<dyn AsrBackend>, AsrError> {
+    pub fn build_provider(provider: &AsrProviderConfig) -> Result<Box<dyn AsrBackend>, AsrError> {
         if provider.id == "mock" {
             return Ok(Box::new(MockAsrBackend::streaming(
                 "mock partial",
                 "mock recognition result",
             )));
         }
-        unsupported_provider(&provider.id, provider.kind.clone())
+        unsupported_provider(&provider.id, &provider.kind)
     }
 }
 
 fn unsupported_provider(
     provider_id: &str,
-    kind: AsrProviderKind,
+    kind: &AsrProviderKind,
 ) -> Result<Box<dyn AsrBackend>, AsrError> {
     Err(AsrError::UnsupportedProviderKind {
         provider_id: provider_id.to_owned(),
@@ -284,7 +281,7 @@ fn unsupported_provider(
     })
 }
 
-const fn provider_kind_label(kind: AsrProviderKind) -> &'static str {
+fn provider_kind_label(kind: &AsrProviderKind) -> &'static str {
     match kind {
         AsrProviderKind::Local => "local",
         AsrProviderKind::Remote => "remote",
@@ -509,13 +506,13 @@ mod tests {
                 hotwords_file: None,
                 command: None,
                 args: Vec::new(),
-                env: Default::default(),
+                env: std::collections::HashMap::default(),
                 endpoint: None,
             }],
             ..AsrConfig::default()
         };
 
-        let backend = AsrBackendFactory::new().build_active(&config).unwrap();
+        let backend = AsrBackendFactory::build_active(&config).unwrap();
         assert_eq!(backend.describe().provider_id, "mock");
     }
 
@@ -527,9 +524,8 @@ mod tests {
             ..AsrConfig::default()
         };
 
-        let error = match AsrBackendFactory::new().build_active(&config) {
-            Ok(_) => panic!("missing provider should fail"),
-            Err(error) => error,
+        let Err(error) = AsrBackendFactory::build_active(&config) else {
+            panic!("missing provider should fail");
         };
         assert!(matches!(error, AsrError::UnknownProvider(id) if id == "missing"));
     }
@@ -544,13 +540,12 @@ mod tests {
             hotwords_file: None,
             command: None,
             args: Vec::new(),
-            env: Default::default(),
+            env: std::collections::HashMap::default(),
             endpoint: None,
         };
 
-        let error = match AsrBackendFactory::new().build_provider(&provider) {
-            Ok(_) => panic!("unsupported provider should fail"),
-            Err(error) => error,
+        let Err(error) = AsrBackendFactory::build_provider(&provider) else {
+            panic!("unsupported provider should fail");
         };
         assert!(matches!(
             error,

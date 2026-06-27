@@ -64,135 +64,11 @@ impl VinputConfig {
 
     /// Validates cross-field invariants that serde cannot express.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        let mut registry_base_urls = HashSet::new();
-        for base_url in &self.registry.base_urls {
-            if base_url.trim().is_empty() {
-                return Err(ConfigError::InvalidRegistryBaseUrl(base_url.clone()));
-            }
-            if !registry_base_urls.insert(base_url.as_str()) {
-                return Err(ConfigError::DuplicateRegistryBaseUrl(base_url.clone()));
-            }
-        }
-
-        if self.global.default_language.trim().is_empty() {
-            return Err(ConfigError::InvalidDefaultLanguage);
-        }
-        if self.global.capture_device.trim().is_empty() {
-            return Err(ConfigError::InvalidCaptureDevice);
-        }
-
-        let mut scene_ids = HashSet::new();
-        for scene in &self.scenes.definitions {
-            if scene.id.trim().is_empty() {
-                return Err(ConfigError::InvalidSceneId(scene.id.clone()));
-            }
-            if scene.label.trim().is_empty() {
-                return Err(ConfigError::InvalidSceneLabel(scene.id.clone()));
-            }
-            if !scene_ids.insert(scene.id.as_str()) {
-                return Err(ConfigError::DuplicateSceneId(scene.id.clone()));
-            }
-            if scene.candidate_count > 32 {
-                return Err(ConfigError::TooManyCandidates {
-                    scene_id: scene.id.clone(),
-                    candidate_count: scene.candidate_count,
-                });
-            }
-            if let Some(provider_id) = &scene.provider_id
-                && provider_id.trim().is_empty()
-            {
-                return Err(ConfigError::InvalidSceneProviderId(scene.id.clone()));
-            }
-            if scene.context_lines > 32 {
-                return Err(ConfigError::TooManyContextLines {
-                    scene_id: scene.id.clone(),
-                    context_lines: scene.context_lines,
-                });
-            }
-        }
-
-        if !scene_ids.contains(self.scenes.active_scene.as_str()) {
-            return Err(ConfigError::UnknownActiveScene(
-                self.scenes.active_scene.clone(),
-            ));
-        }
-
-        let mut provider_ids = HashSet::new();
-        for provider in &self.asr.providers {
-            if provider.id.trim().is_empty() {
-                return Err(ConfigError::InvalidAsrProviderId(provider.id.clone()));
-            }
-            if !provider_ids.insert(provider.id.as_str()) {
-                return Err(ConfigError::DuplicateAsrProviderId(provider.id.clone()));
-            }
-            if provider.kind == AsrProviderKind::Command
-                && provider
-                    .command
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or_default()
-                    .is_empty()
-            {
-                return Err(ConfigError::InvalidCommandAsrProviderCommand(
-                    provider.id.clone(),
-                ));
-            }
-            for key in provider.env.keys() {
-                if key.trim().is_empty() {
-                    return Err(ConfigError::InvalidProviderEnvKey {
-                        provider_id: provider.id.clone(),
-                        key: key.clone(),
-                    });
-                }
-            }
-        }
-
-        if self.asr.active_provider.trim().is_empty() {
-            return Err(ConfigError::InvalidActiveAsrProviderId);
-        }
-
-        if !self.asr.providers.is_empty()
-            && !provider_ids.contains(self.asr.active_provider.as_str())
-        {
-            return Err(ConfigError::UnknownActiveAsrProvider(
-                self.asr.active_provider.clone(),
-            ));
-        }
-
-        let mut llm_provider_ids = HashSet::new();
-        for provider in &self.llm.providers {
-            if provider.id.trim().is_empty() {
-                return Err(ConfigError::InvalidLlmProviderId(provider.id.clone()));
-            }
-            if !llm_provider_ids.insert(provider.id.as_str()) {
-                return Err(ConfigError::DuplicateLlmProviderId(provider.id.clone()));
-            }
-            if provider.base_url.trim().is_empty() {
-                return Err(ConfigError::InvalidLlmProviderBaseUrl(provider.id.clone()));
-            }
-        }
-
-        let mut adapter_ids = HashSet::new();
-        for adapter in &self.llm.adapters {
-            if adapter.id.trim().is_empty() {
-                return Err(ConfigError::InvalidLlmAdapterId(adapter.id.clone()));
-            }
-            if !adapter_ids.insert(adapter.id.as_str()) {
-                return Err(ConfigError::DuplicateLlmAdapterId(adapter.id.clone()));
-            }
-            if adapter.command.trim().is_empty() {
-                return Err(ConfigError::InvalidLlmAdapterCommand(adapter.id.clone()));
-            }
-            for key in adapter.env.keys() {
-                if key.trim().is_empty() {
-                    return Err(ConfigError::InvalidLlmAdapterEnvKey {
-                        adapter_id: adapter.id.clone(),
-                        key: key.clone(),
-                    });
-                }
-            }
-        }
-
+        validate_registry(&self.registry)?;
+        validate_global(&self.global)?;
+        validate_scenes(&self.scenes)?;
+        validate_asr(&self.asr)?;
+        validate_llm(&self.llm)?;
         Ok(())
     }
 
@@ -218,6 +94,178 @@ impl VinputConfig {
             .iter()
             .find(|scene| scene.id == self.scenes.active_scene)
     }
+}
+
+fn validate_registry(registry: &RegistryConfig) -> Result<(), ConfigError> {
+    let mut registry_base_urls = HashSet::new();
+    for base_url in &registry.base_urls {
+        if base_url.trim().is_empty() {
+            return Err(ConfigError::InvalidRegistryBaseUrl(base_url.clone()));
+        }
+        if !registry_base_urls.insert(base_url.as_str()) {
+            return Err(ConfigError::DuplicateRegistryBaseUrl(base_url.clone()));
+        }
+    }
+    Ok(())
+}
+
+fn validate_global(global: &GlobalConfig) -> Result<(), ConfigError> {
+    if global.default_language.trim().is_empty() {
+        return Err(ConfigError::InvalidDefaultLanguage);
+    }
+    if global.capture_device.trim().is_empty() {
+        return Err(ConfigError::InvalidCaptureDevice);
+    }
+    Ok(())
+}
+
+fn validate_scenes(scenes: &ScenesConfig) -> Result<(), ConfigError> {
+    let mut scene_ids = HashSet::new();
+    for scene in &scenes.definitions {
+        validate_scene_definition(scene, &mut scene_ids)?;
+    }
+
+    if !scene_ids.contains(scenes.active_scene.as_str()) {
+        return Err(ConfigError::UnknownActiveScene(scenes.active_scene.clone()));
+    }
+    Ok(())
+}
+
+fn validate_scene_definition<'a>(
+    scene: &'a SceneDefinition,
+    scene_ids: &mut HashSet<&'a str>,
+) -> Result<(), ConfigError> {
+    if scene.id.trim().is_empty() {
+        return Err(ConfigError::InvalidSceneId(scene.id.clone()));
+    }
+    if scene.label.trim().is_empty() {
+        return Err(ConfigError::InvalidSceneLabel(scene.id.clone()));
+    }
+    if !scene_ids.insert(scene.id.as_str()) {
+        return Err(ConfigError::DuplicateSceneId(scene.id.clone()));
+    }
+    if scene.candidate_count > 32 {
+        return Err(ConfigError::TooManyCandidates {
+            scene_id: scene.id.clone(),
+            candidate_count: scene.candidate_count,
+        });
+    }
+    if let Some(provider_id) = &scene.provider_id
+        && provider_id.trim().is_empty()
+    {
+        return Err(ConfigError::InvalidSceneProviderId(scene.id.clone()));
+    }
+    if scene.context_lines > 32 {
+        return Err(ConfigError::TooManyContextLines {
+            scene_id: scene.id.clone(),
+            context_lines: scene.context_lines,
+        });
+    }
+    Ok(())
+}
+
+fn validate_asr(asr: &AsrConfig) -> Result<(), ConfigError> {
+    let mut provider_ids = HashSet::new();
+    for provider in &asr.providers {
+        validate_asr_provider(provider, &mut provider_ids)?;
+    }
+
+    if asr.active_provider.trim().is_empty() {
+        return Err(ConfigError::InvalidActiveAsrProviderId);
+    }
+
+    if !asr.providers.is_empty() && !provider_ids.contains(asr.active_provider.as_str()) {
+        return Err(ConfigError::UnknownActiveAsrProvider(
+            asr.active_provider.clone(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_asr_provider<'a>(
+    provider: &'a AsrProviderConfig,
+    provider_ids: &mut HashSet<&'a str>,
+) -> Result<(), ConfigError> {
+    if provider.id.trim().is_empty() {
+        return Err(ConfigError::InvalidAsrProviderId(provider.id.clone()));
+    }
+    if !provider_ids.insert(provider.id.as_str()) {
+        return Err(ConfigError::DuplicateAsrProviderId(provider.id.clone()));
+    }
+    if provider.kind == AsrProviderKind::Command
+        && provider
+            .command
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty()
+    {
+        return Err(ConfigError::InvalidCommandAsrProviderCommand(
+            provider.id.clone(),
+        ));
+    }
+    for key in provider.env.keys() {
+        if key.trim().is_empty() {
+            return Err(ConfigError::InvalidProviderEnvKey {
+                provider_id: provider.id.clone(),
+                key: key.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_llm(llm: &LlmConfig) -> Result<(), ConfigError> {
+    let mut llm_provider_ids = HashSet::new();
+    for provider in &llm.providers {
+        validate_llm_provider(provider, &mut llm_provider_ids)?;
+    }
+
+    let mut adapter_ids = HashSet::new();
+    for adapter in &llm.adapters {
+        validate_llm_adapter(adapter, &mut adapter_ids)?;
+    }
+    Ok(())
+}
+
+fn validate_llm_provider<'a>(
+    provider: &'a LlmProviderConfig,
+    provider_ids: &mut HashSet<&'a str>,
+) -> Result<(), ConfigError> {
+    if provider.id.trim().is_empty() {
+        return Err(ConfigError::InvalidLlmProviderId(provider.id.clone()));
+    }
+    if !provider_ids.insert(provider.id.as_str()) {
+        return Err(ConfigError::DuplicateLlmProviderId(provider.id.clone()));
+    }
+    if provider.base_url.trim().is_empty() {
+        return Err(ConfigError::InvalidLlmProviderBaseUrl(provider.id.clone()));
+    }
+    Ok(())
+}
+
+fn validate_llm_adapter<'a>(
+    adapter: &'a LlmAdapterConfig,
+    adapter_ids: &mut HashSet<&'a str>,
+) -> Result<(), ConfigError> {
+    if adapter.id.trim().is_empty() {
+        return Err(ConfigError::InvalidLlmAdapterId(adapter.id.clone()));
+    }
+    if !adapter_ids.insert(adapter.id.as_str()) {
+        return Err(ConfigError::DuplicateLlmAdapterId(adapter.id.clone()));
+    }
+    if adapter.command.trim().is_empty() {
+        return Err(ConfigError::InvalidLlmAdapterCommand(adapter.id.clone()));
+    }
+    for key in adapter.env.keys() {
+        if key.trim().is_empty() {
+            return Err(ConfigError::InvalidLlmAdapterEnvKey {
+                adapter_id: adapter.id.clone(),
+                key: key.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Compact config summary for CLI and diagnostics.
@@ -825,7 +873,7 @@ mod tests {
             hotwords_file: None,
             command: None,
             args: Vec::new(),
-            env: Default::default(),
+            env: std::collections::HashMap::default(),
             endpoint: None,
         });
 
@@ -845,7 +893,7 @@ mod tests {
             api_key: String::new(),
             model: None,
             extra_body: serde_json::json!({}),
-            extra: Default::default(),
+            extra: std::collections::HashMap::default(),
         });
         let error = config.validate().unwrap_err();
         assert!(matches!(
@@ -858,9 +906,9 @@ mod tests {
             id: "adapter".to_owned(),
             command: "  ".to_owned(),
             args: Vec::new(),
-            env: Default::default(),
+            env: std::collections::HashMap::default(),
             working_dir: None,
-            extra: Default::default(),
+            extra: std::collections::HashMap::default(),
         });
         let error = config.validate().unwrap_err();
         assert!(matches!(
