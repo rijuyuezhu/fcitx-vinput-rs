@@ -166,6 +166,13 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         ("summary".to_owned(), "body".to_owned())
     );
 
+    let empty_notification: String = proxy.call(dbus::method::NOTIFY, &("", "")).await?;
+    assert_eq!(empty_notification, ": ");
+    assert_eq!(
+        next_pair_signal(&mut notification_signals).await?,
+        (String::new(), String::new())
+    );
+
     let state_json: String = proxy.call(dbus::method::GET_ASR_BACKEND_STATE, &()).await?;
     let state: AsrBackendState = serde_json::from_str(&state_json)?;
     assert!(state.has_effective_backend);
