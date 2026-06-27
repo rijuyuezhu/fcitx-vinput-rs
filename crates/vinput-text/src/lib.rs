@@ -1,4 +1,4 @@
-//! Deterministic text finishing helpers before adapter integration.
+//! Deterministic text finishing helpers and adapter seams.
 
 use thiserror::Error;
 use vinput_config::{COMMAND_SCENE_ID, RAW_SCENE_ID, SceneDefinition};
@@ -108,6 +108,59 @@ pub trait TextProcessor: Send {
     fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError>;
 }
 
+/// Adapter seam for real scene post-processing backends.
+pub trait TextAdapter: Send + Sync {
+    /// Finishes a scene that requires post-processing.
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError>;
+}
+
+/// Text processor that delegates post-processing scenes to an adapter.
+#[derive(Debug, Clone)]
+pub struct LlmTextProcessor<A> {
+    adapter: A,
+}
+
+impl<A> LlmTextProcessor<A> {
+    /// Creates a text processor backed by one adapter implementation.
+    #[must_use]
+    pub const fn new(adapter: A) -> Self {
+        Self { adapter }
+    }
+
+    /// Returns the configured adapter.
+    #[must_use]
+    pub const fn adapter(&self) -> &A {
+        &self.adapter
+    }
+}
+
+impl<A: TextAdapter> TextProcessor for LlmTextProcessor<A> {
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        if request.scene.id == RAW_SCENE_ID || !scene_needs_postprocessing(request.scene) {
+            return Ok(RecognitionPayload::raw(request.raw_text));
+        }
+        self.adapter.finish(request)
+    }
+}
+
+/// Adapter placeholder used until concrete local/command adapters are ported.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnsupportedTextAdapter;
+
+impl UnsupportedTextAdapter {
+    /// Creates an unsupported adapter placeholder.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl TextAdapter for UnsupportedTextAdapter {
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        Err(TextError::UnsupportedAdapter(request.scene.id.clone()))
+    }
+}
+
 /// Production-safe text finisher used before real LLM/adapter support lands.
 ///
 /// It only commits raw/no-op scenes that do not require post-processing.
@@ -174,6 +227,9 @@ pub enum TextError {
     /// A non-raw scene with candidates needs adapter support that is not ported yet.
     #[error("scene `{0}` requires adapter text finishing")]
     AdapterRequired(String),
+    /// A configured adapter path exists but is not implemented yet.
+    #[error("scene `{0}` requested an unsupported text adapter")]
+    UnsupportedAdapter(String),
 }
 
 fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
@@ -206,8 +262,8 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MockTextProcessor, PromptContext, PromptTemplate, TextError, TextFinisher, TextProcessor,
-        TextRequest,
+        LlmTextProcessor, MockTextProcessor, PromptContext, PromptTemplate, TextError,
+        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
     };
     use vinput_config::{COMMAND_SCENE_ID, RAW_SCENE_ID, SceneDefinition};
 
@@ -319,6 +375,51 @@ mod tests {
 
         let rendered = PromptTemplate::new("x={x}").render_request(&request);
         assert_eq!(rendered, "x={x}");
+    }
+
+    #[test]
+    fn llm_text_processor_keeps_noop_scene_raw() {
+        let noop = scene("noop", 0);
+        let payload = LlmTextProcessor::new(UnsupportedTextAdapter::new())
+            .finish(&TextRequest {
+                raw_text: "hello",
+                scene: &noop,
+                selected_text: None,
+            })
+            .unwrap();
+        assert_eq!(payload.commit_text, "hello");
+    }
+
+    #[test]
+    fn llm_text_processor_delegates_prompted_scene_to_adapter() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let error = LlmTextProcessor::new(UnsupportedTextAdapter::new())
+            .finish(&TextRequest {
+                raw_text: "hello",
+                scene: &prompted,
+                selected_text: None,
+            })
+            .unwrap_err();
+        assert_eq!(error, TextError::UnsupportedAdapter("polish".to_owned()));
+    }
+
+    #[test]
+    fn llm_text_processor_delegates_command_scene_to_adapter() {
+        let command = scene(COMMAND_SCENE_ID, 0);
+        let error = LlmTextProcessor::new(UnsupportedTextAdapter::new())
+            .finish(&TextRequest {
+                raw_text: "replace it",
+                scene: &command,
+                selected_text: Some("selected source"),
+            })
+            .unwrap_err();
+        assert_eq!(
+            error,
+            TextError::UnsupportedAdapter(COMMAND_SCENE_ID.to_owned())
+        );
     }
 
     #[test]
