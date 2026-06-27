@@ -66,7 +66,7 @@ impl VinputConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_registry(&self.registry)?;
         validate_global(&self.global)?;
-        validate_scenes(&self.scenes)?;
+        validate_scenes(&self.scenes, &self.llm)?;
         validate_asr(&self.asr)?;
         validate_llm(&self.llm)?;
         Ok(())
@@ -119,10 +119,10 @@ fn validate_global(global: &GlobalConfig) -> Result<(), ConfigError> {
     Ok(())
 }
 
-fn validate_scenes(scenes: &ScenesConfig) -> Result<(), ConfigError> {
+fn validate_scenes(scenes: &ScenesConfig, llm: &LlmConfig) -> Result<(), ConfigError> {
     let mut scene_ids = HashSet::new();
     for scene in &scenes.definitions {
-        validate_scene_definition(scene, &mut scene_ids)?;
+        validate_scene_definition(scene, &mut scene_ids, llm)?;
     }
 
     if !scene_ids.contains(scenes.active_scene.as_str()) {
@@ -134,6 +134,7 @@ fn validate_scenes(scenes: &ScenesConfig) -> Result<(), ConfigError> {
 fn validate_scene_definition<'a>(
     scene: &'a SceneDefinition,
     scene_ids: &mut HashSet<&'a str>,
+    llm: &LlmConfig,
 ) -> Result<(), ConfigError> {
     if scene.id.trim().is_empty() {
         return Err(ConfigError::InvalidSceneId(scene.id.clone()));
@@ -150,10 +151,20 @@ fn validate_scene_definition<'a>(
             candidate_count: scene.candidate_count,
         });
     }
-    if let Some(provider_id) = &scene.provider_id
-        && provider_id.trim().is_empty()
-    {
-        return Err(ConfigError::InvalidSceneProviderId(scene.id.clone()));
+    if let Some(provider_id) = &scene.provider_id {
+        if provider_id.trim().is_empty() {
+            return Err(ConfigError::InvalidSceneProviderId(scene.id.clone()));
+        }
+        if !llm
+            .providers
+            .iter()
+            .any(|provider| provider.id == *provider_id)
+        {
+            return Err(ConfigError::UnknownSceneProviderId {
+                scene_id: scene.id.clone(),
+                provider_id: provider_id.clone(),
+            });
+        }
     }
     if scene.context_lines > 32 {
         return Err(ConfigError::TooManyContextLines {
@@ -556,6 +567,14 @@ pub enum ConfigError {
     /// Scene provider id is present but empty.
     #[error("scene `{0}` has an invalid empty provider id")]
     InvalidSceneProviderId(String),
+    /// Scene provider id does not match a configured LLM provider.
+    #[error("scene `{scene_id}` references unknown LLM provider `{provider_id}`")]
+    UnknownSceneProviderId {
+        /// Scene id.
+        scene_id: String,
+        /// Missing provider id.
+        provider_id: String,
+    },
     /// Scene asks for too many recent context lines.
     #[error("scene `{scene_id}` asks for {context_lines} context lines, max is 32")]
     TooManyContextLines {
@@ -934,6 +953,18 @@ mod tests {
             error,
             super::ConfigError::TooManyContextLines { scene_id, context_lines }
                 if scene_id == RAW_SCENE_ID && context_lines == 33
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_unknown_scene_provider() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.definitions[0].provider_id = Some("missing-provider".to_owned());
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::UnknownSceneProviderId { scene_id, provider_id }
+                if scene_id == RAW_SCENE_ID && provider_id == "missing-provider"
         ));
     }
 }

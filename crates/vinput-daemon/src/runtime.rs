@@ -532,6 +532,14 @@ mod tests {
     fn failed_text_finishing_returns_runtime_to_idle() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.scenes.active_scene = "needs-adapter".to_owned();
+        config.llm.providers.push(vinput_config::LlmProviderConfig {
+            id: "openai".to_owned(),
+            base_url: "https://example.invalid/v1".to_owned(),
+            api_key: String::new(),
+            model: None,
+            extra_body: serde_json::json!({}),
+            extra: std::collections::HashMap::new(),
+        });
         config
             .scenes
             .definitions
