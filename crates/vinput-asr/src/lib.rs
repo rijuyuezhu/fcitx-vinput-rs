@@ -7,6 +7,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 use vinput_protocol::{CandidateSource, RecognitionPayload};
 
 /// How audio should be delivered to an ASR session.
@@ -181,6 +182,17 @@ pub enum AsrError {
     /// Session was cancelled.
     #[error("recognition session was cancelled")]
     Cancelled,
+    /// The requested ASR provider is not present in config.
+    #[error("ASR provider `{0}` is not configured")]
+    UnknownProvider(String),
+    /// Configured provider kind is recognized but not implemented yet.
+    #[error("ASR provider `{provider_id}` of kind `{kind}` is not implemented yet")]
+    UnsupportedProviderKind {
+        /// Provider id.
+        provider_id: String,
+        /// Provider kind label.
+        kind: String,
+    },
     /// Backend-specific error.
     #[error("backend error: {0}")]
     Backend(String),
@@ -226,6 +238,59 @@ impl MockAsrBackend {
     }
 }
 
+/// Builds ASR backends from typed config entries.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AsrBackendFactory;
+
+impl AsrBackendFactory {
+    /// Creates a factory.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Builds the active backend from ASR config.
+    pub fn build_active(&self, config: &AsrConfig) -> Result<Box<dyn AsrBackend>, AsrError> {
+        let provider = config
+            .providers
+            .iter()
+            .find(|provider| provider.id == config.active_provider)
+            .ok_or_else(|| AsrError::UnknownProvider(config.active_provider.clone()))?;
+        self.build_provider(provider)
+    }
+
+    /// Builds a backend from one provider entry.
+    pub fn build_provider(
+        &self,
+        provider: &AsrProviderConfig,
+    ) -> Result<Box<dyn AsrBackend>, AsrError> {
+        if provider.id == "mock" {
+            return Ok(Box::new(MockAsrBackend::streaming(
+                "mock partial",
+                "mock recognition result",
+            )));
+        }
+        unsupported_provider(&provider.id, provider.kind.clone())
+    }
+}
+
+fn unsupported_provider(
+    provider_id: &str,
+    kind: AsrProviderKind,
+) -> Result<Box<dyn AsrBackend>, AsrError> {
+    Err(AsrError::UnsupportedProviderKind {
+        provider_id: provider_id.to_owned(),
+        kind: provider_kind_label(kind).to_owned(),
+    })
+}
+
+const fn provider_kind_label(kind: AsrProviderKind) -> &'static str {
+    match kind {
+        AsrProviderKind::Local => "local",
+        AsrProviderKind::Remote => "remote",
+        AsrProviderKind::Command => "command",
+    }
+}
 impl AsrBackend for MockAsrBackend {
     fn describe(&self) -> BackendDescriptor {
         self.descriptor.clone()
@@ -325,9 +390,10 @@ impl RecognitionSession for MockRecognitionSession {
 #[cfg(test)]
 mod tests {
     use super::{
-        AsrBackend, AsrError, AudioDeliveryMode, MockAsrBackend, RecognitionContext,
-        RecognitionEvent, events_to_payload,
+        AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, MockAsrBackend,
+        RecognitionContext, RecognitionEvent, events_to_payload,
     };
+    use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 
     #[test]
     fn recognition_context_marks_command_sessions() {
@@ -428,6 +494,68 @@ mod tests {
         assert!(matches!(
             session.push_audio(&[1]).unwrap_err(),
             AsrError::AlreadyFinished
+        ));
+    }
+
+    #[test]
+    fn backend_factory_builds_mock_provider() {
+        let config = AsrConfig {
+            active_provider: "mock".to_owned(),
+            providers: vec![AsrProviderConfig {
+                id: "mock".to_owned(),
+                kind: AsrProviderKind::Local,
+                timeout_ms: None,
+                model: None,
+                hotwords_file: None,
+                command: None,
+                args: Vec::new(),
+                env: Default::default(),
+                endpoint: None,
+            }],
+            ..AsrConfig::default()
+        };
+
+        let backend = AsrBackendFactory::new().build_active(&config).unwrap();
+        assert_eq!(backend.describe().provider_id, "mock");
+    }
+
+    #[test]
+    fn backend_factory_reports_unknown_active_provider() {
+        let config = AsrConfig {
+            active_provider: "missing".to_owned(),
+            providers: Vec::new(),
+            ..AsrConfig::default()
+        };
+
+        let error = match AsrBackendFactory::new().build_active(&config) {
+            Ok(_) => panic!("missing provider should fail"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, AsrError::UnknownProvider(id) if id == "missing"));
+    }
+
+    #[test]
+    fn backend_factory_reports_unimplemented_provider_kind() {
+        let provider = AsrProviderConfig {
+            id: "sherpa-onnx".to_owned(),
+            kind: AsrProviderKind::Local,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: Default::default(),
+            endpoint: None,
+        };
+
+        let error = match AsrBackendFactory::new().build_provider(&provider) {
+            Ok(_) => panic!("unsupported provider should fail"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            AsrError::UnsupportedProviderKind { provider_id, kind }
+                if provider_id == "sherpa-onnx" && kind == "local"
         ));
     }
 }

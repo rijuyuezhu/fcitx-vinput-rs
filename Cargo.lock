@@ -989,6 +989,7 @@ dependencies = [
  "schemars",
  "serde",
  "thiserror",
+ "vinput-config",
  "vinput-protocol",
 ]
 
