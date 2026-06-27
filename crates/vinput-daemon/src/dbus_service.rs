@@ -95,7 +95,7 @@ impl VinputDbusService {
     async fn adapter_placeholder(&self, adapter_id: &str, action: &str) -> String {
         let runtime = self.runtime.lock().await;
         let registry = runtime.configured_text_adapters();
-        if registry.command_adapter(adapter_id).is_some() {
+        if registry.contains_command_adapter(adapter_id) {
             format!("adapter `{adapter_id}` {action} is not implemented yet")
         } else {
             format!("adapter `{adapter_id}` is not configured")
