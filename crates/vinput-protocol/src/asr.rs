@@ -90,6 +90,30 @@ mod tests {
     }
 
     #[test]
+    fn ready_state_serializes_command_provider_metadata() {
+        let state = AsrBackendState::ready("cmd", "cmd-model");
+        let value = serde_json::to_value(&state).unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "target_provider_id": "cmd",
+                "target_model_id": "cmd-model",
+                "effective_provider_id": "cmd",
+                "effective_model_id": "cmd-model",
+                "last_error": "",
+                "reload_in_progress": false,
+                "has_effective_backend": true,
+                "remote_endpoints": []
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<AsrBackendState>(value).unwrap(),
+            state
+        );
+    }
+
+    #[test]
     fn unavailable_state_keeps_target_without_effective_backend() {
         let state = AsrBackendState::unavailable("sherpa-onnx", "paraformer", "load failed");
         assert_eq!(state.target_provider_id, "sherpa-onnx");
