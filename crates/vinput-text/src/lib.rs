@@ -64,6 +64,11 @@ pub struct PromptTemplate {
 
 impl PromptTemplate {
     /// Creates a template with literal text and supported placeholders.
+    ///
+    /// Supported placeholders are `{raw_text}`, `{selected_text}`, `{scene_id}`,
+    /// `{scene_prompt}`, `{provider_id}`, `{model}`, `{candidate_count}`,
+    /// `{context_lines}`, and `{timeout_ms}`. Unknown placeholders are kept as
+    /// literal text for forward compatibility.
     #[must_use]
     pub fn new(template: impl Into<String>) -> Self {
         Self {
