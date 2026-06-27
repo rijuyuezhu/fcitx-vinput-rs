@@ -106,7 +106,6 @@ impl VinputConfig {
             ));
         }
 
-
         let mut provider_ids = HashSet::new();
         for provider in &self.asr.providers {
             if provider.id.trim().is_empty() {
