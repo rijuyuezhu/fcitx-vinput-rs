@@ -398,10 +398,7 @@ mod tests {
             session.push_audio(&[3]).unwrap_err(),
             AsrError::Cancelled
         ));
-        assert!(matches!(
-            session.finish().unwrap_err(),
-            AsrError::Cancelled
-        ));
+        assert!(matches!(session.finish().unwrap_err(), AsrError::Cancelled));
     }
 
     #[test]
