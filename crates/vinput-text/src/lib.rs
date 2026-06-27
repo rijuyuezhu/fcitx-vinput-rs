@@ -221,6 +221,8 @@ mod tests {
     fn prompt_template_replaces_supported_fields() {
         let templated = SceneDefinition {
             prompt: Some("polish".to_owned()),
+            provider_id: Some("p".to_owned()),
+            model: Some("m".to_owned()),
             context_lines: 3,
             ..scene("rewrite", 1)
         };
@@ -231,17 +233,17 @@ mod tests {
         };
         let context = PromptContext::from_request(&request);
         let rendered = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; context={context_lines}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; context={context_lines}",
         )
         .render(&context);
         let rendered_from_request = PromptTemplate::new(
-            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; context={context_lines}",
+            "scene={scene_id}; prompt={scene_prompt}; raw={raw_text}; selected={selected_text}; provider={provider_id}; model={model}; context={context_lines}",
         )
         .render_request(&request);
         assert_eq!(rendered_from_request, rendered);
         assert_eq!(
             rendered,
-            "scene=rewrite; prompt=polish; raw=raw; selected=selected; context=3"
+            "scene=rewrite; prompt=polish; raw=raw; selected=selected; provider=p; model=m; context=3"
         );
     }
 
