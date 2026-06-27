@@ -593,8 +593,10 @@ mod tests {
 
         runtime.start_recording().unwrap();
         let error = runtime.stop_recording(None).unwrap_err();
+        let message = error.to_string();
 
         assert!(matches!(error, super::RuntimeError::Finish(_)));
+        assert!(message.contains("text adapter/postprocess backend"));
         assert_eq!(runtime.status(), ServiceStatus::Idle);
         assert!(runtime.partial_text().is_none());
     }
