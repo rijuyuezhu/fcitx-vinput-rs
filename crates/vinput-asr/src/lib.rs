@@ -292,12 +292,13 @@ impl TryFrom<&AsrProviderConfig> for CommandAsrSpec {
 
 /// Runner seam for command-backed ASR providers.
 pub trait CommandAsrRunner: Send + Sync {
-    /// Creates a recognition session for one command ASR request.
-    fn create_session(
+    /// Recognizes one buffered command ASR request.
+    fn recognize(
         &self,
         spec: &CommandAsrSpec,
-        context: RecognitionContext,
-    ) -> Result<Box<dyn RecognitionSession>, AsrError>;
+        context: &RecognitionContext,
+        samples: &[i16],
+    ) -> Result<Vec<RecognitionEvent>, AsrError>;
 }
 
 /// Runner placeholder used until process execution is ported.
@@ -305,11 +306,12 @@ pub trait CommandAsrRunner: Send + Sync {
 pub struct UnsupportedCommandAsrRunner;
 
 impl CommandAsrRunner for UnsupportedCommandAsrRunner {
-    fn create_session(
+    fn recognize(
         &self,
         spec: &CommandAsrSpec,
-        _context: RecognitionContext,
-    ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+        _context: &RecognitionContext,
+        _samples: &[i16],
+    ) -> Result<Vec<RecognitionEvent>, AsrError> {
         Err(AsrError::Backend(format!(
             "command ASR provider `{}` runner is not implemented yet",
             spec.provider_id
@@ -371,7 +373,7 @@ impl<R> CommandAsrBackend<R> {
     }
 }
 
-impl<R: CommandAsrRunner> AsrBackend for CommandAsrBackend<R> {
+impl<R: CommandAsrRunner + Clone + 'static> AsrBackend for CommandAsrBackend<R> {
     fn describe(&self) -> BackendDescriptor {
         self.descriptor.clone()
     }
@@ -380,7 +382,15 @@ impl<R: CommandAsrRunner> AsrBackend for CommandAsrBackend<R> {
         &self,
         context: RecognitionContext,
     ) -> Result<Box<dyn RecognitionSession>, AsrError> {
-        self.runner.create_session(&self.spec, context)
+        Ok(Box::new(CommandRecognitionSession {
+            spec: self.spec.clone(),
+            context,
+            runner: self.runner.clone(),
+            samples: Vec::new(),
+            finished: false,
+            cancelled: false,
+            events: Vec::new(),
+        }))
     }
 }
 
@@ -531,6 +541,54 @@ pub fn events_to_payload(events: &[RecognitionEvent]) -> Result<RecognitionPaylo
 }
 
 #[derive(Debug)]
+struct CommandRecognitionSession<R> {
+    spec: CommandAsrSpec,
+    context: RecognitionContext,
+    runner: R,
+    samples: Vec<i16>,
+    finished: bool,
+    cancelled: bool,
+    events: Vec<RecognitionEvent>,
+}
+
+impl<R: CommandAsrRunner> RecognitionSession for CommandRecognitionSession<R> {
+    fn push_audio(&mut self, samples: &[i16]) -> Result<(), AsrError> {
+        if self.cancelled {
+            return Err(AsrError::Cancelled);
+        }
+        if self.finished {
+            return Err(AsrError::AlreadyFinished);
+        }
+        self.samples.extend_from_slice(samples);
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), AsrError> {
+        if self.cancelled {
+            return Err(AsrError::Cancelled);
+        }
+        if self.finished {
+            return Err(AsrError::AlreadyFinished);
+        }
+        self.finished = true;
+        self.events = self
+            .runner
+            .recognize(&self.spec, &self.context, &self.samples)?;
+        Ok(())
+    }
+
+    fn cancel(&mut self) -> Result<(), AsrError> {
+        self.cancelled = true;
+        self.events.clear();
+        Ok(())
+    }
+
+    fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
+        Ok(std::mem::take(&mut self.events))
+    }
+}
+
+#[derive(Debug)]
 struct MockRecognitionSession {
     final_text: String,
     partial_text: Option<String>,
@@ -591,7 +649,7 @@ mod tests {
     use super::{
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
         CommandAsrRunner, CommandAsrSpec, MockAsrBackend, RecognitionContext, RecognitionEvent,
-        RecognitionSession, events_to_payload,
+        events_to_payload,
     };
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 
@@ -599,13 +657,18 @@ mod tests {
     struct FinalTextCommandRunner;
 
     impl CommandAsrRunner for FinalTextCommandRunner {
-        fn create_session(
+        fn recognize(
             &self,
             spec: &CommandAsrSpec,
-            context: RecognitionContext,
-        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
-            MockAsrBackend::buffered(format!("{}:{}", spec.command, context.scene_id))
-                .create_session(context)
+            context: &RecognitionContext,
+            samples: &[i16],
+        ) -> Result<Vec<RecognitionEvent>, AsrError> {
+            Ok(vec![
+                RecognitionEvent::FinalText {
+                    text: format!("{}:{}:{}", spec.command, context.scene_id, samples.len()),
+                },
+                RecognitionEvent::Completed,
+            ])
         }
     }
 
@@ -613,11 +676,12 @@ mod tests {
     struct ConfigEchoCommandRunner;
 
     impl CommandAsrRunner for ConfigEchoCommandRunner {
-        fn create_session(
+        fn recognize(
             &self,
             spec: &CommandAsrSpec,
-            context: RecognitionContext,
-        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            context: &RecognitionContext,
+            samples: &[i16],
+        ) -> Result<Vec<RecognitionEvent>, AsrError> {
             let scene_id = context.scene_id.clone();
             let language = context.language.clone().unwrap_or_default();
             let env_value = spec
@@ -625,19 +689,24 @@ mod tests {
                 .get("ASR_MODE")
                 .map(String::as_str)
                 .unwrap_or_default();
-            MockAsrBackend::buffered(format!(
-                "{}|{}|{}|{}|{}|{}|{}|{}|{}",
-                spec.provider_id,
-                spec.command,
-                spec.args.join(","),
-                env_value,
-                spec.model_id.as_deref().unwrap_or_default(),
-                spec.hotwords_file.as_deref().unwrap_or_default(),
-                spec.timeout_ms.unwrap_or_default(),
-                scene_id,
-                language,
-            ))
-            .create_session(context)
+            Ok(vec![
+                RecognitionEvent::FinalText {
+                    text: format!(
+                        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+                        spec.provider_id,
+                        spec.command,
+                        spec.args.join(","),
+                        env_value,
+                        spec.model_id.as_deref().unwrap_or_default(),
+                        spec.hotwords_file.as_deref().unwrap_or_default(),
+                        spec.timeout_ms.unwrap_or_default(),
+                        scene_id,
+                        language,
+                        samples.len(),
+                    ),
+                },
+                RecognitionEvent::Completed,
+            ])
         }
     }
 
@@ -888,7 +957,7 @@ mod tests {
         session.push_audio(&[1, 2, 3]).unwrap();
         session.finish().unwrap();
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
-        assert_eq!(payload.commit_text, "helper:raw");
+        assert_eq!(payload.commit_text, "helper:raw:3");
     }
 
     #[test]
@@ -917,7 +986,7 @@ mod tests {
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
         assert_eq!(
             payload.commit_text,
-            "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh"
+            "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh|0"
         );
     }
 
@@ -955,7 +1024,7 @@ mod tests {
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
         assert_eq!(
             payload.commit_text,
-            "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh"
+            "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh|0"
         );
     }
 
@@ -971,9 +1040,11 @@ mod tests {
             timeout_ms: None,
         });
 
-        let Err(error) = backend.create_session(RecognitionContext::normal("raw", None)) else {
-            panic!("command ASR runner should not be implemented yet");
-        };
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("command backend should create a buffering session");
+        session.push_audio(&[1, 2, 3]).unwrap();
+        let error = session.finish().unwrap_err();
         assert!(matches!(
             error,
             AsrError::Backend(message) if message.contains("runner is not implemented yet")
