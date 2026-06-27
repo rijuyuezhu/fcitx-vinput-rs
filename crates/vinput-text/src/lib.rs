@@ -1193,6 +1193,40 @@ mod tests {
     }
 
     #[test]
+    fn process_command_text_runner_reads_payload_response() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s\n' '{"payload":{"commit_text":"payload final","candidates":[{"text":"payload final","source":"llm"}]}}'"#.to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let payload = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "payload final");
+        assert_eq!(payload.candidates[0].text, "payload final");
+        assert_eq!(payload.candidates[0].source.to_string(), "llm");
+    }
+
+    #[test]
     fn process_command_text_runner_reports_early_exit() {
         let prompted = SceneDefinition {
             prompt: Some("polish".to_owned()),
