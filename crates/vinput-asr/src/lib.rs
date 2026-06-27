@@ -1249,6 +1249,47 @@ mod tests {
     }
 
     #[test]
+    fn process_command_asr_runner_maps_partial_and_final_response() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: None,
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"partial_text":"listening","text":"final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("process runner should create a buffering session");
+        session.finish().unwrap();
+
+        let events = session.poll_events().unwrap();
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::PartialText {
+                    text: "listening".to_owned()
+                },
+                RecognitionEvent::FinalText {
+                    text: "final".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
+        );
+        assert_eq!(events_to_payload(&events).unwrap().commit_text, "final");
+    }
+
+    #[test]
     fn process_command_asr_runner_writes_request_and_reads_response() {
         let mut capture_path = std::env::temp_dir();
         capture_path.push(format!(
