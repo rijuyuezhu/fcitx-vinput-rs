@@ -1339,7 +1339,10 @@ mod tests {
             model: None,
             hotwords_file: None,
             command: Some("sh".to_owned()),
-            args: vec!["-c".to_owned(), "echo boom >&2; exit 7".to_owned()],
+            args: vec![
+                "-c".to_owned(),
+                "cat >/dev/null; echo boom >&2; exit 7".to_owned(),
+            ],
             env: std::collections::HashMap::default(),
             endpoint: None,
         };
