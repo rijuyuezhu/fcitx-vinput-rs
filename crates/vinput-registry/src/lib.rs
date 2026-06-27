@@ -92,6 +92,28 @@ impl RegistryIndex {
         InstallPlan::from_assets(&assets, target_root)
     }
 
+    /// Builds an install plan for one model id without downloading anything.
+    pub fn install_model_plan(
+        &self,
+        model_id: &str,
+        config: &RegistryConfig,
+        target_root: &str,
+    ) -> Result<InstallPlan, RegistryError> {
+        let assets = self.planned_model_assets(model_id, config)?;
+        Ok(InstallPlan::from_assets(&assets, target_root))
+    }
+
+    /// Builds an install plan for one adapter id without downloading anything.
+    pub fn install_adapter_plan(
+        &self,
+        adapter_id: &str,
+        config: &RegistryConfig,
+        target_root: &str,
+    ) -> Result<InstallPlan, RegistryError> {
+        let assets = self.planned_adapter_assets(adapter_id, config)?;
+        Ok(InstallPlan::from_assets(&assets, target_root))
+    }
+
     /// Expands registry assets into deterministic planning rows.
     #[must_use]
     pub fn planned_assets(&self, config: &RegistryConfig) -> Vec<PlannedAsset> {
@@ -645,6 +667,34 @@ mod tests {
             "/var/lib/vinput/assets/models/sherpa-zh-small.tar.zst"
         );
         assert_eq!(plan.assets[0].checksum_policy, ChecksumPolicy::Sha256);
+    }
+
+    #[test]
+    fn selected_install_plans_filter_entries() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let config = RegistryConfig {
+            base_urls: vec!["mirror".to_owned()],
+        };
+
+        let model_plan = index
+            .install_model_plan("sherpa-zh-small", &config, "cache")
+            .unwrap();
+        assert_eq!(model_plan.summary.asset_count, 1);
+        assert_eq!(model_plan.assets[0].entry_id, "sherpa-zh-small");
+        assert_eq!(
+            model_plan.assets[0].target_path,
+            "cache/models/sherpa-zh-small.tar.zst"
+        );
+
+        let adapter_plan = index
+            .install_adapter_plan("mock-adapter", &config, "cache")
+            .unwrap();
+        assert_eq!(adapter_plan.summary.asset_count, 1);
+        assert_eq!(adapter_plan.assets[0].entry_id, "mock-adapter");
+        assert_eq!(
+            adapter_plan.assets[0].target_path,
+            "cache/adapters/mock-adapter.tar.zst"
+        );
     }
 
     #[test]
