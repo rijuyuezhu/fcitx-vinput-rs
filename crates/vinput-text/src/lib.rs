@@ -1012,6 +1012,107 @@ mod tests {
     }
 
     #[test]
+    fn process_command_text_runner_reports_missing_program() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: format!("vinput-missing-text-adapter-{}", std::process::id()),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let error = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message)
+                if message.contains("failed to spawn text adapter `cmd-adapter`")
+        ));
+    }
+
+    #[test]
+    fn process_command_text_runner_rejects_bad_json() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "cat >/dev/null; printf not-json".to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let error = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message)
+                if message.contains("failed to decode text adapter response")
+        ));
+    }
+
+    #[test]
+    fn process_command_text_runner_maps_helper_error_response() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s\n' '{"error":"adapter failed"}'"#.to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let error = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert_eq!(error, TextError::AdapterFailed("adapter failed".to_owned()));
+    }
+
+    #[test]
     fn command_text_adapter_returns_unsupported_until_runner_lands() {
         let prompted = SceneDefinition {
             prompt: Some("polish".to_owned()),
