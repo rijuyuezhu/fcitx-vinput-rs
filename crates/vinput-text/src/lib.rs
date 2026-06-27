@@ -1,6 +1,10 @@
 //! Deterministic text finishing helpers and adapter seams.
 
 use serde::{Deserialize, Serialize};
+use std::{
+    io::Write,
+    process::{Command, Stdio},
+};
 use thiserror::Error;
 use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
 use vinput_protocol::RecognitionPayload;
@@ -244,6 +248,7 @@ pub trait CommandTextRunner: Send + Sync {
     /// Executes the configured command adapter for one post-processing request.
     fn run(
         &self,
+        adapter_id: &str,
         command: &str,
         args: &[String],
         env: &std::collections::HashMap<String, String>,
@@ -259,6 +264,7 @@ pub struct UnsupportedCommandTextRunner;
 impl CommandTextRunner for UnsupportedCommandTextRunner {
     fn run(
         &self,
+        _adapter_id: &str,
         _command: &str,
         _args: &[String],
         _env: &std::collections::HashMap<String, String>,
@@ -266,6 +272,75 @@ impl CommandTextRunner for UnsupportedCommandTextRunner {
         request: &TextRequest<'_>,
     ) -> Result<RecognitionPayload, TextError> {
         Err(TextError::UnsupportedAdapter(request.scene.id.clone()))
+    }
+}
+
+/// Process runner for command-backed text adapter providers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProcessCommandTextRunner;
+
+impl CommandTextRunner for ProcessCommandTextRunner {
+    fn run(
+        &self,
+        adapter_id: &str,
+        command: &str,
+        args: &[String],
+        env: &std::collections::HashMap<String, String>,
+        working_dir: Option<&str>,
+        request: &TextRequest<'_>,
+    ) -> Result<RecognitionPayload, TextError> {
+        let mut command_process = Command::new(command);
+        command_process
+            .args(args)
+            .envs(env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(working_dir) = working_dir {
+            command_process.current_dir(working_dir);
+        }
+        let mut child = command_process.spawn().map_err(|error| {
+            TextError::AdapterFailed(format!(
+                "failed to spawn text adapter `{adapter_id}`: {error}"
+            ))
+        })?;
+
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            TextError::AdapterFailed(format!("text adapter `{adapter_id}` did not expose stdin"))
+        })?;
+        let helper_request = CommandTextRequest::from_text_request(adapter_id, request);
+        serde_json::to_writer(&mut stdin, &helper_request).map_err(|error| {
+            TextError::AdapterFailed(format!(
+                "failed to encode text adapter request for `{adapter_id}`: {error}"
+            ))
+        })?;
+        stdin.write_all(b"\n").map_err(|error| {
+            TextError::AdapterFailed(format!(
+                "failed to write text adapter request for `{adapter_id}`: {error}"
+            ))
+        })?;
+        drop(stdin);
+
+        let output = child.wait_with_output().map_err(|error| {
+            TextError::AdapterFailed(format!(
+                "failed to wait for text adapter `{adapter_id}`: {error}"
+            ))
+        })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(TextError::AdapterFailed(format!(
+                "text adapter `{adapter_id}` exited with {}: {}",
+                output.status,
+                stderr.trim()
+            )));
+        }
+        let response: CommandTextResponse =
+            serde_json::from_slice(&output.stdout).map_err(|error| {
+                TextError::AdapterFailed(format!(
+                    "failed to decode text adapter response for `{adapter_id}`: {error}"
+                ))
+            })?;
+        response.into_payload()
     }
 }
 
@@ -384,6 +459,7 @@ impl<R> CommandTextAdapter<R> {
 impl<R: CommandTextRunner> TextAdapter for CommandTextAdapter<R> {
     fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
         self.runner.run(
+            &self.id,
             &self.command,
             &self.args,
             &self.env,
@@ -565,8 +641,9 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 mod tests {
     use super::{
         CommandTextAdapter, CommandTextRequest, CommandTextResponse, CommandTextRunner,
-        LlmTextProcessor, MockTextProcessor, PromptContext, PromptTemplate, TextError,
-        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
+        LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
+        PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
+        UnsupportedTextAdapter,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -577,6 +654,7 @@ mod tests {
     impl CommandTextRunner for EchoCommandRunner {
         fn run(
             &self,
+            _adapter_id: &str,
             command: &str,
             args: &[String],
             env: &std::collections::HashMap<String, String>,
@@ -843,6 +921,94 @@ mod tests {
             payload.commit_text,
             "vinput-postprocess --json mock /tmp/vinput: hello"
         );
+    }
+
+    #[test]
+    fn process_command_text_runner_writes_request_and_reads_response() {
+        let mut capture_path = std::env::temp_dir();
+        capture_path.push(format!(
+            "vinput-command-text-request-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat > "$TEXT_REQUEST"; printf '%s\n' '{"text":"polished final"}'"#.to_owned(),
+            ],
+            env: std::collections::HashMap::from([(
+                "TEXT_REQUEST".to_owned(),
+                capture_path.to_string_lossy().into_owned(),
+            )]),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let payload = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: Some("selection"),
+        })
+        .unwrap();
+        assert_eq!(payload.commit_text, "polished final");
+
+        let request: CommandTextRequest =
+            serde_json::from_str(&std::fs::read_to_string(&capture_path).unwrap()).unwrap();
+        std::fs::remove_file(&capture_path).unwrap();
+        assert_eq!(request.adapter_id, "cmd-adapter");
+        assert_eq!(request.raw_text, "raw text");
+        assert_eq!(request.selected_text.as_deref(), Some("selection"));
+        assert_eq!(request.scene.id, "polish");
+        assert_eq!(request.scene.prompt.as_deref(), Some("polish"));
+    }
+
+    #[test]
+    fn process_command_text_runner_reports_nonzero_exit() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "cat >/dev/null; echo adapter boom >&2; exit 7".to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let error = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message)
+                if message.contains("exited with") && message.contains("adapter boom")
+        ));
     }
 
     #[test]
