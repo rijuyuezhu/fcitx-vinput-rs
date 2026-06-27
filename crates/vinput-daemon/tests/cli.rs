@@ -42,3 +42,15 @@ fn asr_state_uses_config_file() {
     assert_eq!(value["target_model_id"], "fixture");
     assert_eq!(value["has_effective_backend"], true);
 }
+
+#[test]
+fn help_lists_config_option() {
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--help")
+        .output()
+        .expect("run vinput-daemon --help");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
+    assert!(stdout.contains("--config"));
+}
