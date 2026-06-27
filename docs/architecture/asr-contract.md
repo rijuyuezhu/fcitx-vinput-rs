@@ -37,7 +37,8 @@ StartRecording
 StopRecording
   -> push mock/processed PCM
   -> finish session
-  -> poll final events
+  -> poll final/stop-time partial events
+  -> emit stop-time partial through D-Bus when present
   -> events_to_payload
   -> text finishing
   -> reset Idle
@@ -95,6 +96,5 @@ The deprecated `failure` response key is accepted as an alias for `error` while 
 
 ## Next ASR steps
 
-1. Wire streaming partial events to `RecognitionPartial` D-Bus signals instead of only storing the latest partial text.
-2. Move command-scene prompt and post-processing policy to `vinput-postprocess` while preserving `RecognitionContext` as the frontend/runtime seam.
-3. Add a feature-gated sherpa-onnx backend only after the command and mock contracts stay stable.
+1. Move command-scene prompt and post-processing policy to `vinput-postprocess` while preserving `RecognitionContext` as the frontend/runtime seam.
+2. Add a feature-gated sherpa-onnx backend only after the command and mock contracts stay stable.

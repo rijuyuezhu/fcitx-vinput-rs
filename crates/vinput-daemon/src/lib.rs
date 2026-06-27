@@ -4,4 +4,4 @@ pub mod dbus_service;
 pub mod runtime;
 
 pub use dbus_service::VinputDbusService;
-pub use runtime::{RuntimeError, RuntimeState};
+pub use runtime::{RuntimeError, RuntimeState, StopRecordingReport};

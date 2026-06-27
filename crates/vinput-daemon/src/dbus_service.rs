@@ -82,14 +82,24 @@ impl VinputDbusService {
         }
     }
 
-    async fn stop_recording_payload(&self, scene_id: &str) -> fdo::Result<(String, String)> {
+    async fn stop_recording_payload(
+        &self,
+        scene_id: &str,
+    ) -> fdo::Result<(String, String, Option<String>)> {
         let scene = (!scene_id.is_empty()).then_some(scene_id);
         let mut runtime = self.runtime.lock().await;
-        let payload = runtime
-            .stop_recording(scene)
+        let report = runtime
+            .stop_recording_report(scene)
             .map_err(|error| Self::map_runtime_error(&error))?;
-        let payload_json = payload.to_json_string().map_err(Self::map_json_error)?;
-        Ok((payload_json, runtime.status().to_string()))
+        let payload_json = report
+            .payload
+            .to_json_string()
+            .map_err(Self::map_json_error)?;
+        Ok((
+            payload_json,
+            runtime.status().to_string(),
+            report.partial_text,
+        ))
     }
 
     async fn adapter_placeholder(&self, adapter_id: &str, action: &str) -> String {
@@ -154,7 +164,12 @@ impl VinputDbusService {
         Self::status_changed(&emitter, "inferring")
             .await
             .map_err(|error| Self::map_signal_error(&error))?;
-        let (payload_json, status) = self.stop_recording_payload(scene_id).await?;
+        let (payload_json, status, partial_text) = self.stop_recording_payload(scene_id).await?;
+        if let Some(partial_text) = partial_text {
+            Self::recognition_partial(&emitter, &partial_text)
+                .await
+                .map_err(|error| Self::map_signal_error(&error))?;
+        }
         Self::recognition_result(&emitter, &payload_json)
             .await
             .map_err(|error| Self::map_signal_error(&error))?;

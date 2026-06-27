@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use vinput_asr::{
-    AsrBackend, AsrBackendFactory, AsrError, MockAsrBackend, RecognitionContext,
+    AsrBackend, AsrBackendFactory, AsrError, MockAsrBackend, RecognitionContext, RecognitionEvent,
     RecognitionSession, events_to_payload,
 };
 use vinput_audio::{
@@ -29,6 +29,15 @@ pub struct RuntimeState {
     audio_source: Box<dyn AudioSource>,
     text_processor: Box<dyn TextProcessor>,
     active_session: Option<Box<dyn RecognitionSession>>,
+}
+
+/// Payload and stop-time metadata produced by a completed recording.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StopRecordingReport {
+    /// Final recognition payload after scene text processing.
+    pub payload: RecognitionPayload,
+    /// Latest partial text emitted while finishing the ASR session, if any.
+    pub partial_text: Option<String>,
 }
 
 impl RuntimeState {
@@ -144,6 +153,14 @@ impl RuntimeState {
         &mut self,
         scene_id: Option<&str>,
     ) -> Result<RecognitionPayload, RuntimeError> {
+        Ok(self.stop_recording_report(scene_id)?.payload)
+    }
+
+    /// Stops recording and returns final payload plus stop-time ASR metadata.
+    pub fn stop_recording_report(
+        &mut self,
+        scene_id: Option<&str>,
+    ) -> Result<StopRecordingReport, RuntimeError> {
         if self.status != ServiceStatus::Recording {
             return Err(RuntimeError::NotRecording(self.status));
         }
@@ -164,15 +181,21 @@ impl RuntimeState {
             self.capture_partial_events(&mut *session)?;
             session.finish().map_err(RuntimeError::Asr)?;
             let events = session.poll_events().map_err(RuntimeError::Asr)?;
+            let partial_text = latest_partial_text(&events);
             let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
             let scene_definition = self.scene_definition(&scene);
-            self.text_processor
+            let payload = self
+                .text_processor
                 .finish(&TextRequest {
                     raw_text: &raw_payload.commit_text,
                     scene: &scene_definition,
                     selected_text: self.selected_text.as_deref(),
                 })
-                .map_err(RuntimeError::Finish)
+                .map_err(RuntimeError::Finish)?;
+            Ok(StopRecordingReport {
+                payload,
+                partial_text,
+            })
         })();
 
         self.reset_to_idle();
@@ -330,6 +353,15 @@ impl RuntimeState {
 fn default_mock_audio_source() -> MockAudioSource {
     let frame = CapturedAudio::anonymous(PcmBuffer::at_default_rate(MOCK_PCM.to_vec()));
     MockAudioSource::from_frames(vec![frame; DEFAULT_MOCK_AUDIO_FRAMES])
+}
+
+fn latest_partial_text(events: &[RecognitionEvent]) -> Option<String> {
+    events.iter().rev().find_map(|event| match event {
+        RecognitionEvent::PartialText { text } => Some(text.clone()),
+        RecognitionEvent::FinalText { .. }
+        | RecognitionEvent::Error { .. }
+        | RecognitionEvent::Completed => None,
+    })
 }
 
 /// Runtime errors.
@@ -634,6 +666,37 @@ mod tests {
         assert_eq!(request.pcm.channels, 2);
         assert_eq!(request.samples.len(), 8);
         assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
+    fn configured_command_asr_report_includes_stop_partial() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"partial_text":"runtime partial","text":"runtime final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let mut runtime = RuntimeState::with_configured_asr(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let report = runtime.stop_recording_report(None).unwrap();
+
+        assert_eq!(report.payload.commit_text, "runtime final");
+        assert_eq!(report.partial_text.as_deref(), Some("runtime partial"));
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
     }
 
     #[test]
