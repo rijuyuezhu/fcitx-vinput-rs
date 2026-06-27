@@ -284,6 +284,42 @@ fn registry_install_plan_prints_targets_and_checksum_policy() {
 }
 
 #[test]
+fn registry_install_plan_summary_only_can_select_one_model() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar","size_bytes":5}]},
+            {"id":"other","label":"Other","provider":"p","assets":[{"path":"models/other.tar","size_bytes":7}]}
+          ],
+          "adapters": [
+            {"id":"a","label":"A","kind":"command","assets":[{"path":"adapters/a.tar"}]}
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "install-plan"])
+        .arg(&path)
+        .args(["--target-root", "/tmp/vinput-assets"])
+        .args(["--model", "m", "--summary-only"])
+        .output()
+        .expect("run vinput registry install-plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry install plan should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["asset_count"], 1);
+    assert_eq!(value["known_size_bytes"], 5);
+    assert_eq!(value["missing_checksum_count"], 1);
+    assert!(value.get("assets").is_none());
+}
+
+#[test]
 fn registry_plan_uses_custom_config_mirrors() {
     let registry_path = write_temp_registry(
         r#"
