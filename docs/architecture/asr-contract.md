@@ -11,7 +11,7 @@ This milestone introduces `vinput-asr`, the first backend seam after the D-Bus b
 - `BackendDescriptor`: provider/model/label/capability identity.
 - `RecognitionContext`: language, scene id, command-mode flag, and selected text.
 - `RecognitionEvent`: partial text, final text, backend error, and completed markers.
-- `RecognitionSession`: mutable session trait for push/finish/cancel/poll.
+- `RecognitionSession`: mutable session trait for `push_pcm`/raw `push_audio`/finish/cancel/poll.
 - `AsrBackend`: backend factory trait.
 - `MockAsrBackend`: deterministic backend used by daemon runtime and tests.
 - `CommandAsrSpec`: parsed command-provider executable metadata from config.
@@ -69,9 +69,15 @@ The request shape is intentionally plain JSON so shell/Python/Rust helpers can i
     "command_mode": true,
     "selected_text": "selected text"
   },
+  "pcm": {
+    "sample_rate_hz": 16000,
+    "channels": 1
+  },
   "samples": [10, -20, 30]
 }
 ```
+
+`samples` are signed 16-bit PCM values. When `channels` is greater than one they are interleaved in frame order; the current runtime still produces mono mock audio by default.
 
 A successful helper can return final text, and optionally a partial text:
 
@@ -89,7 +95,6 @@ The deprecated `failure` response key is accepted as an alias for `error` while 
 
 ## Next ASR steps
 
-1. Add real audio metadata to the command request once `vinput-audio` carries sample rate/channel information beyond the current mono i16 buffer.
-2. Wire streaming partial events to `RecognitionPartial` D-Bus signals instead of only storing the latest partial text.
-3. Move command-scene prompt and post-processing policy to `vinput-postprocess` while preserving `RecognitionContext` as the frontend/runtime seam.
-4. Add a feature-gated sherpa-onnx backend only after the command and mock contracts stay stable.
+1. Wire streaming partial events to `RecognitionPartial` D-Bus signals instead of only storing the latest partial text.
+2. Move command-scene prompt and post-processing policy to `vinput-postprocess` while preserving `RecognitionContext` as the frontend/runtime seam.
+3. Add a feature-gated sherpa-onnx backend only after the command and mock contracts stay stable.

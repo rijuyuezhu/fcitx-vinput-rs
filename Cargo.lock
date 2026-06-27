@@ -990,6 +990,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "vinput-audio",
  "vinput-config",
  "vinput-protocol",
 ]

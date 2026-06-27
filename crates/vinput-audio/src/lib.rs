@@ -11,37 +11,96 @@ use thiserror::Error;
 /// Default sample rate used by the original daemon's ASR pipeline.
 pub const DEFAULT_SAMPLE_RATE_HZ: u32 = 16_000;
 
+/// Default channel count for mono ASR audio.
+pub const DEFAULT_CHANNELS: u16 = 1;
+
+/// Signed 16-bit PCM layout metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PcmSpec {
+    /// Sample rate in hertz.
+    pub sample_rate_hz: u32,
+    /// Number of interleaved channels.
+    #[serde(default = "default_channels")]
+    pub channels: u16,
+}
+
+impl PcmSpec {
+    /// Creates a mono signed 16-bit PCM spec.
+    #[must_use]
+    pub const fn mono_i16(sample_rate_hz: u32) -> Self {
+        Self {
+            sample_rate_hz,
+            channels: DEFAULT_CHANNELS,
+        }
+    }
+
+    /// Validates sample rate and channel count.
+    pub fn validate(self) -> Result<Self, AudioError> {
+        if self.sample_rate_hz == 0 {
+            return Err(AudioError::InvalidSampleRate(self.sample_rate_hz));
+        }
+        if self.channels == 0 {
+            return Err(AudioError::InvalidChannelCount(self.channels));
+        }
+        Ok(self)
+    }
+}
+
+impl Default for PcmSpec {
+    fn default() -> Self {
+        Self::mono_i16(DEFAULT_SAMPLE_RATE_HZ)
+    }
+}
+
 /// Mono signed 16-bit PCM buffer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PcmBuffer {
-    sample_rate_hz: u32,
+    spec: PcmSpec,
     samples: Vec<i16>,
 }
 
+const fn default_channels() -> u16 {
+    DEFAULT_CHANNELS
+}
+
 impl PcmBuffer {
-    /// Creates a new PCM buffer.
+    /// Creates a mono PCM buffer with the given sample rate.
     pub fn new(sample_rate_hz: u32, samples: impl Into<Vec<i16>>) -> Result<Self, AudioError> {
-        if sample_rate_hz == 0 {
-            return Err(AudioError::InvalidSampleRate(sample_rate_hz));
-        }
+        Self::with_spec(PcmSpec::mono_i16(sample_rate_hz), samples)
+    }
+
+    /// Creates a PCM buffer with explicit layout metadata.
+    pub fn with_spec(spec: PcmSpec, samples: impl Into<Vec<i16>>) -> Result<Self, AudioError> {
         Ok(Self {
-            sample_rate_hz,
+            spec: spec.validate()?,
             samples: samples.into(),
         })
     }
 
-    /// Creates a 16 kHz PCM buffer.
+    /// Creates a 16 kHz mono PCM buffer.
     pub fn at_default_rate(samples: impl Into<Vec<i16>>) -> Self {
         Self {
-            sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+            spec: PcmSpec::default(),
             samples: samples.into(),
         }
+    }
+
+    /// Returns the PCM layout metadata.
+    #[must_use]
+    pub const fn spec(&self) -> PcmSpec {
+        self.spec
     }
 
     /// Returns the sample rate.
     #[must_use]
     pub const fn sample_rate_hz(&self) -> u32 {
-        self.sample_rate_hz
+        self.spec.sample_rate_hz
+    }
+
+    /// Returns the channel count.
+    #[must_use]
+    pub const fn channels(&self) -> u16 {
+        self.spec.channels
     }
 
     /// Returns the raw samples.
@@ -72,7 +131,7 @@ impl PcmBuffer {
     #[must_use]
     pub fn duration_ms(&self) -> u64 {
         let len = u64::try_from(self.samples.len()).unwrap_or(u64::MAX);
-        len.saturating_mul(1000) / u64::from(self.sample_rate_hz)
+        len.saturating_mul(1000) / u64::from(self.spec.sample_rate_hz)
     }
 
     /// Returns the peak absolute amplitude as an `i16`-range value.
@@ -142,7 +201,7 @@ impl PcmBuffer {
             .position(|sample| sample.unsigned_abs() > threshold);
         let Some(start) = start else {
             return Self {
-                sample_rate_hz: self.sample_rate_hz,
+                spec: self.spec,
                 samples: Vec::new(),
             };
         };
@@ -152,7 +211,7 @@ impl PcmBuffer {
             .rposition(|sample| sample.unsigned_abs() > threshold)
             .expect("start exists, so end exists");
         Self {
-            sample_rate_hz: self.sample_rate_hz,
+            spec: self.spec,
             samples: self.samples[start..=end].to_vec(),
         }
     }
@@ -281,6 +340,9 @@ pub enum AudioError {
     /// Sample rate must not be zero.
     #[error("invalid sample rate: {0}")]
     InvalidSampleRate(u32),
+    /// Channel count must not be zero.
+    #[error("invalid channel count: {0}")]
+    InvalidChannelCount(u16),
     /// Empty mock buffer list.
     #[error("no more buffers")]
     SourceExhausted,
@@ -306,7 +368,9 @@ fn scale_sample(sample: i16, gain: f32) -> i16 {
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioError, CapturedAudio, DEFAULT_SAMPLE_RATE_HZ, PcmBuffer};
+    use super::{
+        AudioError, CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ, PcmBuffer, PcmSpec,
+    };
 
     #[test]
     fn rejects_zero_sample_rate() {
@@ -324,6 +388,35 @@ mod tests {
             PcmBuffer::at_default_rate(vec![0]).sample_rate_hz(),
             DEFAULT_SAMPLE_RATE_HZ
         );
+        assert_eq!(
+            PcmBuffer::at_default_rate(vec![0]).channels(),
+            DEFAULT_CHANNELS
+        );
+    }
+
+    #[test]
+    fn pcm_spec_rejects_zero_channels() {
+        let error = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+                channels: 0,
+            },
+            vec![1],
+        )
+        .unwrap_err();
+        assert_eq!(error, AudioError::InvalidChannelCount(0));
+    }
+
+    #[test]
+    fn pcm_buffer_preserves_explicit_spec() {
+        let spec = PcmSpec {
+            sample_rate_hz: 48_000,
+            channels: 2,
+        };
+        let pcm = PcmBuffer::with_spec(spec, vec![1, -1]).unwrap();
+        assert_eq!(pcm.spec(), spec);
+        assert_eq!(pcm.sample_rate_hz(), 48_000);
+        assert_eq!(pcm.channels(), 2);
     }
 
     #[test]

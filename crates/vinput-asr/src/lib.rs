@@ -14,6 +14,7 @@ use std::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use vinput_audio::{PcmBuffer, PcmSpec};
 use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 use vinput_protocol::{AsrBackendState, CandidateSource, RecognitionPayload};
 
@@ -155,6 +156,11 @@ impl RecognitionContext {
 
 /// Mutable recognition session.
 pub trait RecognitionSession: Send {
+    /// Push signed 16-bit PCM samples with explicit layout metadata.
+    fn push_pcm(&mut self, pcm: &PcmBuffer) -> Result<(), AsrError> {
+        self.push_audio(pcm.samples())
+    }
+
     /// Push signed 16-bit mono PCM samples.
     fn push_audio(&mut self, samples: &[i16]) -> Result<(), AsrError>;
 
@@ -313,7 +319,10 @@ pub struct CommandAsrRequest {
     pub timeout_ms: Option<u64>,
     /// Recognition context from the active scene or command mode.
     pub context: RecognitionContext,
-    /// Buffered signed 16-bit mono PCM samples.
+    /// PCM layout metadata for the buffered signed 16-bit samples.
+    #[serde(default)]
+    pub pcm: PcmSpec,
+    /// Buffered signed 16-bit PCM samples, interleaved when channel count is greater than one.
     pub samples: Vec<i16>,
 }
 
@@ -325,12 +334,24 @@ impl CommandAsrRequest {
         context: RecognitionContext,
         samples: Vec<i16>,
     ) -> Self {
+        Self::from_spec_with_pcm(spec, context, PcmSpec::default(), samples)
+    }
+
+    /// Creates a buffered request with explicit PCM metadata.
+    #[must_use]
+    pub fn from_spec_with_pcm(
+        spec: &CommandAsrSpec,
+        context: RecognitionContext,
+        pcm: PcmSpec,
+        samples: Vec<i16>,
+    ) -> Self {
         Self {
             provider_id: spec.provider_id.clone(),
             model_id: spec.model_id.clone(),
             hotwords_file: spec.hotwords_file.clone(),
             timeout_ms: spec.timeout_ms,
             context,
+            pcm,
             samples,
         }
     }
@@ -573,6 +594,7 @@ impl<R: CommandAsrRunner + Clone + 'static> AsrBackend for CommandAsrBackend<R> 
             spec: self.spec.clone(),
             context,
             runner: self.runner.clone(),
+            pcm: PcmSpec::default(),
             samples: Vec::new(),
             finished: false,
             cancelled: false,
@@ -732,6 +754,7 @@ struct CommandRecognitionSession<R> {
     spec: CommandAsrSpec,
     context: RecognitionContext,
     runner: R,
+    pcm: PcmSpec,
     samples: Vec<i16>,
     finished: bool,
     cancelled: bool,
@@ -739,6 +762,18 @@ struct CommandRecognitionSession<R> {
 }
 
 impl<R: CommandAsrRunner> RecognitionSession for CommandRecognitionSession<R> {
+    fn push_pcm(&mut self, pcm: &PcmBuffer) -> Result<(), AsrError> {
+        if self.cancelled {
+            return Err(AsrError::Cancelled);
+        }
+        if self.finished {
+            return Err(AsrError::AlreadyFinished);
+        }
+        self.pcm = pcm.spec();
+        self.samples.extend_from_slice(pcm.samples());
+        Ok(())
+    }
+
     fn push_audio(&mut self, samples: &[i16]) -> Result<(), AsrError> {
         if self.cancelled {
             return Err(AsrError::Cancelled);
@@ -758,8 +793,12 @@ impl<R: CommandAsrRunner> RecognitionSession for CommandRecognitionSession<R> {
             return Err(AsrError::AlreadyFinished);
         }
         self.finished = true;
-        let request =
-            CommandAsrRequest::from_spec(&self.spec, self.context.clone(), self.samples.clone());
+        let request = CommandAsrRequest::from_spec_with_pcm(
+            &self.spec,
+            self.context.clone(),
+            self.pcm,
+            self.samples.clone(),
+        );
         self.events = self.runner.recognize(&self.spec, &request)?;
         Ok(())
     }
@@ -838,6 +877,7 @@ mod tests {
         CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec, MockAsrBackend,
         RecognitionContext, RecognitionEvent, events_to_payload,
     };
+    use vinput_audio::{PcmBuffer, PcmSpec};
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 
     #[derive(Debug, Clone, Copy)]
@@ -864,6 +904,28 @@ mod tests {
 
     #[derive(Debug, Clone, Copy)]
     struct ConfigEchoCommandRunner;
+
+    #[derive(Debug, Clone, Copy)]
+    struct PcmEchoCommandRunner;
+
+    impl CommandAsrRunner for PcmEchoCommandRunner {
+        fn recognize(
+            &self,
+            _spec: &CommandAsrSpec,
+            request: &CommandAsrRequest,
+        ) -> Result<Vec<RecognitionEvent>, AsrError> {
+            CommandAsrResponse {
+                text: Some(format!(
+                    "{}|{}|{}",
+                    request.pcm.sample_rate_hz,
+                    request.pcm.channels,
+                    request.samples.len()
+                )),
+                ..CommandAsrResponse::default()
+            }
+            .into_events()
+        }
+    }
 
     impl CommandAsrRunner for ConfigEchoCommandRunner {
         fn recognize(
@@ -1085,11 +1147,72 @@ mod tests {
         assert_eq!(value["context"]["scene_id"], "__command__");
         assert_eq!(value["context"]["command_mode"], true);
         assert_eq!(value["context"]["selected_text"], "selected");
+        assert_eq!(value["pcm"]["sample_rate_hz"], 16_000);
+        assert_eq!(value["pcm"]["channels"], 1);
         assert_eq!(value["samples"], serde_json::json!([1, -2, 3]));
         assert_eq!(
             serde_json::from_value::<CommandAsrRequest>(value).unwrap(),
             request
         );
+    }
+
+    #[test]
+    fn command_asr_request_preserves_explicit_pcm_spec() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "helper".to_owned(),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: None,
+        };
+        let pcm = PcmSpec {
+            sample_rate_hz: 48_000,
+            channels: 2,
+        };
+        let request = CommandAsrRequest::from_spec_with_pcm(
+            &spec,
+            RecognitionContext::normal("raw", None),
+            pcm,
+            vec![1, 2, 3, 4],
+        );
+
+        assert_eq!(request.pcm, pcm);
+        assert_eq!(request.samples, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn command_asr_session_uses_pushed_pcm_metadata() {
+        let backend = CommandAsrBackend::with_runner(
+            CommandAsrSpec {
+                provider_id: "cmd".to_owned(),
+                command: "helper".to_owned(),
+                args: Vec::new(),
+                env: std::collections::HashMap::default(),
+                model_id: None,
+                hotwords_file: None,
+                timeout_ms: None,
+            },
+            PcmEchoCommandRunner,
+        );
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("command backend should create a buffering session");
+        let pcm = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 48_000,
+                channels: 2,
+            },
+            vec![1, 2, 3, 4],
+        )
+        .unwrap();
+
+        session.push_pcm(&pcm).unwrap();
+        session.finish().unwrap();
+
+        let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
+        assert_eq!(payload.commit_text, "48000|2|4");
     }
 
     #[test]
@@ -1326,7 +1449,15 @@ mod tests {
                 "selected text",
             ))
             .expect("process runner should create a buffering session");
-        session.push_audio(&[10, -20, 30]).unwrap();
+        let pcm = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 8_000,
+                channels: 1,
+            },
+            vec![10, -20, 30],
+        )
+        .unwrap();
+        session.push_pcm(&pcm).unwrap();
         session.finish().unwrap();
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
         assert_eq!(payload.commit_text, "process final");
@@ -1338,6 +1469,8 @@ mod tests {
         assert_eq!(request.model_id.as_deref(), Some("paraformer"));
         assert_eq!(request.hotwords_file.as_deref(), Some("/tmp/hotwords.txt"));
         assert_eq!(request.timeout_ms, Some(2_500));
+        assert_eq!(request.pcm.sample_rate_hz, 8_000);
+        assert_eq!(request.pcm.channels, 1);
         assert!(request.context.command_mode);
         assert_eq!(
             request.context.selected_text.as_deref(),

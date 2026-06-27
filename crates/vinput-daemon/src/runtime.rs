@@ -160,9 +160,7 @@ impl RuntimeState {
                 .take()
                 .ok_or(RuntimeError::MissingAsrSession)?;
             let pcm = self.read_captured_pcm()?;
-            session
-                .push_audio(pcm.samples())
-                .map_err(RuntimeError::Asr)?;
+            session.push_pcm(&pcm).map_err(RuntimeError::Asr)?;
             self.capture_partial_events(&mut *session)?;
             session.finish().map_err(RuntimeError::Asr)?;
             let events = session.poll_events().map_err(RuntimeError::Asr)?;
@@ -233,9 +231,7 @@ impl RuntimeState {
             .create_session(context)
             .map_err(RuntimeError::Asr)?;
         let pcm = self.read_captured_pcm()?;
-        session
-            .push_audio(pcm.samples())
-            .map_err(RuntimeError::Asr)?;
+        session.push_pcm(&pcm).map_err(RuntimeError::Asr)?;
         self.capture_partial_events(&mut *session)?;
         self.status = ServiceStatus::Recording;
         self.current_scene = Some(scene_id);
