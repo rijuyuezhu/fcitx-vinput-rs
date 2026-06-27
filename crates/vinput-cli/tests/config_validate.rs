@@ -538,6 +538,45 @@ fn asr_state_reports_unavailable_provider() {
 }
 
 #[test]
+fn asr_state_reports_command_provider_unavailable() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "cmd",
+            "providers": [{"id":"cmd","type":"command","command":"helper","args":["--json"]}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .arg("asr-state")
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .expect("run vinput asr-state");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "cmd");
+    assert_eq!(value["has_effective_backend"], false);
+    assert!(
+        value["last_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("not implemented")
+    );
+}
+
+#[test]
 fn config_validate_fails_for_command_provider_without_command() {
     let path = write_temp_config(
         r#"
