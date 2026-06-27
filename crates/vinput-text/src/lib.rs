@@ -620,16 +620,16 @@ mod tests {
             id: "cmd-adapter".to_owned(),
             command: "vinput-postprocess".to_owned(),
             args: vec!["--json".to_owned()],
-            env: std::collections::HashMap::default(),
-            working_dir: None,
+            env: std::collections::HashMap::from([("MODE".to_owned(), "test".to_owned())]),
+            working_dir: Some("/tmp/vinput-text".to_owned()),
             extra: std::collections::HashMap::default(),
         });
 
         assert_eq!(adapter.id(), "cmd-adapter");
         assert_eq!(adapter.command(), "vinput-postprocess");
         assert_eq!(adapter.args(), ["--json"]);
-        assert!(adapter.env().is_empty());
-        assert!(adapter.working_dir().is_none());
+        assert_eq!(adapter.env().get("MODE").map(String::as_str), Some("test"));
+        assert_eq!(adapter.working_dir(), Some("/tmp/vinput-text"));
     }
 
     #[test]
