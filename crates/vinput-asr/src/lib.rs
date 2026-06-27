@@ -287,24 +287,64 @@ impl TryFrom<&AsrProviderConfig> for CommandAsrSpec {
     }
 }
 
-/// Command-backed ASR backend skeleton.
-#[derive(Debug, Clone)]
-pub struct CommandAsrBackend {
-    spec: CommandAsrSpec,
-    descriptor: BackendDescriptor,
+/// Runner seam for command-backed ASR providers.
+pub trait CommandAsrRunner: Send + Sync {
+    /// Creates a recognition session for one command ASR request.
+    fn create_session(
+        &self,
+        spec: &CommandAsrSpec,
+        context: RecognitionContext,
+    ) -> Result<Box<dyn RecognitionSession>, AsrError>;
 }
 
-impl CommandAsrBackend {
+/// Runner placeholder used until process execution is ported.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnsupportedCommandAsrRunner;
+
+impl CommandAsrRunner for UnsupportedCommandAsrRunner {
+    fn create_session(
+        &self,
+        spec: &CommandAsrSpec,
+        _context: RecognitionContext,
+    ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+        Err(AsrError::Backend(format!(
+            "command ASR provider `{}` runner is not implemented yet",
+            spec.provider_id
+        )))
+    }
+}
+
+/// Command-backed ASR backend skeleton.
+#[derive(Debug, Clone)]
+pub struct CommandAsrBackend<R = UnsupportedCommandAsrRunner> {
+    spec: CommandAsrSpec,
+    descriptor: BackendDescriptor,
+    runner: R,
+}
+
+impl CommandAsrBackend<UnsupportedCommandAsrRunner> {
     /// Creates a command ASR backend skeleton from a parsed spec.
     #[must_use]
     pub fn new(spec: CommandAsrSpec) -> Self {
+        Self::with_runner(spec, UnsupportedCommandAsrRunner)
+    }
+}
+
+impl<R> CommandAsrBackend<R> {
+    /// Creates a command ASR backend with an injected runner.
+    #[must_use]
+    pub fn with_runner(spec: CommandAsrSpec, runner: R) -> Self {
         let descriptor = BackendDescriptor::new(
             spec.provider_id.clone(),
             spec.model_id.clone().unwrap_or_default(),
             "Command ASR",
             BackendCapabilities::buffered(),
         );
-        Self { spec, descriptor }
+        Self {
+            spec,
+            descriptor,
+            runner,
+        }
     }
 
     /// Returns the parsed command provider spec.
@@ -312,21 +352,24 @@ impl CommandAsrBackend {
     pub const fn spec(&self) -> &CommandAsrSpec {
         &self.spec
     }
+
+    /// Returns the configured command runner.
+    #[must_use]
+    pub const fn runner(&self) -> &R {
+        &self.runner
+    }
 }
 
-impl AsrBackend for CommandAsrBackend {
+impl<R: CommandAsrRunner> AsrBackend for CommandAsrBackend<R> {
     fn describe(&self) -> BackendDescriptor {
         self.descriptor.clone()
     }
 
     fn create_session(
         &self,
-        _context: RecognitionContext,
+        context: RecognitionContext,
     ) -> Result<Box<dyn RecognitionSession>, AsrError> {
-        Err(AsrError::Backend(format!(
-            "command ASR provider `{}` runner is not implemented yet",
-            self.spec.provider_id
-        )))
+        self.runner.create_session(&self.spec, context)
     }
 }
 
@@ -535,9 +578,24 @@ impl RecognitionSession for MockRecognitionSession {
 mod tests {
     use super::{
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
-        CommandAsrSpec, MockAsrBackend, RecognitionContext, RecognitionEvent, events_to_payload,
+        CommandAsrRunner, CommandAsrSpec, MockAsrBackend, RecognitionContext, RecognitionEvent,
+        RecognitionSession, events_to_payload,
     };
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
+
+    #[derive(Debug, Clone, Copy)]
+    struct FinalTextCommandRunner;
+
+    impl CommandAsrRunner for FinalTextCommandRunner {
+        fn create_session(
+            &self,
+            spec: &CommandAsrSpec,
+            context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            MockAsrBackend::buffered(format!("{}:{}", spec.command, context.scene_id))
+                .create_session(context)
+        }
+    }
 
     #[test]
     fn recognition_context_marks_command_sessions() {
@@ -758,6 +816,29 @@ mod tests {
             AudioDeliveryMode::Buffered
         );
         assert_eq!(backend.spec().command, "helper");
+    }
+
+    #[test]
+    fn command_asr_backend_delegates_to_injected_runner() {
+        let backend = CommandAsrBackend::with_runner(
+            CommandAsrSpec {
+                provider_id: "cmd".to_owned(),
+                command: "helper".to_owned(),
+                args: Vec::new(),
+                env: std::collections::HashMap::default(),
+                model_id: None,
+                timeout_ms: None,
+            },
+            FinalTextCommandRunner,
+        );
+
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("mock runner should create a session");
+        session.push_audio(&[1, 2, 3]).unwrap();
+        session.finish().unwrap();
+        let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
+        assert_eq!(payload.commit_text, "helper:raw");
     }
 
     #[test]
