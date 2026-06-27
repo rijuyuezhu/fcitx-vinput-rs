@@ -297,10 +297,7 @@ impl AsrBackendFactory {
 
     /// Builds the active backend from ASR config.
     pub fn build_active(config: &AsrConfig) -> Result<Box<dyn AsrBackend>, AsrError> {
-        let provider = config
-            .providers
-            .iter()
-            .find(|provider| provider.id == config.active_provider)
+        let provider = active_provider(config)
             .ok_or_else(|| AsrError::UnknownProvider(config.active_provider.clone()))?;
         Self::build_provider(provider)
     }
