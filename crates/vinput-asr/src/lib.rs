@@ -238,6 +238,52 @@ impl MockAsrBackend {
     }
 }
 
+/// Parsed external command ASR provider specification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandAsrSpec {
+    /// Provider id from config.
+    pub provider_id: String,
+    /// Executable path or command name.
+    pub command: String,
+    /// Arguments passed to the command.
+    pub args: Vec<String>,
+    /// Environment variables passed to the command.
+    pub env: std::collections::HashMap<String, String>,
+    /// Optional timeout in milliseconds.
+    pub timeout_ms: Option<u64>,
+}
+
+impl TryFrom<&AsrProviderConfig> for CommandAsrSpec {
+    type Error = AsrError;
+
+    fn try_from(provider: &AsrProviderConfig) -> Result<Self, Self::Error> {
+        if provider.kind != AsrProviderKind::Command {
+            return Err(AsrError::Backend(format!(
+                "provider `{}` is not a command ASR provider",
+                provider.id
+            )));
+        }
+        let command = provider
+            .command
+            .as_deref()
+            .map(str::trim)
+            .filter(|command| !command.is_empty())
+            .ok_or_else(|| {
+                AsrError::Backend(format!(
+                    "command ASR provider `{}` must configure a command",
+                    provider.id
+                ))
+            })?;
+        Ok(Self {
+            provider_id: provider.id.clone(),
+            command: command.to_owned(),
+            args: provider.args.clone(),
+            env: provider.env.clone(),
+            timeout_ms: provider.timeout_ms,
+        })
+    }
+}
+
 /// Builds ASR backends from typed config entries.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AsrBackendFactory;
@@ -259,6 +305,11 @@ impl AsrBackendFactory {
         Self::build_provider(provider)
     }
 
+    /// Parses an external command ASR provider into an executable spec.
+    pub fn command_spec(provider: &AsrProviderConfig) -> Result<CommandAsrSpec, AsrError> {
+        CommandAsrSpec::try_from(provider)
+    }
+
     /// Builds a backend from one provider entry.
     pub fn build_provider(provider: &AsrProviderConfig) -> Result<Box<dyn AsrBackend>, AsrError> {
         if provider.id == "mock" {
@@ -266,6 +317,9 @@ impl AsrBackendFactory {
                 "mock partial",
                 "mock recognition result",
             )));
+        }
+        if provider.kind == AsrProviderKind::Command {
+            let _spec = Self::command_spec(provider)?;
         }
         unsupported_provider(&provider.id, &provider.kind)
     }
@@ -416,7 +470,8 @@ impl RecognitionSession for MockRecognitionSession {
 #[cfg(test)]
 mod tests {
     use super::{
-        AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, MockAsrBackend,
+        AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrSpec,
+        MockAsrBackend,
         RecognitionContext, RecognitionEvent, events_to_payload,
     };
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
@@ -557,6 +612,28 @@ mod tests {
             panic!("missing provider should fail");
         };
         assert!(matches!(error, AsrError::UnknownProvider(id) if id == "missing"));
+    }
+
+    #[test]
+    fn command_asr_spec_parses_provider_fields() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_500),
+            model: None,
+            hotwords_file: None,
+            command: Some(" helper ".to_owned()),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::from([("RUST_LOG".to_owned(), "info".to_owned())]),
+            endpoint: None,
+        };
+
+        let spec = CommandAsrSpec::try_from(&provider).unwrap();
+        assert_eq!(spec.provider_id, "cmd");
+        assert_eq!(spec.command, "helper");
+        assert_eq!(spec.args, ["--json"]);
+        assert_eq!(spec.env.get("RUST_LOG").map(String::as_str), Some("info"));
+        assert_eq!(spec.timeout_ms, Some(1_500));
     }
 
     #[test]
