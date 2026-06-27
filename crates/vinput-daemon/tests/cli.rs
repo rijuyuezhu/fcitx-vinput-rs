@@ -96,6 +96,42 @@ fn asr_state_preserves_remote_endpoint() {
 }
 
 #[test]
+fn asr_state_preserves_command_provider_metadata() {
+    let config = TempConfig::write(
+        "command-asr-state",
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "cmd",
+            "providers": [{"id":"cmd","type":"command","command":"helper","model":"cmd-model","args":["--json"],"hotwords_file":"/tmp/hotwords.txt"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&config.path)
+        .arg("asr-state")
+        .output()
+        .expect("run vinput-daemon asr-state");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "cmd");
+    assert_eq!(value["target_model_id"], "cmd-model");
+    assert_eq!(value["effective_provider_id"], "cmd");
+    assert_eq!(value["effective_model_id"], "cmd-model");
+    assert_eq!(value["has_effective_backend"], true);
+}
+
+#[test]
 fn help_lists_config_option() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")
