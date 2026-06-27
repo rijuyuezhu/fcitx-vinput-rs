@@ -398,6 +398,28 @@ fn registry_plan_uses_custom_config_mirrors() {
 }
 
 #[test]
+fn registry_install_plan_rejects_invalid_config_mirrors() {
+    let registry_path = write_temp_registry(
+        r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}]}"#,
+    );
+    let config_path = write_temp_config(
+        r#"{"version":1,"registry":{"base_urls":[""]},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "install-plan"])
+        .arg(&registry_path)
+        .args(["--target-root", "/tmp/vinput-assets", "--config"])
+        .arg(&config_path)
+        .output()
+        .expect("run vinput registry install-plan");
+    fs::remove_file(&registry_path).expect("remove temporary registry fixture");
+    fs::remove_file(&config_path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+}
+
+#[test]
 fn registry_install_plan_uses_custom_config_mirrors() {
     let registry_path = write_temp_registry(
         r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}]}"#,
