@@ -1707,6 +1707,31 @@ mod tests {
     }
 
     #[test]
+    fn process_command_asr_runner_rejects_missing_final_text_response() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec!["-c".to_owned(), "cat >/dev/null; printf '{}'".to_owned()],
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("process runner should create a buffering session");
+        let error = session.finish().unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message) if message.contains("missing final text")
+        ));
+    }
+
+    #[test]
     fn command_asr_response_accepts_failure_alias() {
         let response: CommandAsrResponse =
             serde_json::from_str(r#"{"failure":"legacy failed"}"#).unwrap();
