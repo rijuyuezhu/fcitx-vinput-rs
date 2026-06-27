@@ -852,6 +852,26 @@ mod tests {
     }
 
     #[test]
+    fn command_text_request_preserves_missing_selected_text() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("rewrite", 1)
+        };
+        let request = CommandTextRequest::from_text_request(
+            "cmd-adapter",
+            &TextRequest {
+                raw_text: "raw text",
+                scene: &prompted,
+                selected_text: None,
+            },
+        );
+
+        assert!(request.selected_text.is_none());
+        let value = serde_json::to_value(&request).unwrap();
+        assert!(value["selected_text"].is_null());
+    }
+
+    #[test]
     fn command_text_response_maps_final_text_to_payload() {
         let payload = CommandTextResponse {
             payload: None,
