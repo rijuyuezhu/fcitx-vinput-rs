@@ -6,7 +6,7 @@
 
 use std::{
     io::Write,
-    process::{Command, Stdio},
+    process::{Child, Command, Output, Stdio},
 };
 
 use schemars::JsonSchema;
@@ -442,12 +442,7 @@ impl CommandAsrRunner for ProcessCommandAsrRunner {
         })?;
         drop(stdin);
 
-        let output = child.wait_with_output().map_err(|error| {
-            AsrError::Backend(format!(
-                "failed to wait for command ASR provider `{}`: {error}",
-                spec.provider_id
-            ))
-        })?;
+        let output = wait_for_command_output(spec, child)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(AsrError::Backend(format!(
@@ -466,6 +461,15 @@ impl CommandAsrRunner for ProcessCommandAsrRunner {
             })?;
         response.into_events()
     }
+}
+
+fn wait_for_command_output(spec: &CommandAsrSpec, child: Child) -> Result<Output, AsrError> {
+    child.wait_with_output().map_err(|error| {
+        AsrError::Backend(format!(
+            "failed to wait for command ASR provider `{}`: {error}",
+            spec.provider_id
+        ))
+    })
 }
 
 /// Command-backed ASR backend skeleton.
