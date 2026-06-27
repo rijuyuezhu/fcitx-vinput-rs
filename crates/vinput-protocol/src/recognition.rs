@@ -199,6 +199,16 @@ mod tests {
     }
 
     #[test]
+    fn empty_payload_has_no_default_candidate() {
+        let payload = RecognitionPayload {
+            commit_text: String::new(),
+            candidates: Vec::new(),
+        };
+
+        assert!(payload.default_candidate().is_none());
+    }
+
+    #[test]
     fn default_candidate_falls_back_to_first_candidate() {
         let payload = RecognitionPayload {
             commit_text: "missing".to_owned(),
