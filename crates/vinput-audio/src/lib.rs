@@ -71,10 +71,15 @@ impl PcmBuffer {
 
     /// Creates a PCM buffer with explicit layout metadata.
     pub fn with_spec(spec: PcmSpec, samples: impl Into<Vec<i16>>) -> Result<Self, AudioError> {
-        Ok(Self {
-            spec: spec.validate()?,
-            samples: samples.into(),
-        })
+        let spec = spec.validate()?;
+        let samples = samples.into();
+        if samples.len() % usize::from(spec.channels) != 0 {
+            return Err(AudioError::UnalignedSamples {
+                samples: samples.len(),
+                channels: spec.channels,
+            });
+        }
+        Ok(Self { spec, samples })
     }
 
     /// Creates a 16 kHz mono PCM buffer.
@@ -121,17 +126,23 @@ impl PcmBuffer {
         self.samples.is_empty()
     }
 
-    /// Returns the number of samples.
+    /// Returns the number of raw i16 samples.
     #[must_use]
     pub fn len(&self) -> usize {
         self.samples.len()
     }
 
+    /// Returns the number of PCM frames.
+    #[must_use]
+    pub fn frame_len(&self) -> usize {
+        self.samples.len() / usize::from(self.spec.channels)
+    }
+
     /// Returns duration in milliseconds, rounded down.
     #[must_use]
     pub fn duration_ms(&self) -> u64 {
-        let len = u64::try_from(self.samples.len()).unwrap_or(u64::MAX);
-        len.saturating_mul(1000) / u64::from(self.spec.sample_rate_hz)
+        let frames = u64::try_from(self.frame_len()).unwrap_or(u64::MAX);
+        frames.saturating_mul(1000) / u64::from(self.spec.sample_rate_hz)
     }
 
     /// Returns the peak absolute amplitude as an `i16`-range value.
@@ -343,6 +354,14 @@ pub enum AudioError {
     /// Channel count must not be zero.
     #[error("invalid channel count: {0}")]
     InvalidChannelCount(u16),
+    /// Raw sample count must contain complete interleaved frames.
+    #[error("sample count {samples} is not aligned to channel count {channels}")]
+    UnalignedSamples {
+        /// Raw sample count.
+        samples: usize,
+        /// Configured channel count.
+        channels: u16,
+    },
     /// Empty mock buffer list.
     #[error("no more buffers")]
     SourceExhausted,
@@ -384,6 +403,7 @@ mod tests {
     fn reports_duration_at_sample_rate() {
         let pcm = PcmBuffer::new(1_000, vec![0; 1_500]).unwrap();
         assert_eq!(pcm.duration_ms(), 1_500);
+        assert_eq!(pcm.frame_len(), 1_500);
         assert_eq!(
             PcmBuffer::at_default_rate(vec![0]).sample_rate_hz(),
             DEFAULT_SAMPLE_RATE_HZ
@@ -392,6 +412,21 @@ mod tests {
             PcmBuffer::at_default_rate(vec![0]).channels(),
             DEFAULT_CHANNELS
         );
+    }
+
+    #[test]
+    fn multi_channel_duration_counts_frames_not_samples() {
+        let pcm = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 1_000,
+                channels: 2,
+            },
+            vec![0; 2_000],
+        )
+        .unwrap();
+        assert_eq!(pcm.len(), 2_000);
+        assert_eq!(pcm.frame_len(), 1_000);
+        assert_eq!(pcm.duration_ms(), 1_000);
     }
 
     #[test]
@@ -405,6 +440,25 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error, AudioError::InvalidChannelCount(0));
+    }
+
+    #[test]
+    fn pcm_buffer_rejects_unaligned_multi_channel_samples() {
+        let error = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+                channels: 2,
+            },
+            vec![1, 2, 3],
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            AudioError::UnalignedSamples {
+                samples: 3,
+                channels: 2,
+            }
+        );
     }
 
     #[test]
