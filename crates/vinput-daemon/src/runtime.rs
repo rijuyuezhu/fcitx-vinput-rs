@@ -99,6 +99,12 @@ impl RuntimeState {
         AsrBackendFactory::state_for_config(&config.asr)
     }
 
+    /// Builds a diagnostic ASR state from this runtime's current config.
+    #[must_use]
+    pub fn configured_asr_state_for_runtime(&self) -> AsrBackendState {
+        Self::configured_asr_state(&self.config)
+    }
+
     /// Current daemon status.
     #[must_use]
     pub const fn status(&self) -> ServiceStatus {

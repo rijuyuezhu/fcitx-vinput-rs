@@ -161,11 +161,12 @@ impl VinputDbusService {
         runtime.status().to_string()
     }
 
-    /// Return mock ASR backend state JSON.
+    /// Return ASR backend diagnostic state JSON.
     #[zbus(name = "GetAsrBackendState")]
     async fn get_asr_backend_state(&self) -> fdo::Result<String> {
         let runtime = self.runtime.lock().await;
-        serde_json::to_string(&runtime.asr_backend_state()).map_err(Self::map_json_error)
+        serde_json::to_string(&runtime.configured_asr_state_for_runtime())
+            .map_err(Self::map_json_error)
     }
 
     /// Reload ASR backend and return the resulting state JSON.
@@ -301,8 +302,8 @@ mod tests {
         let service = service();
         let state: AsrBackendState =
             serde_json::from_str(&service.get_asr_backend_state().await.unwrap()).unwrap();
-        assert!(state.has_effective_backend);
+        assert!(!state.has_effective_backend);
         assert_eq!(state.target_provider_id, "sherpa-onnx");
-        assert_eq!(state.effective_provider_id, "mock");
+        assert!(!state.last_error.is_empty());
     }
 }
