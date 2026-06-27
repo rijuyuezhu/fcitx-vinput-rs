@@ -453,7 +453,7 @@ fn config_validate_fails_for_too_many_context_lines() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
-    assert!(stderr.contains("scene `raw` asks for 33 context lines"));
+    assert!(stderr.contains("scene `raw` asks for 33 context lines, max is 32"));
 }
 
 #[test]
