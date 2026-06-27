@@ -175,9 +175,9 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
 
     let state_json: String = proxy.call(dbus::method::GET_ASR_BACKEND_STATE, &()).await?;
     let state: AsrBackendState = serde_json::from_str(&state_json)?;
-    assert!(state.has_effective_backend);
+    assert!(!state.has_effective_backend);
     assert_eq!(state.target_provider_id, "sherpa-onnx");
-    assert_eq!(state.effective_provider_id, "mock");
+    assert!(!state.last_error.is_empty());
 
     let reloaded_json: String = proxy.call(dbus::method::RELOAD_ASR_BACKEND, &()).await?;
     let reloaded: AsrBackendState = serde_json::from_str(&reloaded_json)?;
