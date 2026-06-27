@@ -769,7 +769,17 @@ impl<R: CommandAsrRunner> RecognitionSession for CommandRecognitionSession<R> {
         if self.finished {
             return Err(AsrError::AlreadyFinished);
         }
-        self.pcm = pcm.spec();
+        let next_pcm = pcm.spec();
+        if !self.samples.is_empty() && self.pcm != next_pcm {
+            return Err(AsrError::Backend(format!(
+                "command ASR PCM spec changed from {} Hz/{} channel(s) to {} Hz/{} channel(s)",
+                self.pcm.sample_rate_hz,
+                self.pcm.channels,
+                next_pcm.sample_rate_hz,
+                next_pcm.channels
+            )));
+        }
+        self.pcm = next_pcm;
         self.samples.extend_from_slice(pcm.samples());
         Ok(())
     }
@@ -1232,6 +1242,51 @@ mod tests {
 
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
         assert_eq!(payload.commit_text, "48000|2|4");
+    }
+
+    #[test]
+    fn command_asr_session_rejects_mixed_pcm_metadata() {
+        let backend = CommandAsrBackend::with_runner(
+            CommandAsrSpec {
+                provider_id: "cmd".to_owned(),
+                command: "helper".to_owned(),
+                args: Vec::new(),
+                env: std::collections::HashMap::default(),
+                model_id: None,
+                hotwords_file: None,
+                timeout_ms: None,
+            },
+            PcmEchoCommandRunner,
+        );
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("command backend should create a buffering session");
+        let first = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 48_000,
+                channels: 2,
+            },
+            vec![1, 2],
+        )
+        .unwrap();
+        let second = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 16_000,
+                channels: 1,
+            },
+            vec![3],
+        )
+        .unwrap();
+
+        session.push_pcm(&first).unwrap();
+        let error = session.push_pcm(&second).unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("PCM spec changed")
+                    && message.contains("48000 Hz/2")
+                    && message.contains("16000 Hz/1")
+        ));
     }
 
     #[test]

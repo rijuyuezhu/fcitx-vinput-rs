@@ -77,7 +77,7 @@ The request shape is intentionally plain JSON so shell/Python/Rust helpers can i
 }
 ```
 
-`samples` are signed 16-bit PCM values. When `channels` is greater than one they are interleaved in frame order; the current runtime still produces mono mock audio by default.
+`samples` are signed 16-bit PCM values. When `channels` is greater than one they are interleaved in frame order; the current runtime still produces mono mock audio by default. A single command request has one PCM spec, so the command session rejects attempts to append buffers with different sample rates or channel counts.
 
 A successful helper can return final text, and optionally a partial text:
 
