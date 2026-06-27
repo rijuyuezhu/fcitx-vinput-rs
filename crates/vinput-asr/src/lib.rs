@@ -385,6 +385,26 @@ mod tests {
     }
 
     #[test]
+    fn session_rejects_work_after_cancel() {
+        let backend = MockAsrBackend::buffered("done");
+        let mut session = backend
+            .create_session(RecognitionContext::normal("__raw__", None))
+            .unwrap();
+        session.push_audio(&[1, 2]).unwrap();
+        session.cancel().unwrap();
+
+        assert!(session.poll_events().unwrap().is_empty());
+        assert!(matches!(
+            session.push_audio(&[3]).unwrap_err(),
+            AsrError::Cancelled
+        ));
+        assert!(matches!(
+            session.finish().unwrap_err(),
+            AsrError::Cancelled
+        ));
+    }
+
+    #[test]
     fn session_rejects_audio_after_finish() {
         let backend = MockAsrBackend::buffered("done");
         let mut session = backend
