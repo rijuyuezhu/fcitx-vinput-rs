@@ -202,28 +202,31 @@ impl PcmBuffer {
             .all(|sample| sample.unsigned_abs() <= threshold)
     }
 
-    /// Returns a copy with leading and trailing silence removed.
+    /// Returns a copy with leading and trailing silent frames removed.
     #[must_use]
     pub fn trimmed_silence(&self, threshold_abs: i16) -> Self {
         let threshold = threshold_abs.unsigned_abs();
-        let start = self
+        let channels = usize::from(self.spec.channels);
+        let start_frame = self
             .samples
-            .iter()
-            .position(|sample| sample.unsigned_abs() > threshold);
-        let Some(start) = start else {
+            .chunks_exact(channels)
+            .position(|frame| frame.iter().any(|sample| sample.unsigned_abs() > threshold));
+        let Some(start_frame) = start_frame else {
             return Self {
                 spec: self.spec,
                 samples: Vec::new(),
             };
         };
-        let end = self
+        let end_frame = self
             .samples
-            .iter()
-            .rposition(|sample| sample.unsigned_abs() > threshold)
-            .expect("start exists, so end exists");
+            .chunks_exact(channels)
+            .rposition(|frame| frame.iter().any(|sample| sample.unsigned_abs() > threshold))
+            .expect("start frame exists, so end frame exists");
+        let start = start_frame * channels;
+        let end = (end_frame + 1) * channels;
         Self {
             spec: self.spec,
-            samples: self.samples[start..=end].to_vec(),
+            samples: self.samples[start..end].to_vec(),
         }
     }
 }
@@ -514,6 +517,23 @@ mod tests {
         let negative_threshold =
             PcmBuffer::at_default_rate(vec![0, 1, 5, -6, 1, 0]).trimmed_silence(-1);
         assert_eq!(negative_threshold.samples(), &[5, -6]);
+    }
+
+    #[test]
+    fn multi_channel_trim_preserves_complete_frames() {
+        let pcm = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+                channels: 2,
+            },
+            vec![0, 0, 1, 2, 5, 0, 0, 0],
+        )
+        .unwrap()
+        .trimmed_silence(2);
+
+        assert_eq!(pcm.samples(), &[5, 0]);
+        assert_eq!(pcm.frame_len(), 1);
+        assert_eq!(pcm.channels(), 2);
     }
 
     #[test]
