@@ -339,7 +339,7 @@ mod tests {
         RecognitionSession,
     };
     use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
-    use vinput_config::VinputConfig;
+    use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
     use vinput_protocol::ServiceStatus;
     use vinput_text::TextFinisher;
 
@@ -437,6 +437,34 @@ mod tests {
             "mock command result for: selected text"
         );
         assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
+    fn configured_asr_builds_mock_provider() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "mock".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "mock".to_owned(),
+            kind: AsrProviderKind::Local,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let runtime = RuntimeState::with_configured_asr(config).unwrap();
+        assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
+    }
+
+    #[test]
+    fn configured_asr_reports_default_backend_as_unsupported() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let Err(error) = RuntimeState::with_configured_asr(config) else {
+            panic!("default backend should be unsupported in current prototype");
+        };
+        assert!(matches!(error, super::RuntimeError::Asr(_)));
     }
 
     #[test]
