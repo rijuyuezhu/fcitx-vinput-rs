@@ -227,6 +227,63 @@ fn registry_plan_prints_assets_with_resolved_urls() {
 }
 
 #[test]
+fn registry_install_plan_prints_targets_and_checksum_policy() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {
+              "id": "m",
+              "label": "M",
+              "provider": "p",
+              "assets": [
+                {
+                  "path":"models/m.tar",
+                  "sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "size_bytes":5
+                }
+              ]
+            }
+          ],
+          "adapters": [
+            {
+              "id":"a",
+              "label":"A",
+              "kind":"command",
+              "assets":[{"path":"adapters/a.tar"}]
+            }
+          ]
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "install-plan"])
+        .arg(&path)
+        .args(["--target-root", "/tmp/vinput-assets"])
+        .output()
+        .expect("run vinput registry install-plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry install plan should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["target_root"], "/tmp/vinput-assets");
+    assert_eq!(value["asset_count"], 2);
+    assert_eq!(value["known_size_bytes"], 5);
+    assert_eq!(value["missing_checksum_count"], 1);
+    assert_eq!(value["assets"][0]["source_path"], "models/m.tar");
+    assert_eq!(
+        value["assets"][0]["target_path"],
+        "/tmp/vinput-assets/models/m.tar"
+    );
+    assert_eq!(value["assets"][0]["checksum_policy"], "sha256");
+    assert_eq!(value["assets"][1]["checksum_policy"], "missing");
+}
+
+#[test]
 fn registry_plan_uses_custom_config_mirrors() {
     let registry_path = write_temp_registry(
         r#"

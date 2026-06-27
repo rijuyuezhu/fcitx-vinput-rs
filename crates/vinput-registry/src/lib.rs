@@ -85,6 +85,13 @@ impl RegistryIndex {
     pub fn adapter(&self, id: &str) -> Option<&AdapterEntry> {
         self.adapters.iter().find(|adapter| adapter.id == id)
     }
+    /// Builds an install plan for all registry assets without downloading anything.
+    #[must_use]
+    pub fn install_plan(&self, config: &RegistryConfig, target_root: &str) -> InstallPlan {
+        let assets = self.planned_assets(config);
+        InstallPlan::from_assets(&assets, target_root)
+    }
+
     /// Expands registry assets into deterministic planning rows.
     #[must_use]
     pub fn planned_assets(&self, config: &RegistryConfig) -> Vec<PlannedAsset> {
@@ -223,6 +230,113 @@ pub struct PlannedAsset {
     /// Optional size in bytes.
     #[serde(default)]
     pub size_bytes: Option<u64>,
+}
+
+/// A dry-run install plan derived from registry assets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InstallPlan {
+    /// Target root directory where assets would be installed.
+    pub target_root: String,
+    /// Compact install-plan summary.
+    pub summary: InstallPlanSummary,
+    /// Per-asset install actions.
+    pub assets: Vec<PlannedInstallAsset>,
+}
+
+impl InstallPlan {
+    /// Builds a deterministic dry-run install plan from planned assets.
+    #[must_use]
+    pub fn from_assets(assets: &[PlannedAsset], target_root: &str) -> Self {
+        let planned_assets = assets
+            .iter()
+            .map(|asset| PlannedInstallAsset::from_asset(asset, target_root))
+            .collect::<Vec<_>>();
+        Self {
+            target_root: normalize_install_root(target_root),
+            summary: InstallPlanSummary::from_assets(&planned_assets),
+            assets: planned_assets,
+        }
+    }
+}
+
+/// Summary for a dry-run install plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InstallPlanSummary {
+    /// Number of assets in the install plan.
+    pub asset_count: usize,
+    /// Sum of known asset sizes.
+    pub known_size_bytes: u64,
+    /// Number of assets without a sha256 checksum.
+    pub missing_checksum_count: usize,
+}
+
+impl InstallPlanSummary {
+    /// Builds a summary from planned install assets.
+    #[must_use]
+    pub fn from_assets(assets: &[PlannedInstallAsset]) -> Self {
+        Self {
+            asset_count: assets.len(),
+            known_size_bytes: assets.iter().filter_map(|asset| asset.size_bytes).sum(),
+            missing_checksum_count: assets
+                .iter()
+                .filter(|asset| asset.checksum_policy == ChecksumPolicy::Missing)
+                .count(),
+        }
+    }
+}
+
+/// Per-asset action in a dry-run install plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PlannedInstallAsset {
+    /// Owning entry kind.
+    pub entry_kind: RegistryEntryKind,
+    /// Owning model or adapter id.
+    pub entry_id: String,
+    /// Registry-relative source asset path.
+    pub source_path: String,
+    /// Target path under the install root.
+    pub target_path: String,
+    /// Candidate URLs resolved against configured mirrors.
+    pub urls: Vec<String>,
+    /// Optional sha256 checksum.
+    #[serde(default)]
+    pub sha256: Option<String>,
+    /// Optional size in bytes.
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+    /// Checksum handling policy for a future downloader.
+    pub checksum_policy: ChecksumPolicy,
+}
+
+impl PlannedInstallAsset {
+    /// Builds a dry-run install action from a planned registry asset.
+    #[must_use]
+    pub fn from_asset(asset: &PlannedAsset, target_root: &str) -> Self {
+        Self {
+            entry_kind: asset.entry_kind,
+            entry_id: asset.entry_id.clone(),
+            source_path: asset.path.clone(),
+            target_path: join_install_path(target_root, &asset.path),
+            urls: asset.urls.clone(),
+            sha256: asset.sha256.clone(),
+            size_bytes: asset.size_bytes,
+            checksum_policy: if asset.sha256.is_some() {
+                ChecksumPolicy::Sha256
+            } else {
+                ChecksumPolicy::Missing
+            },
+        }
+    }
+}
+
+/// Checksum policy requested by an install plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChecksumPolicy {
+    /// Verify the declared sha256 checksum before accepting the asset.
+    Sha256,
+    /// No checksum is available yet; callers should treat the plan as weaker.
+    Missing,
 }
 
 /// ASR model entry.
@@ -405,9 +519,23 @@ fn join_url(base: &str, path: &str) -> String {
     )
 }
 
+fn normalize_install_root(root: &str) -> String {
+    root.trim_end_matches('/').to_owned()
+}
+
+fn join_install_path(root: &str, path: &str) -> String {
+    let root = normalize_install_root(root);
+    let path = path.trim_start_matches('/');
+    if root.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{root}/{path}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{RegistryError, RegistryIndex};
+    use super::{ChecksumPolicy, InstallPlan, RegistryError, RegistryIndex};
     use vinput_config::RegistryConfig;
 
     const SAMPLE: &str = r#"
@@ -500,6 +628,41 @@ mod tests {
             vec!["https://registry.invalid/root/adapters/mock-adapter.tar.zst".to_owned()]
         );
     }
+    #[test]
+    fn install_plan_adds_targets_and_checksum_policy() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let config = RegistryConfig {
+            base_urls: vec!["https://registry.invalid/root".to_owned()],
+        };
+        let plan = index.install_plan(&config, "/var/lib/vinput/assets/");
+
+        assert_eq!(plan.target_root, "/var/lib/vinput/assets");
+        assert_eq!(plan.summary.asset_count, 2);
+        assert_eq!(plan.summary.known_size_bytes, 49);
+        assert_eq!(plan.summary.missing_checksum_count, 0);
+        assert_eq!(
+            plan.assets[0].target_path,
+            "/var/lib/vinput/assets/models/sherpa-zh-small.tar.zst"
+        );
+        assert_eq!(plan.assets[0].checksum_policy, ChecksumPolicy::Sha256);
+    }
+
+    #[test]
+    fn install_plan_tracks_missing_checksums() {
+        let index = RegistryIndex::from_json_str(
+            r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}]}"#,
+        )
+        .unwrap();
+        let assets = index.planned_assets(&RegistryConfig {
+            base_urls: vec!["https://registry.invalid/root".to_owned()],
+        });
+        let plan = InstallPlan::from_assets(&assets, "cache");
+
+        assert_eq!(plan.summary.missing_checksum_count, 1);
+        assert_eq!(plan.assets[0].target_path, "cache/models/m.tar");
+        assert_eq!(plan.assets[0].checksum_policy, ChecksumPolicy::Missing);
+    }
+
     #[test]
     fn resolves_asset_against_all_base_urls() {
         let index = RegistryIndex::from_json_str(SAMPLE).unwrap();

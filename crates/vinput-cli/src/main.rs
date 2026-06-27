@@ -1,12 +1,15 @@
 //! `vinput` command-line prototype.
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use vinput_config::VinputConfig;
 use vinput_protocol::{RecognitionPayload, ServiceStatus, dbus};
-use vinput_registry::{AssetEntry, AssetPlanSummary, RegistryIndex};
+use vinput_registry::{AssetEntry, AssetPlanSummary, InstallPlan, RegistryIndex};
 
 /// CLI for inspecting and controlling the vinput daemon.
 #[derive(Debug, Parser)]
@@ -51,6 +54,26 @@ enum RegistryCommand {
         #[arg(long, conflicts_with = "model")]
         adapter: Option<String>,
         /// Print only the plan summary without per-asset rows.
+        #[arg(long)]
+        summary_only: bool,
+    },
+    /// Print a dry-run install plan without downloading assets.
+    InstallPlan {
+        /// Path to a registry index JSON file.
+        path: PathBuf,
+        /// Target root directory for planned asset installation.
+        #[arg(long)]
+        target_root: PathBuf,
+        /// Optional config JSON file that provides registry mirrors.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Only plan assets for this model id.
+        #[arg(long, conflicts_with = "adapter")]
+        model: Option<String>,
+        /// Only plan assets for this adapter id.
+        #[arg(long, conflicts_with = "model")]
+        adapter: Option<String>,
+        /// Print only the install-plan summary without per-asset rows.
         #[arg(long)]
         summary_only: bool,
     },
@@ -106,6 +129,21 @@ fn main() -> anyhow::Result<()> {
                 summary_only,
             }) => print_registry_plan(
                 &path,
+                config.as_ref(),
+                model.as_deref(),
+                adapter.as_deref(),
+                summary_only,
+            ),
+            Some(RegistryCommand::InstallPlan {
+                path,
+                target_root,
+                config,
+                model,
+                adapter,
+                summary_only,
+            }) => print_registry_install_plan(
+                &path,
+                &target_root,
                 config.as_ref(),
                 model.as_deref(),
                 adapter.as_deref(),
@@ -262,6 +300,52 @@ fn print_registry_plan(
             "known_size_bytes": plan_summary.known_size_bytes,
             "unknown_size_count": plan_summary.unknown_size_count,
             "assets": planned_assets,
+        })
+    };
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+fn print_registry_install_plan(
+    path: &PathBuf,
+    target_root: &Path,
+    config_path: Option<&PathBuf>,
+    model_id: Option<&str>,
+    adapter_id: Option<&str>,
+    summary_only: bool,
+) -> anyhow::Result<()> {
+    let input = fs::read_to_string(path)
+        .with_context(|| format!("read registry index `{}`", path.display()))?;
+    let index = RegistryIndex::from_json_str(&input)
+        .with_context(|| format!("validate registry index `{}`", path.display()))?;
+    let config = match config_path {
+        Some(config_path) => load_config_file(config_path)?,
+        None => VinputConfig::bundled_default().context("parse bundled config")?,
+    };
+    let planned_assets = match (model_id, adapter_id) {
+        (Some(model_id), None) => index.planned_model_assets(model_id, &config.registry)?,
+        (None, Some(adapter_id)) => index.planned_adapter_assets(adapter_id, &config.registry)?,
+        (None, None) => index.planned_assets(&config.registry),
+        (Some(_), Some(_)) => unreachable!("clap prevents model and adapter together"),
+    };
+    let target_root = target_root.to_string_lossy();
+    let plan = InstallPlan::from_assets(&planned_assets, &target_root);
+    let summary = if summary_only {
+        serde_json::json!({
+            "ok": true,
+            "target_root": plan.target_root,
+            "asset_count": plan.summary.asset_count,
+            "known_size_bytes": plan.summary.known_size_bytes,
+            "missing_checksum_count": plan.summary.missing_checksum_count,
+        })
+    } else {
+        serde_json::json!({
+            "ok": true,
+            "target_root": plan.target_root,
+            "asset_count": plan.summary.asset_count,
+            "known_size_bytes": plan.summary.known_size_bytes,
+            "missing_checksum_count": plan.summary.missing_checksum_count,
+            "assets": plan.assets,
         })
     };
     println!("{}", serde_json::to_string_pretty(&summary)?);
