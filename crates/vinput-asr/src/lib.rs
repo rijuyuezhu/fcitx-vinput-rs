@@ -451,29 +451,34 @@ impl CommandAsrRunner for ProcessCommandAsrRunner {
                 spec.provider_id
             ))
         })?;
-        serde_json::to_writer(&mut stdin, request).map_err(|error| {
-            AsrError::Backend(format!(
-                "failed to encode command ASR request for `{}`: {error}",
-                spec.provider_id
-            ))
-        })?;
-        stdin.write_all(b"\n").map_err(|error| {
-            AsrError::Backend(format!(
-                "failed to write command ASR request for `{}`: {error}",
-                spec.provider_id
-            ))
-        })?;
+        let write_result = (|| {
+            serde_json::to_writer(&mut stdin, request).map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to encode command ASR request for `{}`: {error}",
+                    spec.provider_id
+                ))
+            })?;
+            stdin.write_all(b"\n").map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to write command ASR request for `{}`: {error}",
+                    spec.provider_id
+                ))
+            })?;
+            Ok(())
+        })();
         drop(stdin);
+
+        if let Err(write_error) = write_result {
+            let output = wait_for_command_output(spec, child)?;
+            if !output.status.success() {
+                return command_exit_error(spec, &output);
+            }
+            return Err(write_error);
+        }
 
         let output = wait_for_command_output(spec, child)?;
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AsrError::Backend(format!(
-                "command ASR provider `{}` exited with {}: {}",
-                spec.provider_id,
-                output.status,
-                stderr.trim()
-            )));
+            return command_exit_error(spec, &output);
         }
         let response: CommandAsrResponse =
             serde_json::from_slice(&output.stdout).map_err(|error| {
@@ -484,6 +489,19 @@ impl CommandAsrRunner for ProcessCommandAsrRunner {
             })?;
         response.into_events()
     }
+}
+
+fn command_exit_error(
+    spec: &CommandAsrSpec,
+    output: &Output,
+) -> Result<Vec<RecognitionEvent>, AsrError> {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(AsrError::Backend(format!(
+        "command ASR provider `{}` exited with {}: {}",
+        spec.provider_id,
+        output.status,
+        stderr.trim()
+    )))
 }
 
 fn wait_for_command_output(spec: &CommandAsrSpec, mut child: Child) -> Result<Output, AsrError> {
@@ -1601,6 +1619,34 @@ mod tests {
         assert!(matches!(
             error,
             AsrError::Backend(message) if message.contains("timed out after 25 ms")
+        ));
+    }
+
+    #[test]
+    fn process_command_asr_runner_reports_early_nonzero_exit() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec!["-c".to_owned(), "echo early boom >&2; exit 9".to_owned()],
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("process runner should create a buffering session");
+        let error = session.finish().unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("exited with")
+                    && message.contains("early boom")
+                    && !message.contains("failed to write")
         ));
     }
 
