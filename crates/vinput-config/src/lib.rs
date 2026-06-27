@@ -229,6 +229,18 @@ fn validate_asr_provider<'a>(
             provider.id.clone(),
         ));
     }
+    if provider.kind == AsrProviderKind::Remote
+        && provider
+            .endpoint
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty()
+    {
+        return Err(ConfigError::InvalidRemoteAsrProviderEndpoint(
+            provider.id.clone(),
+        ));
+    }
     for key in provider.env.keys() {
         if key.trim().is_empty() {
             return Err(ConfigError::InvalidProviderEnvKey {
@@ -615,6 +627,9 @@ pub enum ConfigError {
     /// Command ASR provider requires a command.
     #[error("command ASR provider `{0}` must configure a command")]
     InvalidCommandAsrProviderCommand(String),
+    /// Remote ASR provider requires an endpoint.
+    #[error("remote ASR provider `{0}` must configure an endpoint")]
+    InvalidRemoteAsrProviderEndpoint(String),
     /// Provider environment contains an empty key.
     #[error("provider `{provider_id}` has an invalid environment key `{key}`")]
     InvalidProviderEnvKey {
@@ -966,6 +981,29 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidCommandAsrProviderCommand(id) if id == "cmd"
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_remote_asr_without_endpoint() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "remote".to_owned();
+        config.asr.providers.push(super::AsrProviderConfig {
+            id: "remote".to_owned(),
+            kind: AsrProviderKind::Remote,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: Some("  ".to_owned()),
+        });
+
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidRemoteAsrProviderEndpoint(id) if id == "remote"
         ));
     }
 
