@@ -636,6 +636,26 @@ mod tests {
     }
 
     #[test]
+    fn command_asr_spec_rejects_missing_command() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let error = CommandAsrSpec::try_from(&provider).unwrap_err();
+        assert!(
+            matches!(error, AsrError::Backend(message) if message.contains("must configure a command"))
+        );
+    }
+
+    #[test]
     fn backend_factory_reports_unimplemented_provider_kind() {
         let provider = AsrProviderConfig {
             id: "sherpa-onnx".to_owned(),
