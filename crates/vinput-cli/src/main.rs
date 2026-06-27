@@ -384,10 +384,8 @@ fn selected_registry_assets(
 }
 
 fn load_config_file(path: &PathBuf) -> anyhow::Result<VinputConfig> {
-    let input =
-        fs::read_to_string(path).with_context(|| format!("read config `{}`", path.display()))?;
-    let config = VinputConfig::from_json_str(&input)
-        .with_context(|| format!("parse config `{}`", path.display()))?;
+    let config = VinputConfig::from_json_file(path)
+        .with_context(|| format!("load config `{}`", path.display()))?;
     config
         .validate()
         .with_context(|| format!("validate config `{}`", path.display()))?;
