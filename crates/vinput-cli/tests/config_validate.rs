@@ -426,6 +426,43 @@ fn config_validate_fails_for_too_many_candidates() {
     assert!(stderr.contains("scene `raw` asks for 33 candidates"));
 }
 
+
+#[test]
+fn config_validate_fails_for_unknown_scene_provider() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "llm": {
+            "providers": [{"id":"known","base_url":"https://example.invalid/v1"}]
+          },
+          "scenes": {
+            "active_scene": "rewrite",
+            "definitions": [
+              {"id":"raw","label":"Raw","candidate_count":0},
+              {"id":"rewrite","label":"Rewrite","provider_id":"missing","candidate_count":1}
+            ]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("unknown LLM provider `missing`"));
+}
+
 #[test]
 fn asr_state_reports_mock_provider_ready() {
     let path = write_temp_config(
