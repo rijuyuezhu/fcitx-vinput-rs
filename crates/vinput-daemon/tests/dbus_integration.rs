@@ -198,6 +198,13 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         adapter_stop,
         "adapter `mock-adapter` stop is not implemented yet"
     );
+    let empty_adapter_start: String = proxy.call(dbus::method::START_ADAPTER, &"").await?;
+    assert_eq!(
+        empty_adapter_start,
+        "adapter `` start is not implemented yet"
+    );
+    let empty_adapter_stop: String = proxy.call(dbus::method::STOP_ADAPTER, &"").await?;
+    assert_eq!(empty_adapter_stop, "adapter `` stop is not implemented yet");
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
