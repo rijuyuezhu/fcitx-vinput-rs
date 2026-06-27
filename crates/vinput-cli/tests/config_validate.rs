@@ -307,6 +307,24 @@ fn config_validate_fails_for_empty_provider_ids() {
 }
 
 #[test]
+fn config_validate_fails_for_empty_capture_device() {
+    let path = write_temp_config(
+        r#"{"version":1,"global":{"capture_device":"   "},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("invalid empty capture device"));
+}
+
+#[test]
 fn config_validate_fails_for_empty_default_language() {
     let path = write_temp_config(
         r#"{"version":1,"global":{"default_language":"   "},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,

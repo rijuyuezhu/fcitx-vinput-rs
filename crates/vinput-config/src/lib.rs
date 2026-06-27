@@ -77,6 +77,9 @@ impl VinputConfig {
         if self.global.default_language.trim().is_empty() {
             return Err(ConfigError::InvalidDefaultLanguage);
         }
+        if self.global.capture_device.trim().is_empty() {
+            return Err(ConfigError::InvalidCaptureDevice);
+        }
 
         let mut scene_ids = HashSet::new();
         for scene in &self.scenes.definitions {
@@ -342,6 +345,9 @@ pub enum ConfigError {
     /// Default language is empty.
     #[error("invalid empty default language")]
     InvalidDefaultLanguage,
+    /// Capture device is empty.
+    #[error("invalid empty capture device")]
+    InvalidCaptureDevice,
     /// Active scene is not listed in scene definitions.
     #[error("active scene `{0}` is not defined")]
     UnknownActiveScene(String),
@@ -469,6 +475,16 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidRegistryBaseUrl(url) if url == "  "
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_empty_capture_device() {
+        let mut c = VinputConfig::bundled_default().unwrap();
+        c.global.capture_device = "  ".to_owned();
+        assert!(matches!(
+            c.validate().unwrap_err(),
+            super::ConfigError::InvalidCaptureDevice
         ));
     }
 
