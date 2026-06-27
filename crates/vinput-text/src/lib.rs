@@ -150,6 +150,8 @@ pub trait CommandTextRunner: Send + Sync {
         &self,
         command: &str,
         args: &[String],
+        env: &std::collections::HashMap<String, String>,
+        working_dir: Option<&str>,
         request: &TextRequest<'_>,
     ) -> Result<RecognitionPayload, TextError>;
 }
@@ -163,6 +165,8 @@ impl CommandTextRunner for UnsupportedCommandTextRunner {
         &self,
         _command: &str,
         _args: &[String],
+        _env: &std::collections::HashMap<String, String>,
+        _working_dir: Option<&str>,
         request: &TextRequest<'_>,
     ) -> Result<RecognitionPayload, TextError> {
         Err(TextError::UnsupportedAdapter(request.scene.id.clone()))
@@ -175,8 +179,11 @@ impl CommandTextRunner for UnsupportedCommandTextRunner {
 /// seam so real process spawning can be added without making tests flaky.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandTextAdapter<R = UnsupportedCommandTextRunner> {
+    id: String,
     command: String,
     args: Vec<String>,
+    env: std::collections::HashMap<String, String>,
+    working_dir: Option<String>,
     runner: R,
 }
 
@@ -190,7 +197,14 @@ impl CommandTextAdapter<UnsupportedCommandTextRunner> {
     /// Creates a command adapter skeleton from typed config.
     #[must_use]
     pub fn from_config(config: &LlmAdapterConfig) -> Self {
-        Self::new(config.command.clone(), config.args.clone())
+        Self::with_config(
+            config.id.clone(),
+            config.command.clone(),
+            config.args.clone(),
+            config.env.clone(),
+            config.working_dir.clone(),
+            UnsupportedCommandTextRunner,
+        )
     }
 }
 
@@ -198,11 +212,40 @@ impl<R> CommandTextAdapter<R> {
     /// Creates a command adapter with an injected runner.
     #[must_use]
     pub fn with_runner(command: impl Into<String>, args: Vec<String>, runner: R) -> Self {
+        Self::with_config(
+            String::new(),
+            command,
+            args,
+            std::collections::HashMap::default(),
+            None,
+            runner,
+        )
+    }
+
+    /// Creates a command adapter with full typed command config and runner.
+    #[must_use]
+    pub fn with_config(
+        id: impl Into<String>,
+        command: impl Into<String>,
+        args: Vec<String>,
+        env: std::collections::HashMap<String, String>,
+        working_dir: Option<String>,
+        runner: R,
+    ) -> Self {
         Self {
+            id: id.into(),
             command: command.into(),
             args,
+            env,
+            working_dir,
             runner,
         }
+    }
+
+    /// Returns the configured adapter id, if known.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     /// Returns the configured command path or name.
@@ -217,6 +260,18 @@ impl<R> CommandTextAdapter<R> {
         &self.args
     }
 
+    /// Returns configured command environment variables.
+    #[must_use]
+    pub fn env(&self) -> &std::collections::HashMap<String, String> {
+        &self.env
+    }
+
+    /// Returns configured command working directory.
+    #[must_use]
+    pub fn working_dir(&self) -> Option<&str> {
+        self.working_dir.as_deref()
+    }
+
     /// Returns the configured command runner.
     #[must_use]
     pub const fn runner(&self) -> &R {
@@ -226,7 +281,13 @@ impl<R> CommandTextAdapter<R> {
 
 impl<R: CommandTextRunner> TextAdapter for CommandTextAdapter<R> {
     fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
-        self.runner.run(&self.command, &self.args, request)
+        self.runner.run(
+            &self.command,
+            &self.args,
+            &self.env,
+            self.working_dir.as_deref(),
+            request,
+        )
     }
 }
 
@@ -364,12 +425,16 @@ mod tests {
             &self,
             command: &str,
             args: &[String],
+            env: &std::collections::HashMap<String, String>,
+            working_dir: Option<&str>,
             request: &TextRequest<'_>,
         ) -> Result<RecognitionPayload, TextError> {
             Ok(RecognitionPayload::raw(format!(
-                "{} {}: {}",
+                "{} {} {} {}: {}",
                 command,
                 args.join(" "),
+                env.get("MODE").map(String::as_str).unwrap_or_default(),
+                working_dir.unwrap_or_default(),
                 request.raw_text
             )))
         }
@@ -496,8 +561,11 @@ mod tests {
             extra: std::collections::HashMap::default(),
         });
 
+        assert_eq!(adapter.id(), "cmd-adapter");
         assert_eq!(adapter.command(), "vinput-postprocess");
         assert_eq!(adapter.args(), ["--json"]);
+        assert!(adapter.env().is_empty());
+        assert!(adapter.working_dir().is_none());
     }
 
     #[test]
@@ -506,9 +574,12 @@ mod tests {
             prompt: Some("polish".to_owned()),
             ..scene("polish", 0)
         };
-        let payload = LlmTextProcessor::new(CommandTextAdapter::with_runner(
+        let payload = LlmTextProcessor::new(CommandTextAdapter::with_config(
+            "cmd-adapter",
             "vinput-postprocess",
             vec!["--json".to_owned()],
+            std::collections::HashMap::from([("MODE".to_owned(), "mock".to_owned())]),
+            Some("/tmp/vinput".to_owned()),
             EchoCommandRunner,
         ))
         .finish(&TextRequest {
@@ -518,7 +589,10 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(payload.commit_text, "vinput-postprocess --json: hello");
+        assert_eq!(
+            payload.commit_text,
+            "vinput-postprocess --json mock /tmp/vinput: hello"
+        );
     }
 
     #[test]
