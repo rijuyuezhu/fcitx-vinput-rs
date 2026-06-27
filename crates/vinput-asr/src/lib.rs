@@ -251,6 +251,8 @@ pub struct CommandAsrSpec {
     pub env: std::collections::HashMap<String, String>,
     /// Optional model id selected for this provider.
     pub model_id: Option<String>,
+    /// Optional hotwords file configured for this provider.
+    pub hotwords_file: Option<String>,
     /// Optional timeout in milliseconds.
     pub timeout_ms: Option<u64>,
 }
@@ -282,6 +284,7 @@ impl TryFrom<&AsrProviderConfig> for CommandAsrSpec {
             args: provider.args.clone(),
             env: provider.env.clone(),
             model_id: provider.model.clone(),
+            hotwords_file: provider.hotwords_file.clone(),
             timeout_ms: provider.timeout_ms,
         })
     }
@@ -623,12 +626,13 @@ mod tests {
                 .map(String::as_str)
                 .unwrap_or_default();
             MockAsrBackend::buffered(format!(
-                "{}|{}|{}|{}|{}|{}|{}|{}",
+                "{}|{}|{}|{}|{}|{}|{}|{}|{}",
                 spec.provider_id,
                 spec.command,
                 spec.args.join(","),
                 env_value,
                 spec.model_id.as_deref().unwrap_or_default(),
+                spec.hotwords_file.as_deref().unwrap_or_default(),
                 spec.timeout_ms.unwrap_or_default(),
                 scene_id,
                 language,
@@ -781,8 +785,8 @@ mod tests {
             id: "cmd".to_owned(),
             kind: AsrProviderKind::Command,
             timeout_ms: Some(1_500),
-            model: None,
-            hotwords_file: None,
+            model: Some("paraformer".to_owned()),
+            hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
             command: Some(" helper ".to_owned()),
             args: vec!["--json".to_owned()],
             env: std::collections::HashMap::from([("RUST_LOG".to_owned(), "info".to_owned())]),
@@ -794,7 +798,8 @@ mod tests {
         assert_eq!(spec.command, "helper");
         assert_eq!(spec.args, ["--json"]);
         assert_eq!(spec.env.get("RUST_LOG").map(String::as_str), Some("info"));
-        assert_eq!(spec.model_id, None);
+        assert_eq!(spec.model_id.as_deref(), Some("paraformer"));
+        assert_eq!(spec.hotwords_file.as_deref(), Some("/tmp/hotwords.txt"));
         assert_eq!(spec.timeout_ms, Some(1_500));
     }
 
@@ -845,6 +850,7 @@ mod tests {
             args: vec!["--json".to_owned()],
             env: std::collections::HashMap::default(),
             model_id: Some("cmd-model".to_owned()),
+            hotwords_file: None,
             timeout_ms: Some(1_000),
         });
 
@@ -867,6 +873,7 @@ mod tests {
                 args: Vec::new(),
                 env: std::collections::HashMap::default(),
                 model_id: None,
+                hotwords_file: None,
                 timeout_ms: None,
             },
             FinalTextCommandRunner,
@@ -890,6 +897,7 @@ mod tests {
                 args: vec!["--format".to_owned(), "json".to_owned()],
                 env: std::collections::HashMap::from([("ASR_MODE".to_owned(), "fast".to_owned())]),
                 model_id: Some("paraformer".to_owned()),
+                hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
                 timeout_ms: Some(2_500),
             },
             ConfigEchoCommandRunner,
@@ -906,7 +914,7 @@ mod tests {
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
         assert_eq!(
             payload.commit_text,
-            "cmd|helper|--format,json|fast|paraformer|2500|dictation|zh"
+            "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh"
         );
     }
 
@@ -917,7 +925,7 @@ mod tests {
             kind: AsrProviderKind::Command,
             timeout_ms: Some(2_500),
             model: Some("paraformer".to_owned()),
-            hotwords_file: None,
+            hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
             command: Some("helper".to_owned()),
             args: vec!["--format".to_owned(), "json".to_owned()],
             env: std::collections::HashMap::from([("ASR_MODE".to_owned(), "fast".to_owned())]),
@@ -928,6 +936,10 @@ mod tests {
             .expect("command provider config should build");
         assert_eq!(backend.spec().provider_id, "cmd");
         assert_eq!(backend.spec().model_id.as_deref(), Some("paraformer"));
+        assert_eq!(
+            backend.spec().hotwords_file.as_deref(),
+            Some("/tmp/hotwords.txt")
+        );
 
         let mut session = backend
             .create_session(RecognitionContext::normal(
@@ -940,7 +952,7 @@ mod tests {
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
         assert_eq!(
             payload.commit_text,
-            "cmd|helper|--format,json|fast|paraformer|2500|dictation|zh"
+            "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh"
         );
     }
 
@@ -952,6 +964,7 @@ mod tests {
             args: Vec::new(),
             env: std::collections::HashMap::default(),
             model_id: None,
+            hotwords_file: None,
             timeout_ms: None,
         });
 
