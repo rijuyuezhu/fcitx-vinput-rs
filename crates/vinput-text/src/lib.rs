@@ -333,6 +333,12 @@ impl AdapterRegistry {
         self.command_adapters.is_empty()
     }
 
+    /// Returns whether a command adapter id is registered.
+    #[must_use]
+    pub fn contains_command_adapter(&self, id: &str) -> bool {
+        self.command_adapters.contains_key(id)
+    }
+
     /// Looks up a command adapter by id.
     #[must_use]
     pub fn command_adapter(&self, id: &str) -> Option<&CommandTextAdapter> {
@@ -611,12 +617,14 @@ mod tests {
         }]);
 
         assert_eq!(registry.len(), 1);
+        assert!(registry.contains_command_adapter("cmd-adapter"));
         let adapter = registry
             .command_adapter("cmd-adapter")
             .expect("adapter should be indexed");
         assert_eq!(adapter.command(), "vinput-postprocess");
         assert_eq!(adapter.env().get("MODE").map(String::as_str), Some("test"));
         assert_eq!(adapter.working_dir(), Some("/tmp/vinput"));
+        assert!(!registry.contains_command_adapter("missing"));
         assert!(registry.command_adapter("missing").is_none());
     }
 
