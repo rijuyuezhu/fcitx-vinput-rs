@@ -1554,6 +1554,32 @@ mod tests {
     }
 
     #[test]
+    fn process_command_asr_runner_reports_spawn_failure() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: Some(format!("vinput-missing-command-{}", std::process::id())),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("process runner should create a buffering session");
+        let error = session.finish().unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("failed to spawn command ASR provider `cmd`")
+        ));
+    }
+
+    #[test]
     fn process_command_asr_runner_times_out_slow_helpers() {
         let provider = AsrProviderConfig {
             id: "cmd".to_owned(),
