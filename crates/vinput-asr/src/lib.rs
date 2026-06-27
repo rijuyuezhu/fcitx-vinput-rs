@@ -597,6 +597,37 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone, Copy)]
+    struct ConfigEchoCommandRunner;
+
+    impl CommandAsrRunner for ConfigEchoCommandRunner {
+        fn create_session(
+            &self,
+            spec: &CommandAsrSpec,
+            context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            let scene_id = context.scene_id.clone();
+            let language = context.language.clone().unwrap_or_default();
+            let env_value = spec
+                .env
+                .get("ASR_MODE")
+                .map(String::as_str)
+                .unwrap_or_default();
+            MockAsrBackend::buffered(format!(
+                "{}|{}|{}|{}|{}|{}|{}|{}",
+                spec.provider_id,
+                spec.command,
+                spec.args.join(","),
+                env_value,
+                spec.model_id.as_deref().unwrap_or_default(),
+                spec.timeout_ms.unwrap_or_default(),
+                scene_id,
+                language,
+            ))
+            .create_session(context)
+        }
+    }
+
     #[test]
     fn recognition_context_marks_command_sessions() {
         let context =
@@ -839,6 +870,35 @@ mod tests {
         session.finish().unwrap();
         let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
         assert_eq!(payload.commit_text, "helper:raw");
+    }
+
+    #[test]
+    fn command_asr_backend_passes_config_to_injected_runner() {
+        let backend = CommandAsrBackend::with_runner(
+            CommandAsrSpec {
+                provider_id: "cmd".to_owned(),
+                command: "helper".to_owned(),
+                args: vec!["--format".to_owned(), "json".to_owned()],
+                env: std::collections::HashMap::from([("ASR_MODE".to_owned(), "fast".to_owned())]),
+                model_id: Some("paraformer".to_owned()),
+                timeout_ms: Some(2_500),
+            },
+            ConfigEchoCommandRunner,
+        );
+
+        let mut session = backend
+            .create_session(RecognitionContext::normal(
+                "dictation",
+                Some("zh".to_owned()),
+            ))
+            .expect("mock runner should create a session");
+        session.finish().unwrap();
+
+        let payload = events_to_payload(&session.poll_events().unwrap()).unwrap();
+        assert_eq!(
+            payload.commit_text,
+            "cmd|helper|--format,json|fast|paraformer|2500|dictation|zh"
+        );
     }
 
     #[test]
