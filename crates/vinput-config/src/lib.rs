@@ -242,6 +242,15 @@ fn validate_asr_provider<'a>(
     {
         return Err(ConfigError::InvalidAsrProviderModelId(provider.id.clone()));
     }
+    if provider
+        .hotwords_file
+        .as_deref()
+        .is_some_and(|hotwords_file| hotwords_file.trim().is_empty())
+    {
+        return Err(ConfigError::InvalidAsrProviderHotwordsFile(
+            provider.id.clone(),
+        ));
+    }
     if provider.timeout_ms == Some(0) {
         return Err(ConfigError::InvalidAsrProviderTimeoutMs(
             provider.id.clone(),
@@ -680,6 +689,9 @@ pub enum ConfigError {
     /// ASR provider model id is present but empty.
     #[error("ASR provider `{0}` has an invalid empty model id")]
     InvalidAsrProviderModelId(String),
+    /// ASR provider hotwords file is present but empty.
+    #[error("ASR provider `{0}` has an invalid empty hotwords_file")]
+    InvalidAsrProviderHotwordsFile(String),
     /// ASR provider timeout must be positive when configured.
     #[error("ASR provider `{0}` has invalid timeout_ms 0")]
     InvalidAsrProviderTimeoutMs(String),
@@ -1057,6 +1069,17 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidAsrProviderModelId(id) if id == "sherpa-onnx"
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_empty_asr_provider_hotwords_file() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.providers[0].hotwords_file = Some("  ".to_owned());
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidAsrProviderHotwordsFile(id) if id == "sherpa-onnx"
         ));
     }
 
