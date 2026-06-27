@@ -288,6 +288,21 @@ mod tests {
     }
 
     #[test]
+    fn prompted_scene_requires_future_adapter() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let error = TextFinisher::finish(&TextRequest {
+            raw_text: "hello",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+        assert_eq!(error, TextError::AdapterRequired("polish".to_owned()));
+    }
+
+    #[test]
     fn mock_processor_handles_candidate_scene() {
         let fancy = scene("rewrite", 2);
         let payload = MockTextProcessor::new()
