@@ -722,6 +722,20 @@ mod tests {
     }
 
     #[test]
+    fn config_file_reports_read_errors() {
+        let path = std::env::temp_dir().join(format!(
+            "vinput-config-test-{}-missing.json",
+            std::process::id()
+        ));
+
+        let error = VinputConfig::from_json_file(&path).unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::ReadFile { path: error_path, .. } if error_path == path
+        ));
+    }
+
+    #[test]
     fn bundled_default_parses_and_validates() {
         let config = VinputConfig::bundled_default().unwrap();
         config.validate().unwrap();
