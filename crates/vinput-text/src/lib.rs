@@ -197,14 +197,7 @@ impl CommandTextAdapter<UnsupportedCommandTextRunner> {
     /// Creates a command adapter skeleton from typed config.
     #[must_use]
     pub fn from_config(config: &LlmAdapterConfig) -> Self {
-        Self::with_config(
-            config.id.clone(),
-            config.command.clone(),
-            config.args.clone(),
-            config.env.clone(),
-            config.working_dir.clone(),
-            UnsupportedCommandTextRunner,
-        )
+        Self::with_adapter_config(config, UnsupportedCommandTextRunner)
     }
 }
 
@@ -240,6 +233,19 @@ impl<R> CommandTextAdapter<R> {
             working_dir,
             runner,
         }
+    }
+
+    /// Creates a command adapter from typed config with a supplied runner.
+    #[must_use]
+    pub fn with_adapter_config(config: &LlmAdapterConfig, runner: R) -> Self {
+        Self::with_config(
+            config.id.clone(),
+            config.command.clone(),
+            config.args.clone(),
+            config.env.clone(),
+            config.working_dir.clone(),
+            runner,
+        )
     }
 
     /// Returns the configured adapter id, if known.
@@ -638,12 +644,16 @@ mod tests {
             prompt: Some("polish".to_owned()),
             ..scene("polish", 0)
         };
-        let payload = LlmTextProcessor::new(CommandTextAdapter::with_config(
-            "cmd-adapter",
-            "vinput-postprocess",
-            vec!["--json".to_owned()],
-            std::collections::HashMap::from([("MODE".to_owned(), "mock".to_owned())]),
-            Some("/tmp/vinput".to_owned()),
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "vinput-postprocess".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::from([("MODE".to_owned(), "mock".to_owned())]),
+            working_dir: Some("/tmp/vinput".to_owned()),
+            extra: std::collections::HashMap::default(),
+        };
+        let payload = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
             EchoCommandRunner,
         ))
         .finish(&TextRequest {
