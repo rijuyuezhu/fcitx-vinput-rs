@@ -179,6 +179,7 @@ fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
     scene.id == COMMAND_SCENE_ID
         || scene.candidate_count > 0
         || scene.context_lines > 0
+        || scene.timeout_ms.is_some()
         || scene
             .prompt
             .as_deref()
@@ -378,6 +379,24 @@ mod tests {
         assert_eq!(
             error,
             TextError::AdapterRequired("provider-scene".to_owned())
+        );
+    }
+
+    #[test]
+    fn timeout_scene_requires_future_adapter() {
+        let timeout_scene = SceneDefinition {
+            timeout_ms: Some(2500),
+            ..scene("timeout-scene", 0)
+        };
+        let error = TextFinisher::finish(&TextRequest {
+            raw_text: "hello",
+            scene: &timeout_scene,
+            selected_text: None,
+        })
+        .unwrap_err();
+        assert_eq!(
+            error,
+            TextError::AdapterRequired("timeout-scene".to_owned())
         );
     }
 
