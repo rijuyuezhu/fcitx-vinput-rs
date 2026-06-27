@@ -91,6 +91,16 @@ impl VinputDbusService {
         let payload_json = payload.to_json_string().map_err(Self::map_json_error)?;
         Ok((payload_json, runtime.status().to_string()))
     }
+
+    async fn adapter_placeholder(&self, adapter_id: &str, action: &str) -> String {
+        let runtime = self.runtime.lock().await;
+        let registry = runtime.configured_text_adapters();
+        if registry.command_adapter(adapter_id).is_some() {
+            format!("adapter `{adapter_id}` {action} is not implemented yet")
+        } else {
+            format!("adapter `{adapter_id}` is not configured")
+        }
+    }
 }
 
 #[allow(missing_docs)]
@@ -181,16 +191,14 @@ impl VinputDbusService {
 
     /// Start a configured adapter. Stubbed until adapter supervision is ported.
     #[zbus(name = "StartAdapter")]
-    #[allow(clippy::unused_self)]
-    fn start_adapter(&self, adapter_id: &str) -> String {
-        format!("adapter `{adapter_id}` start is not implemented yet")
+    async fn start_adapter(&self, adapter_id: &str) -> String {
+        self.adapter_placeholder(adapter_id, "start").await
     }
 
     /// Stop a configured adapter. Stubbed until adapter supervision is ported.
     #[zbus(name = "StopAdapter")]
-    #[allow(clippy::unused_self)]
-    fn stop_adapter(&self, adapter_id: &str) -> String {
-        format!("adapter `{adapter_id}` stop is not implemented yet")
+    async fn stop_adapter(&self, adapter_id: &str) -> String {
+        self.adapter_placeholder(adapter_id, "stop").await
     }
 
     /// Frontend notification compatibility placeholder.
@@ -241,7 +249,7 @@ impl VinputDbusService {
 mod tests {
     use super::VinputDbusService;
     use crate::RuntimeState;
-    use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
+    use vinput_config::{AsrProviderConfig, AsrProviderKind, LlmAdapterConfig, VinputConfig};
     use vinput_protocol::{AsrBackendState, RecognitionPayload};
 
     fn service() -> VinputDbusService {
@@ -345,11 +353,30 @@ mod tests {
     async fn dbus_facade_reports_adapter_placeholders() {
         let service = service();
         assert_eq!(
-            service.start_adapter("mock-adapter"),
+            service.start_adapter("mock-adapter").await,
+            "adapter `mock-adapter` is not configured"
+        );
+        assert_eq!(
+            service.stop_adapter("mock-adapter").await,
+            "adapter `mock-adapter` is not configured"
+        );
+
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(LlmAdapterConfig {
+            id: "mock-adapter".to_owned(),
+            command: "vinput-postprocess".to_owned(),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
+        assert_eq!(
+            service.start_adapter("mock-adapter").await,
             "adapter `mock-adapter` start is not implemented yet"
         );
         assert_eq!(
-            service.stop_adapter("mock-adapter"),
+            service.stop_adapter("mock-adapter").await,
             "adapter `mock-adapter` stop is not implemented yet"
         );
     }
