@@ -291,6 +291,49 @@ impl<R: CommandTextRunner> TextAdapter for CommandTextAdapter<R> {
     }
 }
 
+/// Registry of configured text adapters.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AdapterRegistry {
+    command_adapters: std::collections::HashMap<String, CommandTextAdapter>,
+}
+
+impl AdapterRegistry {
+    /// Creates an empty registry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Builds a registry from typed command adapter config entries.
+    #[must_use]
+    pub fn from_configs(adapters: &[LlmAdapterConfig]) -> Self {
+        Self {
+            command_adapters: adapters
+                .iter()
+                .map(|adapter| (adapter.id.clone(), CommandTextAdapter::from_config(adapter)))
+                .collect(),
+        }
+    }
+
+    /// Returns the number of registered adapters.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.command_adapters.len()
+    }
+
+    /// Returns whether the registry has no adapters.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.command_adapters.is_empty()
+    }
+
+    /// Looks up a command adapter by id.
+    #[must_use]
+    pub fn command_adapter(&self, id: &str) -> Option<&CommandTextAdapter> {
+        self.command_adapters.get(id)
+    }
+}
+
 /// Adapter placeholder used until concrete local adapters are ported.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UnsupportedTextAdapter;
@@ -548,6 +591,27 @@ mod tests {
 
         let rendered = PromptTemplate::new("x={x}").render_request(&request);
         assert_eq!(rendered, "x={x}");
+    }
+
+    #[test]
+    fn adapter_registry_indexes_command_adapters_from_config() {
+        let registry = super::AdapterRegistry::from_configs(&[LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "vinput-postprocess".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::from([("MODE".to_owned(), "test".to_owned())]),
+            working_dir: Some("/tmp/vinput".to_owned()),
+            extra: std::collections::HashMap::default(),
+        }]);
+
+        assert_eq!(registry.len(), 1);
+        let adapter = registry
+            .command_adapter("cmd-adapter")
+            .expect("adapter should be indexed");
+        assert_eq!(adapter.command(), "vinput-postprocess");
+        assert_eq!(adapter.env().get("MODE").map(String::as_str), Some("test"));
+        assert_eq!(adapter.working_dir(), Some("/tmp/vinput"));
+        assert!(registry.command_adapter("missing").is_none());
     }
 
     #[test]
