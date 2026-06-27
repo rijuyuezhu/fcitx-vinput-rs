@@ -1,5 +1,7 @@
 //! vinput daemon entrypoint.
 
+use std::{fs, path::PathBuf};
+
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use tracing::info;
@@ -22,6 +24,10 @@ struct Args {
     #[arg(long)]
     dbus: bool,
 
+    /// Optional config JSON file. Omitted to use the bundled default config.
+    #[arg(long)]
+    config: Option<PathBuf>,
+
     /// Utility command.
     #[command(subcommand)]
     command: Option<Command>,
@@ -43,10 +49,8 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    let config = VinputConfig::bundled_default().context("load bundled default config")?;
-    config
-        .validate()
-        .context("validate bundled default config")?;
+    let config = load_config(args.config.as_ref())?;
+    config.validate().context("validate daemon config")?;
     let mut runtime = RuntimeState::new(config.clone()).context("initialize runtime")?;
 
     match args.command {
@@ -56,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::AsrState) => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&runtime.reload_asr_backend()?)?
+                serde_json::to_string_pretty(&RuntimeState::configured_asr_state(&config))?
             );
         }
         None if args.once => {
@@ -95,4 +99,16 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn load_config(path: Option<&PathBuf>) -> anyhow::Result<VinputConfig> {
+    match path {
+        Some(path) => {
+            let contents = fs::read_to_string(path)
+                .with_context(|| format!("read daemon config `{}`", path.display()))?;
+            VinputConfig::from_json_str(&contents)
+                .with_context(|| format!("parse daemon config `{}`", path.display()))
+        }
+        None => VinputConfig::bundled_default().context("load bundled default config"),
+    }
 }
