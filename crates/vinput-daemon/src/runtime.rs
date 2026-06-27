@@ -93,6 +93,12 @@ impl RuntimeState {
         })
     }
 
+    /// Builds a diagnostic ASR state from config without constructing a runtime.
+    #[must_use]
+    pub fn configured_asr_state(config: &VinputConfig) -> AsrBackendState {
+        AsrBackendFactory::state_for_config(&config.asr)
+    }
+
     /// Current daemon status.
     #[must_use]
     pub const fn status(&self) -> ServiceStatus {
@@ -437,6 +443,15 @@ mod tests {
             "mock command result for: selected text"
         );
         assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
+    fn configured_asr_state_reports_default_backend_without_runtime() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let state = RuntimeState::configured_asr_state(&config);
+        assert_eq!(state.target_provider_id, "sherpa-onnx");
+        assert!(!state.has_effective_backend);
+        assert!(!state.last_error.is_empty());
     }
 
     #[test]
