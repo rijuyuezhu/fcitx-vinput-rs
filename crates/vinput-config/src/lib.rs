@@ -180,6 +180,14 @@ fn validate_scene_definition<'a>(
             });
         }
     }
+    if scene
+        .model
+        .as_deref()
+        .is_some_and(|model| model.trim().is_empty())
+    {
+        return Err(ConfigError::InvalidSceneModelId(scene.id.clone()));
+    }
+
     if scene.timeout_ms == Some(0) {
         return Err(ConfigError::InvalidSceneTimeoutMs(scene.id.clone()));
     }
@@ -605,6 +613,9 @@ pub enum ConfigError {
     /// Scene provider id is present but empty.
     #[error("scene `{0}` has an invalid empty provider id")]
     InvalidSceneProviderId(String),
+    /// Scene model id is present but empty.
+    #[error("scene `{0}` has an invalid empty model id")]
+    InvalidSceneModelId(String),
     /// Scene provider id does not match a configured LLM provider.
     #[error("scene `{scene_id}` references unknown LLM provider `{provider_id}`")]
     UnknownSceneProviderId {
@@ -1073,6 +1084,14 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidSceneProviderId(id) if id == RAW_SCENE_ID
+        ));
+
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.definitions[0].model = Some("  ".to_owned());
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidSceneModelId(id) if id == RAW_SCENE_ID
         ));
 
         let mut config = VinputConfig::bundled_default().unwrap();
