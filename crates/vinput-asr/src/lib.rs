@@ -161,7 +161,7 @@ pub trait RecognitionSession: Send {
         self.push_audio(pcm.samples())
     }
 
-    /// Push signed 16-bit mono PCM samples.
+    /// Push raw signed 16-bit PCM samples using backend/default metadata.
     fn push_audio(&mut self, samples: &[i16]) -> Result<(), AsrError>;
 
     /// Finish audio delivery and let the backend enqueue final events.

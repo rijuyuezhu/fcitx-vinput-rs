@@ -308,7 +308,7 @@ impl CapturedAudio {
 
 /// Audio source abstraction used before a concrete desktop backend is wired in.
 pub trait AudioSource: Send {
-    /// Read one mono PCM buffer.
+    /// Read one PCM buffer.
     fn read_buffer(&mut self) -> Result<CapturedAudio, AudioError>;
 }
 
