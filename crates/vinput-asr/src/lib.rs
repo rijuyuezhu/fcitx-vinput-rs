@@ -351,20 +351,21 @@ impl AsrBackendFactory {
     }
 }
 
-fn target_model_id(config: &AsrConfig) -> String {
+fn active_provider(config: &AsrConfig) -> Option<&AsrProviderConfig> {
     config
         .providers
         .iter()
         .find(|provider| provider.id == config.active_provider)
+}
+
+fn target_model_id(config: &AsrConfig) -> String {
+    active_provider(config)
         .and_then(|provider| provider.model.clone())
         .unwrap_or_default()
 }
 
 fn remote_endpoints(config: &AsrConfig) -> Vec<String> {
-    config
-        .providers
-        .iter()
-        .find(|provider| provider.id == config.active_provider)
+    active_provider(config)
         .and_then(|provider| provider.endpoint.as_deref())
         .map(str::trim)
         .filter(|endpoint| !endpoint.is_empty())
