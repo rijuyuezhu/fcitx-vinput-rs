@@ -664,6 +664,19 @@ mod tests {
     }
 
     #[test]
+    fn install_plan_uses_relative_targets_for_empty_root() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let config = RegistryConfig {
+            base_urls: vec!["https://registry.invalid/root".to_owned()],
+        };
+        let plan = index.install_plan(&config, "");
+
+        assert_eq!(plan.target_root, "");
+        assert_eq!(plan.assets[0].target_path, "models/sherpa-zh-small.tar.zst");
+        assert_eq!(plan.assets[1].target_path, "adapters/mock-adapter.tar.zst");
+    }
+
+    #[test]
     fn resolves_asset_against_all_base_urls() {
         let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
         let asset = &index.model("sherpa-zh-small").unwrap().assets[0];
