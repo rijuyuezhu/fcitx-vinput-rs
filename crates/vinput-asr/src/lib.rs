@@ -329,6 +329,43 @@ impl CommandAsrRequest {
     }
 }
 
+/// Response returned by a command-backed ASR helper.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct CommandAsrResponse {
+    /// Optional streaming partial text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partial_text: Option<String>,
+    /// Final recognized text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Failure message produced by the helper.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
+}
+
+impl CommandAsrResponse {
+    /// Converts a helper response into recognition events.
+    pub fn into_events(self) -> Result<Vec<RecognitionEvent>, AsrError> {
+        let mut events = Vec::new();
+        if let Some(partial_text) = self.partial_text.filter(|text| !text.is_empty()) {
+            events.push(RecognitionEvent::PartialText { text: partial_text });
+        }
+        if let Some(message) = self.failure.filter(|message| !message.is_empty()) {
+            events.push(RecognitionEvent::Error { message });
+            events.push(RecognitionEvent::Completed);
+            return Ok(events);
+        }
+        let Some(text) = self.text.filter(|text| !text.is_empty()) else {
+            return Err(AsrError::Backend(
+                "command ASR response missing final text".to_owned(),
+            ));
+        };
+        events.push(RecognitionEvent::FinalText { text });
+        events.push(RecognitionEvent::Completed);
+        Ok(events)
+    }
+}
+
 /// Runner seam for command-backed ASR providers.
 pub trait CommandAsrRunner: Send + Sync {
     /// Recognizes one buffered command ASR request.
@@ -685,8 +722,8 @@ impl RecognitionSession for MockRecognitionSession {
 mod tests {
     use super::{
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
-        CommandAsrRequest, CommandAsrRunner, CommandAsrSpec, MockAsrBackend, RecognitionContext,
-        RecognitionEvent, events_to_payload,
+        CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec, MockAsrBackend,
+        RecognitionContext, RecognitionEvent, events_to_payload,
     };
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 
@@ -699,17 +736,16 @@ mod tests {
             spec: &CommandAsrSpec,
             request: &CommandAsrRequest,
         ) -> Result<Vec<RecognitionEvent>, AsrError> {
-            Ok(vec![
-                RecognitionEvent::FinalText {
-                    text: format!(
-                        "{}:{}:{}",
-                        spec.command,
-                        request.context.scene_id,
-                        request.samples.len()
-                    ),
-                },
-                RecognitionEvent::Completed,
-            ])
+            CommandAsrResponse {
+                text: Some(format!(
+                    "{}:{}:{}",
+                    spec.command,
+                    request.context.scene_id,
+                    request.samples.len()
+                )),
+                ..CommandAsrResponse::default()
+            }
+            .into_events()
         }
     }
 
