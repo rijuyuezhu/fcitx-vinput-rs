@@ -1047,7 +1047,7 @@ fn asr_state_reports_command_provider_skeleton_ready() {
           "version": 1,
           "asr": {
             "active_provider": "cmd",
-            "providers": [{"id":"cmd","type":"command","command":"helper","args":["--json"]}]
+            "providers": [{"id":"cmd","type":"command","command":"helper","args":["--json"],"model":"cmd-model","hotwords_file":"/tmp/hotwords.txt"}]
           },
           "scenes": {
             "active_scene": "raw",
@@ -1069,7 +1069,9 @@ fn asr_state_reports_command_provider_skeleton_ready() {
     let value: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
     assert_eq!(value["target_provider_id"], "cmd");
+    assert_eq!(value["target_model_id"], "cmd-model");
     assert_eq!(value["effective_provider_id"], "cmd");
+    assert_eq!(value["effective_model_id"], "cmd-model");
     assert_eq!(value["has_effective_backend"], true);
     assert_eq!(value["last_error"], "");
 }
