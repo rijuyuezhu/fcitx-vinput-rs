@@ -549,6 +549,31 @@ mod tests {
     }
 
     #[test]
+    fn configured_asr_state_preserves_command_provider_metadata() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_500),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: Some("/tmp/hotwords.txt".to_owned()),
+            command: Some("helper".to_owned()),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let runtime = RuntimeState::with_configured_asr(config).unwrap();
+
+        let state = runtime.asr_backend_state();
+        assert!(state.has_effective_backend);
+        assert_eq!(state.target_provider_id, "cmd");
+        assert_eq!(state.target_model_id, "cmd-model");
+        assert_eq!(state.effective_provider_id, "cmd");
+        assert_eq!(state.effective_model_id, "cmd-model");
+    }
+
+    #[test]
     fn reload_configured_asr_backend_swaps_to_configured_provider() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "mock".to_owned();
