@@ -1,5 +1,6 @@
 //! Deterministic text finishing helpers and adapter seams.
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
 use vinput_protocol::RecognitionPayload;
@@ -53,6 +54,101 @@ impl<'a> PromptContext<'a> {
             context_lines: request.scene.context_lines,
             timeout_ms: request.scene.timeout_ms,
         }
+    }
+}
+
+/// JSON request passed to command-backed text adapter helpers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandTextRequest {
+    /// Stable adapter id from config.
+    pub adapter_id: String,
+    /// Raw ASR text before post-processing.
+    pub raw_text: String,
+    /// Optional selected text for command-mode transforms.
+    #[serde(default)]
+    pub selected_text: Option<String>,
+    /// Scene metadata that selected this adapter.
+    pub scene: CommandTextScene,
+}
+
+impl CommandTextRequest {
+    /// Builds a command-helper request from adapter id and runtime text request.
+    #[must_use]
+    pub fn from_text_request(adapter_id: impl Into<String>, request: &TextRequest<'_>) -> Self {
+        Self {
+            adapter_id: adapter_id.into(),
+            raw_text: request.raw_text.to_owned(),
+            selected_text: request.selected_text.map(ToOwned::to_owned),
+            scene: CommandTextScene::from_definition(request.scene),
+        }
+    }
+}
+
+/// Scene metadata serialized into command text adapter requests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandTextScene {
+    /// Scene id.
+    pub id: String,
+    /// Human-readable label.
+    pub label: String,
+    /// Optional prompt configured for the scene.
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// Optional provider id configured for the scene.
+    #[serde(default)]
+    pub provider_id: Option<String>,
+    /// Optional model id configured for the scene.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Number of candidates requested by the scene.
+    pub candidate_count: u8,
+    /// Scene timeout in milliseconds, if configured.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    /// Previous context lines requested by the scene.
+    pub context_lines: u8,
+}
+
+impl CommandTextScene {
+    /// Copies command-helper scene metadata from typed config.
+    #[must_use]
+    pub fn from_definition(scene: &SceneDefinition) -> Self {
+        Self {
+            id: scene.id.clone(),
+            label: scene.label.clone(),
+            prompt: scene.prompt.clone(),
+            provider_id: scene.provider_id.clone(),
+            model: scene.model.clone(),
+            candidate_count: scene.candidate_count,
+            timeout_ms: scene.timeout_ms,
+            context_lines: scene.context_lines,
+        }
+    }
+}
+
+/// JSON response returned by command-backed text adapter helpers.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandTextResponse {
+    /// Final text after post-processing.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Error message returned by the helper.
+    #[serde(default, alias = "failure")]
+    pub error: Option<String>,
+}
+
+impl CommandTextResponse {
+    /// Converts a helper response into the daemon recognition payload.
+    pub fn into_payload(self) -> Result<RecognitionPayload, TextError> {
+        if let Some(message) = self.error.filter(|message| !message.trim().is_empty()) {
+            return Err(TextError::AdapterFailed(message));
+        }
+        let Some(text) = self.text.filter(|text| !text.trim().is_empty()) else {
+            return Err(TextError::AdapterFailed(
+                "command text response missing final text".to_owned(),
+            ));
+        };
+        Ok(RecognitionPayload::raw(text))
     }
 }
 
@@ -433,6 +529,9 @@ pub enum TextError {
     /// A configured adapter path exists but is not implemented yet.
     #[error("scene `{0}` requested a text adapter that is not implemented yet")]
     UnsupportedAdapter(String),
+    /// Command adapter helper returned an error or invalid response.
+    #[error("text adapter failed: {0}")]
+    AdapterFailed(String),
 }
 
 fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
@@ -465,9 +564,9 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandTextAdapter, CommandTextRunner, LlmTextProcessor, MockTextProcessor, PromptContext,
-        PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
-        UnsupportedTextAdapter,
+        CommandTextAdapter, CommandTextRequest, CommandTextResponse, CommandTextRunner,
+        LlmTextProcessor, MockTextProcessor, PromptContext, PromptTemplate, TextError,
+        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -603,6 +702,75 @@ mod tests {
 
         let rendered = PromptTemplate::new("x={x}").render_request(&request);
         assert_eq!(rendered, "x={x}");
+    }
+
+    #[test]
+    fn command_text_request_serializes_scene_context() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            provider_id: Some("openai".to_owned()),
+            model: Some("gpt".to_owned()),
+            timeout_ms: Some(2_500),
+            context_lines: 4,
+            ..scene("rewrite", 2)
+        };
+        let request = CommandTextRequest::from_text_request(
+            "cmd-adapter",
+            &TextRequest {
+                raw_text: "raw text",
+                scene: &prompted,
+                selected_text: Some("selection"),
+            },
+        );
+        let value = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(value["adapter_id"], "cmd-adapter");
+        assert_eq!(value["raw_text"], "raw text");
+        assert_eq!(value["selected_text"], "selection");
+        assert_eq!(value["scene"]["id"], "rewrite");
+        assert_eq!(value["scene"]["prompt"], "polish");
+        assert_eq!(value["scene"]["provider_id"], "openai");
+        assert_eq!(value["scene"]["model"], "gpt");
+        assert_eq!(value["scene"]["candidate_count"], 2);
+        assert_eq!(value["scene"]["timeout_ms"], 2_500);
+        assert_eq!(value["scene"]["context_lines"], 4);
+    }
+
+    #[test]
+    fn command_text_response_maps_final_text_to_payload() {
+        let payload = CommandTextResponse {
+            text: Some("polished".to_owned()),
+            error: None,
+        }
+        .into_payload()
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "polished");
+        assert_eq!(payload.candidates[0].text, "polished");
+    }
+
+    #[test]
+    fn command_text_response_accepts_failure_alias() {
+        let response: CommandTextResponse =
+            serde_json::from_str(r#"{"failure":"adapter boom"}"#).unwrap();
+        let error = response.into_payload().unwrap_err();
+
+        assert_eq!(error, TextError::AdapterFailed("adapter boom".to_owned()));
+    }
+
+    #[test]
+    fn command_text_response_rejects_blank_final_text() {
+        let error = CommandTextResponse {
+            text: Some("   ".to_owned()),
+            error: None,
+        }
+        .into_payload()
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message) if message.contains("missing final text")
+        ));
     }
 
     #[test]
