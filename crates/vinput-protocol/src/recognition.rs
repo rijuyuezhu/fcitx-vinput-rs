@@ -182,4 +182,18 @@ mod tests {
             vec![Candidate::new("only", CandidateSource::Raw)]
         );
     }
+    #[test]
+    fn default_candidate_falls_back_to_first_candidate() {
+        let payload = RecognitionPayload {
+            commit_text: "missing".to_owned(),
+            candidates: vec![
+                Candidate::new("first", CandidateSource::Asr),
+                Candidate::new("second", CandidateSource::Llm),
+            ],
+        };
+
+        let candidate = payload.default_candidate().unwrap();
+        assert_eq!(candidate.text, "first");
+        assert_eq!(candidate.source, CandidateSource::Asr);
+    }
 }
