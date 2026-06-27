@@ -133,6 +133,9 @@ impl CommandTextScene {
 /// JSON response returned by command-backed text adapter helpers.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandTextResponse {
+    /// Full recognition payload returned by the helper.
+    #[serde(default)]
+    pub payload: Option<RecognitionPayload>,
     /// Final text after post-processing.
     #[serde(default)]
     pub text: Option<String>,
@@ -146,6 +149,9 @@ impl CommandTextResponse {
     pub fn into_payload(self) -> Result<RecognitionPayload, TextError> {
         if let Some(message) = self.error.filter(|message| !message.trim().is_empty()) {
             return Err(TextError::AdapterFailed(message));
+        }
+        if let Some(payload) = self.payload {
+            return Ok(payload.normalized());
         }
         let Some(text) = self.text.filter(|text| !text.trim().is_empty()) else {
             return Err(TextError::AdapterFailed(
@@ -842,6 +848,7 @@ mod tests {
     #[test]
     fn command_text_response_maps_final_text_to_payload() {
         let payload = CommandTextResponse {
+            payload: None,
             text: Some("polished".to_owned()),
             error: None,
         }
@@ -850,6 +857,30 @@ mod tests {
 
         assert_eq!(payload.commit_text, "polished");
         assert_eq!(payload.candidates[0].text, "polished");
+    }
+
+    #[test]
+    fn command_text_response_accepts_full_payload() {
+        let response: CommandTextResponse = serde_json::from_str(
+            r#"{"payload":{"commit_text":"choice","candidates":[{"text":"choice","source":"llm"}]}}"#,
+        )
+        .unwrap();
+        let payload = response.into_payload().unwrap();
+
+        assert_eq!(payload.commit_text, "choice");
+        assert_eq!(payload.candidates[0].text, "choice");
+        assert_eq!(payload.candidates[0].source.to_string(), "llm");
+    }
+
+    #[test]
+    fn command_text_response_normalizes_full_payload() {
+        let response: CommandTextResponse =
+            serde_json::from_str(r#"{"payload":{"commit_text":"choice","candidates":[]}}"#)
+                .unwrap();
+        let payload = response.into_payload().unwrap();
+
+        assert_eq!(payload.commit_text, "choice");
+        assert_eq!(payload.candidates[0].text, "choice");
     }
 
     #[test]
@@ -864,6 +895,7 @@ mod tests {
     #[test]
     fn command_text_response_rejects_blank_final_text() {
         let error = CommandTextResponse {
+            payload: None,
             text: Some("   ".to_owned()),
             error: None,
         }

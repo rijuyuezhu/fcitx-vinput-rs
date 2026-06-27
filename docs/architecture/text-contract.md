@@ -21,6 +21,6 @@ A command text adapter helper is configured by `llm.adapters[]` and is executed 
 
 Request fields include `adapter_id`, `raw_text`, optional `selected_text`, and a `scene` object with id, label, prompt, provider id, model, candidate count, timeout, and context line metadata.
 
-Response fields are `text` for the final post-processed text or `error` for a helper-level error. `failure` is accepted as a legacy alias for `error`. Empty or whitespace-only `text` is rejected as a missing final text response. Empty or whitespace-only `error` is ignored.
+Response fields are `payload` for a full `RecognitionPayload`, `text` for a simple final post-processed text, or `error` for a helper-level error. `failure` is accepted as a legacy alias for `error`. Full payload responses are normalized with the same compatibility rules as the D-Bus recognition payload. Empty or whitespace-only `text` is rejected as a missing final text response. Empty or whitespace-only `error` is ignored.
 
 The command text adapter contract mirrors the command ASR helper style: one JSON request on stdin, one JSON response on stdout, explicit typed errors, and injected runner seams in tests.
