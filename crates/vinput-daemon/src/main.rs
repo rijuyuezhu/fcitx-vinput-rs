@@ -1,6 +1,6 @@
 //! vinput daemon entrypoint.
 
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -103,12 +103,8 @@ async fn main() -> anyhow::Result<()> {
 
 fn load_config(path: Option<&PathBuf>) -> anyhow::Result<VinputConfig> {
     match path {
-        Some(path) => {
-            let contents = fs::read_to_string(path)
-                .with_context(|| format!("read daemon config `{}`", path.display()))?;
-            VinputConfig::from_json_str(&contents)
-                .with_context(|| format!("parse daemon config `{}`", path.display()))
-        }
+        Some(path) => VinputConfig::from_json_file(path)
+            .with_context(|| format!("load daemon config `{}`", path.display())),
         None => VinputConfig::bundled_default().context("load bundled default config"),
     }
 }
