@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use vinput_protocol::dbus;
+use vinput_protocol::{ServiceStatus, dbus};
 use zbus::{Connection, fdo, object_server::SignalEmitter};
 
 use crate::{RuntimeError, RuntimeState};
@@ -71,6 +71,17 @@ impl VinputDbusService {
         ))
     }
 
+    async fn ensure_recording_for_stop(&self) -> fdo::Result<()> {
+        let runtime = self.runtime.lock().await;
+        if runtime.status() == ServiceStatus::Recording {
+            Ok(())
+        } else {
+            Err(Self::map_runtime_error(&RuntimeError::NotRecording(
+                runtime.status(),
+            )))
+        }
+    }
+
     async fn stop_recording_payload(&self, scene_id: &str) -> fdo::Result<(String, String)> {
         let scene = (!scene_id.is_empty()).then_some(scene_id);
         let mut runtime = self.runtime.lock().await;
@@ -129,6 +140,7 @@ impl VinputDbusService {
         scene_id: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<String> {
+        self.ensure_recording_for_stop().await?;
         Self::status_changed(&emitter, "inferring")
             .await
             .map_err(|error| Self::map_signal_error(&error))?;

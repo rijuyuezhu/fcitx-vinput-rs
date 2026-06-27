@@ -41,6 +41,18 @@ async fn next_pair_signal(
     Ok(body)
 }
 
+async fn expect_no_string_signal(stream: &mut zbus::proxy::SignalStream<'_>) -> anyhow::Result<()> {
+    match timeout(Duration::from_millis(150), stream.next()).await {
+        Err(_) => Ok(()),
+        Ok(None) => anyhow::bail!("signal stream ended"),
+        Ok(Some(message)) => {
+            let value = single_string_body(&message)
+                .unwrap_or_else(|error| format!("<unreadable signal body: {error}>"));
+            anyhow::bail!("unexpected string signal: {value}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<()> {
     let _service_connection = spawn_service().await?;
@@ -63,6 +75,19 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let mut notification_signals = proxy
         .receive_signal(dbus::signal::DAEMON_NOTIFICATION)
         .await?;
+
+    let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
+    assert_eq!(status, "idle");
+
+    let idle_stop: zbus::Result<String> = proxy.call(dbus::method::STOP_RECORDING, &"").await;
+    let idle_stop_error = idle_stop.expect_err("idle stop should fail");
+    assert!(
+        idle_stop_error
+            .to_string()
+            .contains("runtime is not recording: idle"),
+        "unexpected idle stop error: {idle_stop_error}"
+    );
+    expect_no_string_signal(&mut status_signals).await?;
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
