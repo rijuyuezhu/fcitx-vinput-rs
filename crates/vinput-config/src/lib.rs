@@ -79,6 +79,9 @@ impl VinputConfig {
             if scene.id.trim().is_empty() {
                 return Err(ConfigError::InvalidSceneId(scene.id.clone()));
             }
+            if scene.label.trim().is_empty() {
+                return Err(ConfigError::InvalidSceneLabel(scene.id.clone()));
+            }
             if !scene_ids.insert(scene.id.as_str()) {
                 return Err(ConfigError::DuplicateSceneId(scene.id.clone()));
             }
@@ -341,6 +344,9 @@ pub enum ConfigError {
     /// Empty scene id.
     #[error("invalid empty scene id")]
     InvalidSceneId(String),
+    /// Empty scene label.
+    #[error("invalid empty scene label for scene `{0}`")]
+    InvalidSceneLabel(String),
     /// Duplicate scene id.
     #[error("duplicate scene id `{0}`")]
     DuplicateSceneId(String),
@@ -468,6 +474,17 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::DuplicateSceneId(id) if id == RAW_SCENE_ID
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_empty_scene_labels() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.definitions[0].label = "  ".to_owned();
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidSceneLabel(id) if id == RAW_SCENE_ID
         ));
     }
 
