@@ -408,6 +408,13 @@ mod tests {
     }
 
     #[test]
+    fn pcm_spec_deserialization_defaults_to_mono() {
+        let spec: PcmSpec = serde_json::from_str(r#"{"sample_rate_hz":16000}"#).unwrap();
+        assert_eq!(spec.sample_rate_hz, DEFAULT_SAMPLE_RATE_HZ);
+        assert_eq!(spec.channels, DEFAULT_CHANNELS);
+    }
+
+    #[test]
     fn pcm_buffer_preserves_explicit_spec() {
         let spec = PcmSpec {
             sample_rate_hz: 48_000,

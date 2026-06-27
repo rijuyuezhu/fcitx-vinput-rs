@@ -1157,6 +1157,25 @@ mod tests {
     }
 
     #[test]
+    fn command_asr_request_defaults_pcm_for_legacy_json() {
+        let request: CommandAsrRequest = serde_json::from_str(
+            r#"{
+                "provider_id":"cmd",
+                "context":{
+                    "language":"zh",
+                    "scene_id":"raw",
+                    "command_mode":false
+                },
+                "samples":[1,2,3]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(request.pcm, PcmSpec::default());
+        assert_eq!(request.samples, [1, 2, 3]);
+    }
+
+    #[test]
     fn command_asr_request_preserves_explicit_pcm_spec() {
         let spec = CommandAsrSpec {
             provider_id: "cmd".to_owned(),
