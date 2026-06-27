@@ -183,6 +183,22 @@ mod tests {
         );
     }
     #[test]
+    fn candidate_source_roundtrips_wire_strings() {
+        for source in [
+            CandidateSource::Raw,
+            CandidateSource::Llm,
+            CandidateSource::Asr,
+            CandidateSource::Cancel,
+        ] {
+            assert_eq!(
+                CandidateSource::parse_wire(source.as_wire_str()).unwrap(),
+                source
+            );
+            assert_eq!(source.to_string(), source.as_wire_str());
+        }
+    }
+
+    #[test]
     fn default_candidate_falls_back_to_first_candidate() {
         let payload = RecognitionPayload {
             commit_text: "missing".to_owned(),
