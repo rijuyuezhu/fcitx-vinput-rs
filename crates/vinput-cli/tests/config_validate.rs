@@ -427,6 +427,36 @@ fn config_validate_fails_for_too_many_candidates() {
 }
 
 #[test]
+fn config_validate_fails_for_too_many_context_lines() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "p",
+            "providers": [{"id":"p","type":"local"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0,"context_lines":33}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("scene `raw` asks for 33 context lines"));
+}
+
+#[test]
 fn config_validate_fails_for_unknown_scene_provider() {
     let path = write_temp_config(
         r#"
