@@ -110,6 +110,19 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         "unexpected duplicate start error: {duplicate_start_error}"
     );
 
+    let command_while_recording: zbus::Result<String> = proxy
+        .call(dbus::method::START_COMMAND_RECORDING, &"ignored selection")
+        .await;
+    let command_while_recording_error =
+        command_while_recording.expect_err("command start while recording should fail");
+    assert!(
+        command_while_recording_error
+            .to_string()
+            .contains("runtime is busy: recording"),
+        "unexpected command start while recording error: {command_while_recording_error}"
+    );
+    expect_no_string_signal(&mut status_signals).await?;
+
     let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
     let payload = RecognitionPayload::from_json_str(&payload_json)?;
     assert_eq!(payload.commit_text, "mock recognition result");
