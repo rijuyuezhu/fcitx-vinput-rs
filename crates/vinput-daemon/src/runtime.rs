@@ -11,7 +11,7 @@ use vinput_audio::{
 };
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
-use vinput_text::{MockTextProcessor, TextProcessor, TextRequest};
+use vinput_text::{AdapterRegistry, MockTextProcessor, TextProcessor, TextRequest};
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
 const MOCK_SILENCE_THRESHOLD: i16 = 8;
@@ -103,6 +103,12 @@ impl RuntimeState {
     #[must_use]
     pub fn configured_asr_state_for_runtime(&self) -> AsrBackendState {
         Self::configured_asr_state(&self.config)
+    }
+
+    /// Builds a text adapter registry from this runtime's current config.
+    #[must_use]
+    pub fn configured_text_adapters(&self) -> AdapterRegistry {
+        AdapterRegistry::from_configs(&self.config.llm.adapters)
     }
 
     /// Current daemon status.
@@ -463,6 +469,29 @@ mod tests {
         assert_eq!(state.target_provider_id, "sherpa-onnx");
         assert!(!state.has_effective_backend);
         assert!(!state.last_error.is_empty());
+    }
+
+    #[test]
+    fn configured_text_adapters_index_runtime_config() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "vinput-postprocess".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        let runtime = RuntimeState::new(config).unwrap();
+        let registry = runtime.configured_text_adapters();
+
+        assert_eq!(registry.len(), 1);
+        assert_eq!(
+            registry
+                .command_adapter("cmd-adapter")
+                .map(vinput_text::CommandTextAdapter::command),
+            Some("vinput-postprocess")
+        );
     }
 
     #[test]
