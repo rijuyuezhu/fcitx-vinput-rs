@@ -110,9 +110,10 @@ pub trait TextProcessor: Send {
 
 /// Production-safe text finisher used before real LLM/adapter support lands.
 ///
-/// It only commits scenes that do not require post-processing. Command scenes,
-/// prompted scenes, provider/model-bound scenes, and candidate scenes return a
-/// typed error instead of fabricating mock text.
+/// It only commits raw/no-op scenes that do not require post-processing.
+/// Command scenes, prompted scenes, provider/model-bound scenes, candidate
+/// scenes, context-aware scenes, and timeout-bound scenes return a typed error
+/// instead of fabricating mock text.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TextFinisher;
 
