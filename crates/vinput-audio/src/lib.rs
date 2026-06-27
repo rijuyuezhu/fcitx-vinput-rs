@@ -350,6 +350,7 @@ mod tests {
     fn silence_detection_uses_absolute_threshold() {
         assert!(PcmBuffer::at_default_rate(vec![0, 2, -2]).is_silent(2));
         assert!(!PcmBuffer::at_default_rate(vec![0, 3]).is_silent(2));
+        assert!(PcmBuffer::at_default_rate(vec![0, 2, -2]).is_silent(-2));
     }
 
     #[test]
