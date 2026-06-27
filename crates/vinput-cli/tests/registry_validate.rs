@@ -138,6 +138,42 @@ fn registry_validate_fails_for_duplicate_asset_paths() {
 }
 
 #[test]
+fn registry_validate_fails_for_empty_asset_paths() {
+    let path = write_temp_registry(
+        r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"   "}]}]}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("asset path must not be empty"));
+}
+
+#[test]
+fn registry_validate_fails_for_invalid_checksum() {
+    let path = write_temp_registry(
+        r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"m.tar","sha256":"ABC"}]}]}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("invalid sha256 checksum `ABC`"));
+}
+
+#[test]
 fn registry_plan_prints_assets_with_resolved_urls() {
     let path = write_temp_registry(
         r#"
