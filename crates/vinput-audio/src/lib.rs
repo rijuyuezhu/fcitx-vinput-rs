@@ -552,6 +552,21 @@ mod tests {
     }
 
     #[test]
+    fn processing_options_preserve_multi_channel_spec_and_frames() {
+        let spec = PcmSpec {
+            sample_rate_hz: 48_000,
+            channels: 2,
+        };
+        let pcm = PcmBuffer::with_spec(spec, vec![0, 0, 10, -10, 0, 0]).unwrap();
+        let options = super::AudioProcessingOptions::new(1, None, 2.0);
+        let processed = options.process(&pcm);
+
+        assert_eq!(processed.spec(), spec);
+        assert_eq!(processed.samples(), &[20, -20]);
+        assert_eq!(processed.frame_len(), 1);
+    }
+
+    #[test]
     fn captured_audio_reports_pcm_duration_and_source() {
         let captured =
             CapturedAudio::named(PcmBuffer::new(1_000, vec![0; 250]).unwrap(), "fixture");
