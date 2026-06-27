@@ -1,14 +1,17 @@
 //! Daemon binary CLI integration tests.
 
-use std::{fs, process::Command};
+use std::{fs, path::PathBuf, process::Command};
+
+fn temp_config_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "vinput-daemon-test-{}-{name}.json",
+        std::process::id()
+    ))
+}
 
 #[test]
 fn asr_state_uses_config_file() {
-    let path = std::env::temp_dir().join(format!(
-        "vinput-daemon-test-{}-{}.json",
-        std::process::id(),
-        "asr-state"
-    ));
+    let path = temp_config_path("asr-state");
     fs::write(
         &path,
         r#"
@@ -45,11 +48,7 @@ fn asr_state_uses_config_file() {
 
 #[test]
 fn asr_state_preserves_remote_endpoint() {
-    let path = std::env::temp_dir().join(format!(
-        "vinput-daemon-test-{}-{}.json",
-        std::process::id(),
-        "remote-asr-state"
-    ));
+    let path = temp_config_path("remote-asr-state");
     fs::write(
         &path,
         r#"
