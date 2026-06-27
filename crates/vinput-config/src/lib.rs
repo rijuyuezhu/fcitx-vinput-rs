@@ -74,6 +74,10 @@ impl VinputConfig {
             }
         }
 
+        if self.global.default_language.trim().is_empty() {
+            return Err(ConfigError::InvalidDefaultLanguage);
+        }
+
         let mut scene_ids = HashSet::new();
         for scene in &self.scenes.definitions {
             if scene.id.trim().is_empty() {
@@ -335,6 +339,9 @@ pub enum ConfigError {
     /// Registry base URL is duplicated.
     #[error("duplicate registry base URL `{0}`")]
     DuplicateRegistryBaseUrl(String),
+    /// Default language is empty.
+    #[error("invalid empty default language")]
+    InvalidDefaultLanguage,
     /// Active scene is not listed in scene definitions.
     #[error("active scene `{0}` is not defined")]
     UnknownActiveScene(String),
@@ -463,6 +470,14 @@ mod tests {
             error,
             super::ConfigError::InvalidRegistryBaseUrl(url) if url == "  "
         ));
+    }
+
+    #[test]
+    fn validation_rejects_empty_default_language() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.global.default_language = "  ".to_owned();
+        let error = config.validate().unwrap_err();
+        assert!(matches!(error, super::ConfigError::InvalidDefaultLanguage));
     }
 
     #[test]
