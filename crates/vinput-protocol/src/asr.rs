@@ -98,5 +98,6 @@ mod tests {
         assert!(!state.has_effective_backend);
         assert!(state.effective_provider_id.is_empty());
         assert!(state.effective_model_id.is_empty());
+        assert!(state.remote_endpoints.is_empty());
     }
 }
