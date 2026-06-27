@@ -235,6 +235,11 @@ fn validate_asr_provider<'a>(
     if !provider_ids.insert(provider.id.as_str()) {
         return Err(ConfigError::DuplicateAsrProviderId(provider.id.clone()));
     }
+    if provider.timeout_ms == Some(0) {
+        return Err(ConfigError::InvalidAsrProviderTimeoutMs(
+            provider.id.clone(),
+        ));
+    }
     if provider.kind == AsrProviderKind::Command
         && provider
             .command
@@ -651,6 +656,9 @@ pub enum ConfigError {
     /// Duplicate ASR provider id.
     #[error("duplicate ASR provider id `{0}`")]
     DuplicateAsrProviderId(String),
+    /// ASR provider timeout must be positive when configured.
+    #[error("ASR provider `{0}` has invalid timeout_ms 0")]
+    InvalidAsrProviderTimeoutMs(String),
     /// Command ASR provider requires a command.
     #[error("command ASR provider `{0}` must configure a command")]
     InvalidCommandAsrProviderCommand(String),
@@ -1009,6 +1017,24 @@ mod tests {
             error,
             super::ConfigError::InvalidCommandAsrProviderCommand(id) if id == "cmd"
         ));
+    }
+
+    #[test]
+    fn validation_rejects_zero_asr_provider_timeout() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.providers[0].timeout_ms = Some(0);
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidAsrProviderTimeoutMs(id) if id == "sherpa-onnx"
+        ));
+    }
+
+    #[test]
+    fn validation_accepts_positive_asr_provider_timeout() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.providers[0].timeout_ms = Some(1);
+        config.validate().unwrap();
     }
 
     #[test]
