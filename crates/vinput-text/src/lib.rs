@@ -274,6 +274,19 @@ mod tests {
     }
 
     #[test]
+    fn prompt_template_keeps_unknown_placeholders() {
+        let raw = scene("raw", 0);
+        let request = TextRequest {
+            raw_text: "raw",
+            scene: &raw,
+            selected_text: None,
+        };
+
+        let rendered = PromptTemplate::new("x={x}").render_request(&request);
+        assert_eq!(rendered, "x={x}");
+    }
+
+    #[test]
     fn command_scene_requires_adapter_in_production_finisher() {
         let command = scene(COMMAND_SCENE_ID, 0);
         let error = TextFinisher::finish(&TextRequest {
