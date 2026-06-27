@@ -340,6 +340,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dbus_facade_exposes_stop_time_partial() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"partial_text":"dbus partial","text":"dbus final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let service = VinputDbusService::new(RuntimeState::with_configured_asr(config).unwrap());
+
+        assert_eq!(
+            service.start_recording_state().await.unwrap().0,
+            "recording"
+        );
+        let (payload_json, status, partial_text) =
+            service.stop_recording_payload("").await.unwrap();
+        let payload = RecognitionPayload::from_json_str(&payload_json).unwrap();
+
+        assert_eq!(payload.commit_text, "dbus final");
+        assert_eq!(status, "idle");
+        assert_eq!(partial_text.as_deref(), Some("dbus partial"));
+    }
+
+    #[tokio::test]
     async fn dbus_facade_preserves_remote_asr_endpoint() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "remote".to_owned();
