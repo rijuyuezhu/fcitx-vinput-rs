@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     io::Write,
-    process::{Command, Stdio},
+    process::{Command, Output, Stdio},
 };
 use thiserror::Error;
 use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
@@ -309,30 +309,32 @@ impl CommandTextRunner for ProcessCommandTextRunner {
             TextError::AdapterFailed(format!("text adapter `{adapter_id}` did not expose stdin"))
         })?;
         let helper_request = CommandTextRequest::from_text_request(adapter_id, request);
-        serde_json::to_writer(&mut stdin, &helper_request).map_err(|error| {
-            TextError::AdapterFailed(format!(
-                "failed to encode text adapter request for `{adapter_id}`: {error}"
-            ))
-        })?;
-        stdin.write_all(b"\n").map_err(|error| {
-            TextError::AdapterFailed(format!(
-                "failed to write text adapter request for `{adapter_id}`: {error}"
-            ))
-        })?;
+        let write_result = (|| {
+            serde_json::to_writer(&mut stdin, &helper_request).map_err(|error| {
+                TextError::AdapterFailed(format!(
+                    "failed to encode text adapter request for `{adapter_id}`: {error}"
+                ))
+            })?;
+            stdin.write_all(b"\n").map_err(|error| {
+                TextError::AdapterFailed(format!(
+                    "failed to write text adapter request for `{adapter_id}`: {error}"
+                ))
+            })?;
+            Ok(())
+        })();
         drop(stdin);
 
-        let output = child.wait_with_output().map_err(|error| {
-            TextError::AdapterFailed(format!(
-                "failed to wait for text adapter `{adapter_id}`: {error}"
-            ))
-        })?;
+        if let Err(write_error) = write_result {
+            let output = wait_for_text_adapter(adapter_id, child)?;
+            if !output.status.success() {
+                return text_adapter_exit_error(adapter_id, &output);
+            }
+            return Err(write_error);
+        }
+
+        let output = wait_for_text_adapter(adapter_id, child)?;
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(TextError::AdapterFailed(format!(
-                "text adapter `{adapter_id}` exited with {}: {}",
-                output.status,
-                stderr.trim()
-            )));
+            return text_adapter_exit_error(adapter_id, &output);
         }
         let response: CommandTextResponse =
             serde_json::from_slice(&output.stdout).map_err(|error| {
@@ -342,6 +344,29 @@ impl CommandTextRunner for ProcessCommandTextRunner {
             })?;
         response.into_payload()
     }
+}
+
+fn wait_for_text_adapter(
+    adapter_id: &str,
+    child: std::process::Child,
+) -> Result<Output, TextError> {
+    child.wait_with_output().map_err(|error| {
+        TextError::AdapterFailed(format!(
+            "failed to wait for text adapter `{adapter_id}`: {error}"
+        ))
+    })
+}
+
+fn text_adapter_exit_error(
+    adapter_id: &str,
+    output: &Output,
+) -> Result<RecognitionPayload, TextError> {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(TextError::AdapterFailed(format!(
+        "text adapter `{adapter_id}` exited with {}: {}",
+        output.status,
+        stderr.trim()
+    )))
 }
 
 /// Command-backed text adapter skeleton.
@@ -1110,6 +1135,44 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error, TextError::AdapterFailed("adapter failed".to_owned()));
+    }
+
+    #[test]
+    fn process_command_text_runner_reports_early_exit() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let config = LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "echo early adapter boom >&2; exit 9".to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        };
+
+        let error = LlmTextProcessor::new(CommandTextAdapter::with_adapter_config(
+            &config,
+            ProcessCommandTextRunner,
+        ))
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message)
+                if message.contains("exited with")
+                    && message.contains("early adapter boom")
+                    && !message.contains("failed to write")
+        ));
     }
 
     #[test]
