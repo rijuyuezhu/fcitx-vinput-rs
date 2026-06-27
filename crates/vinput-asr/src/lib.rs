@@ -345,9 +345,9 @@ pub struct CommandAsrResponse {
     /// Final recognized text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
-    /// Failure message produced by the helper.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub failure: Option<String>,
+    /// Backend error message produced by the helper.
+    #[serde(default, alias = "failure", skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 impl CommandAsrResponse {
@@ -357,7 +357,7 @@ impl CommandAsrResponse {
         if let Some(partial_text) = self.partial_text.filter(|text| !text.is_empty()) {
             events.push(RecognitionEvent::PartialText { text: partial_text });
         }
-        if let Some(message) = self.failure.filter(|message| !message.is_empty()) {
+        if let Some(message) = self.error.filter(|message| !message.is_empty()) {
             events.push(RecognitionEvent::Error { message });
             events.push(RecognitionEvent::Completed);
             return Ok(events);
@@ -1398,7 +1398,7 @@ mod tests {
             args: vec![
                 "-c".to_owned(),
                 r#"cat >/dev/null; printf '%s
-' '{"failure":"asr failed"}'"#
+' '{"error":"asr failed"}'"#
                     .to_owned(),
             ],
             env: std::collections::HashMap::default(),
