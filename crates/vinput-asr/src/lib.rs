@@ -413,9 +413,10 @@ impl AsrBackendFactory {
             )));
         }
         if provider.kind == AsrProviderKind::Command {
-            return Ok(Box::new(CommandAsrBackend::new(Self::command_spec(
+            return Ok(Box::new(CommandAsrBackend::with_config(
                 provider,
-            )?)));
+                UnsupportedCommandAsrRunner,
+            )?));
         }
         unsupported_provider(&provider.id, &provider.kind)
     }
