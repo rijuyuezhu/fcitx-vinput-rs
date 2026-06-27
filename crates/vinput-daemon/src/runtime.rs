@@ -243,7 +243,11 @@ impl RuntimeState {
                 id: scene_id.to_owned(),
                 label: scene_id.to_owned(),
                 prompt: None,
+                provider_id: None,
+                model: None,
                 candidate_count: 0,
+                timeout_ms: None,
+                context_lines: 0,
             })
     }
 
@@ -461,7 +465,11 @@ mod tests {
                 id: "needs-adapter".to_owned(),
                 label: "Needs adapter".to_owned(),
                 prompt: Some("polish text".to_owned()),
+                provider_id: Some("openai".to_owned()),
+                model: None,
                 candidate_count: 1,
+                timeout_ms: None,
+                context_lines: 0,
             });
         let mut runtime = RuntimeState::new(config).unwrap();
 

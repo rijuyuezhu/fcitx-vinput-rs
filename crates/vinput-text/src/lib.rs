@@ -125,7 +125,11 @@ mod tests {
             id: id.to_owned(),
             label: id.to_owned(),
             prompt: None,
+            provider_id: None,
+            model: None,
             candidate_count,
+            timeout_ms: None,
+            context_lines: 0,
         }
     }
 

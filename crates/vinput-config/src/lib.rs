@@ -98,6 +98,17 @@ impl VinputConfig {
                     candidate_count: scene.candidate_count,
                 });
             }
+            if let Some(provider_id) = &scene.provider_id
+                && provider_id.trim().is_empty()
+            {
+                return Err(ConfigError::InvalidSceneProviderId(scene.id.clone()));
+            }
+            if scene.context_lines > 32 {
+                return Err(ConfigError::TooManyContextLines {
+                    scene_id: scene.id.clone(),
+                    context_lines: scene.context_lines,
+                });
+            }
         }
 
         if !scene_ids.contains(self.scenes.active_scene.as_str()) {
@@ -429,9 +440,21 @@ pub struct SceneDefinition {
     /// Optional prompt template.
     #[serde(default)]
     pub prompt: Option<String>,
+    /// LLM provider id used for post-processing.
+    #[serde(default)]
+    pub provider_id: Option<String>,
+    /// Optional model override for this scene.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Number of result candidates to ask the post-processor for.
     #[serde(default)]
     pub candidate_count: u8,
+    /// Optional per-scene timeout in milliseconds.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    /// Number of recent input context lines to include.
+    #[serde(default)]
+    pub context_lines: u8,
 }
 
 impl SceneDefinition {
@@ -482,6 +505,17 @@ pub enum ConfigError {
     /// Duplicate scene id.
     #[error("duplicate scene id `{0}`")]
     DuplicateSceneId(String),
+    /// Scene provider id is present but empty.
+    #[error("scene `{0}` has an invalid empty provider id")]
+    InvalidSceneProviderId(String),
+    /// Scene asks for too many recent context lines.
+    #[error("scene `{scene_id}` asks for {context_lines} context lines, max is 32")]
+    TooManyContextLines {
+        /// Scene id.
+        scene_id: String,
+        /// Requested context lines.
+        context_lines: u8,
+    },
     /// Empty ASR provider id.
     #[error("invalid empty ASR provider id")]
     InvalidAsrProviderId(String),
@@ -832,6 +866,26 @@ mod tests {
         assert!(matches!(
             error,
             super::ConfigError::InvalidLlmAdapterCommand(id) if id == "adapter"
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_invalid_scene_postprocess_fields() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.definitions[0].provider_id = Some("  ".to_owned());
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::InvalidSceneProviderId(id) if id == RAW_SCENE_ID
+        ));
+
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.definitions[0].context_lines = 33;
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::TooManyContextLines { scene_id, context_lines }
+                if scene_id == RAW_SCENE_ID && context_lines == 33
         ));
     }
 }
