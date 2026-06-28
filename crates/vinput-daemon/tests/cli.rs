@@ -136,6 +136,21 @@ fn asr_state_preserves_command_provider_metadata() {
 }
 
 #[test]
+fn print_config_ignores_configured_backend_runtime_init() {
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--configured-backends")
+        .arg("print-config")
+        .output()
+        .expect("run vinput-daemon --configured-backends print-config");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("config should be JSON");
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
+}
+
+#[test]
 fn asr_state_ignores_configured_backend_runtime_init() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--configured-backends")
