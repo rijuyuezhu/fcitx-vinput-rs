@@ -168,6 +168,7 @@ fn text_adapters_uses_config_file() {
     let value: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("text adapter diagnostics should be JSON");
     assert_eq!(value["adapter_count"], 1);
+    assert_eq!(value["adapter_ids"], serde_json::json!(["cmd-adapter"]));
     assert_eq!(value["single_adapter_id"], "cmd-adapter");
 }
 
@@ -310,6 +311,7 @@ fn text_adapters_reports_configured_adapter_summary() {
     let value: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("text adapter summary should be JSON");
     assert_eq!(value["adapter_count"], 1);
+    assert_eq!(value["adapter_ids"], serde_json::json!(["cmd-adapter"]));
     assert_eq!(value["single_adapter_id"], "cmd-adapter");
 }
 
