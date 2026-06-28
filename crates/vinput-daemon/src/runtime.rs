@@ -10,7 +10,8 @@ use vinput_asr::{
     RecognitionSession, events_to_payload,
 };
 use vinput_audio::{
-    AudioError, AudioProcessingOptions, AudioSource, CapturedAudio, MockAudioSource, PcmBuffer,
+    AudioError, AudioProcessingOptions, AudioSource, CaptureTarget, CapturedAudio, MockAudioSource,
+    PcmBuffer,
 };
 use vinput_config::{LlmAdapterConfig, VinputConfig};
 use vinput_protocol::{
@@ -180,6 +181,16 @@ impl RuntimeState {
     #[must_use]
     pub fn configured_text_adapters(&self) -> AdapterRegistry {
         AdapterRegistry::from_configs(&self.config.llm.adapters)
+    }
+
+    /// Parses the configured desktop capture target.
+    pub fn configured_capture_target(config: &VinputConfig) -> Result<CaptureTarget, RuntimeError> {
+        CaptureTarget::from_config_value(&config.global.capture_device).map_err(RuntimeError::Audio)
+    }
+
+    /// Parses this runtime's configured desktop capture target.
+    pub fn capture_target_for_runtime(&self) -> Result<CaptureTarget, RuntimeError> {
+        Self::configured_capture_target(&self.config)
     }
 
     /// Builds sanitized text adapter diagnostics from config without constructing a runtime.
@@ -427,6 +438,7 @@ impl RuntimeState {
         selected_text: Option<String>,
     ) -> Result<(), RuntimeError> {
         self.ensure_idle()?;
+        let _capture_target = self.capture_target_for_runtime()?;
         let context = self.recognition_context(&scene_id, selected_text.as_deref());
         let mut session = self
             .asr_backend
@@ -587,7 +599,7 @@ mod tests {
         AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, MockAsrBackend,
         RecognitionContext, RecognitionSession,
     };
-    use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
+    use vinput_audio::{CaptureTarget, CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
     use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
     use vinput_protocol::ServiceStatus;
     use vinput_text::{AdapterRuntimePaths, TextFinisher};
@@ -760,6 +772,35 @@ mod tests {
         assert!(!state.adapters[0].is_running);
         assert_eq!(state.adapters[0].pid, None);
         assert!(state.adapters[0].has_working_dir);
+    }
+
+    #[test]
+    fn configured_capture_target_defaults_to_backend_default() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let runtime = RuntimeState::new(config.clone()).unwrap();
+
+        assert_eq!(
+            RuntimeState::configured_capture_target(&config).unwrap(),
+            CaptureTarget::Default
+        );
+        assert_eq!(
+            runtime.capture_target_for_runtime().unwrap(),
+            CaptureTarget::Default
+        );
+    }
+
+    #[test]
+    fn configured_capture_target_preserves_concrete_target_object() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.global.capture_device = "  alsa_input.usb-mic  ".to_owned();
+        let runtime = RuntimeState::new(config.clone()).unwrap();
+        let expected = CaptureTarget::Object("alsa_input.usb-mic".to_owned());
+
+        assert_eq!(
+            RuntimeState::configured_capture_target(&config).unwrap(),
+            expected
+        );
+        assert_eq!(runtime.capture_target_for_runtime().unwrap(), expected);
     }
 
     #[test]
