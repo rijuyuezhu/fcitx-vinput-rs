@@ -423,6 +423,8 @@ fn parse_wav_fmt(chunk: &[u8]) -> Result<PcmSpec, AudioError> {
     let format_tag = read_le_u16(&chunk[0..2])?;
     let channels = read_le_u16(&chunk[2..4])?;
     let sample_rate_hz = read_le_u32(&chunk[4..8])?;
+    let byte_rate = read_le_u32(&chunk[8..12])?;
+    let block_align = read_le_u16(&chunk[12..14])?;
     let bits_per_sample = read_le_u16(&chunk[14..16])?;
     if format_tag != 1 {
         return Err(invalid_wav("only PCM format tag 1 is supported"));
@@ -430,11 +432,26 @@ fn parse_wav_fmt(chunk: &[u8]) -> Result<PcmSpec, AudioError> {
     if bits_per_sample != 16 {
         return Err(invalid_wav("only 16-bit samples are supported"));
     }
-    PcmSpec {
+    let spec = PcmSpec {
         sample_rate_hz,
         channels,
     }
-    .validate()
+    .validate()?;
+    let expected_block_align = spec
+        .channels
+        .checked_mul(bits_per_sample / 8)
+        .ok_or_else(|| invalid_wav("block align overflow"))?;
+    if block_align != expected_block_align {
+        return Err(invalid_wav("block align does not match channel count"));
+    }
+    let expected_byte_rate = spec
+        .sample_rate_hz
+        .checked_mul(u32::from(expected_block_align))
+        .ok_or_else(|| invalid_wav("byte rate overflow"))?;
+    if byte_rate != expected_byte_rate {
+        return Err(invalid_wav("byte rate does not match sample format"));
+    }
+    Ok(spec)
 }
 
 fn read_le_u16(bytes: &[u8]) -> Result<u16, AudioError> {
@@ -602,6 +619,23 @@ mod tests {
         assert_eq!(pcm.sample_rate_hz(), 48_000);
         assert_eq!(pcm.channels(), 2);
         assert_eq!(pcm.samples(), &[1_000, -1_000, 2_000, -2_000]);
+    }
+
+    #[test]
+    fn wav_pcm16le_parser_rejects_inconsistent_layout_metadata() {
+        let mut bytes = wav_pcm16le_bytes(16_000, 2, &[1, -1]);
+        bytes[32..34].copy_from_slice(&2_u16.to_le_bytes());
+        assert_eq!(
+            PcmBuffer::from_wav_pcm16le_bytes(&bytes).unwrap_err(),
+            AudioError::InvalidWav("block align does not match channel count".to_owned())
+        );
+
+        let mut bytes = wav_pcm16le_bytes(16_000, 2, &[1, -1]);
+        bytes[28..32].copy_from_slice(&16_000_u32.to_le_bytes());
+        assert_eq!(
+            PcmBuffer::from_wav_pcm16le_bytes(&bytes).unwrap_err(),
+            AudioError::InvalidWav("byte rate does not match sample format".to_owned())
+        );
     }
 
     #[test]
