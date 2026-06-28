@@ -12,6 +12,7 @@ workspace = true
 [features]
 default = []
 dbus-integration = []
+pipewire-backend = ["vinput-audio/pipewire-backend"]
 
 [dependencies]
 anyhow.workspace = true
