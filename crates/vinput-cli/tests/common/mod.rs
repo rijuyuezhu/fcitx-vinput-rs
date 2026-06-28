@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 pub fn workspace_file(path: &str) -> PathBuf {
     let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -21,4 +21,19 @@ pub fn workspace_crate_names() -> Vec<String> {
     crates.sort();
     assert!(!crates.is_empty(), "workspace crates should exist");
     crates
+}
+
+#[allow(dead_code)]
+pub fn write_temp_json(prefix: &str, contents: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "{prefix}-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos()
+    ));
+    fs::write(&path, contents).expect("write temporary JSON fixture");
+    path
 }

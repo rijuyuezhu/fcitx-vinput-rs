@@ -4,37 +4,15 @@ mod common;
 
 use std::{fs, process::Command};
 
-use common::workspace_file;
+use common::{workspace_file, write_temp_json};
 use vinput_registry::RegistryIndex;
 
 fn write_temp_registry(contents: &str) -> std::path::PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!(
-        "vinput-registry-{}-{}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock should be after unix epoch")
-            .as_nanos()
-    ));
-    fs::write(&path, contents).expect("write temporary registry fixture");
-    path
+    write_temp_json("vinput-registry", contents)
 }
-
 fn write_temp_config(contents: &str) -> std::path::PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!(
-        "vinput-plan-config-{}-{}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock should be after unix epoch")
-            .as_nanos()
-    ));
-    fs::write(&path, contents).expect("write temporary config fixture");
-    path
+    write_temp_json("vinput-plan-config", contents)
 }
-
 fn sample_registry_path() -> std::path::PathBuf {
     let path = workspace_file("data/sample-registry-index.json");
     assert!(path.exists(), "sample registry fixture should exist");
@@ -422,17 +400,7 @@ fn registry_plan_uses_custom_config_mirrors() {
         }
         "#,
     );
-    let mut config_path = std::env::temp_dir();
-    config_path.push(format!(
-        "vinput-plan-config-{}-{}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock should be after unix epoch")
-            .as_nanos()
-    ));
-    fs::write(
-        &config_path,
+    let config_path = write_temp_config(
         r#"
         {
           "version": 1,
@@ -447,8 +415,7 @@ fn registry_plan_uses_custom_config_mirrors() {
           }
         }
         "#,
-    )
-    .expect("write temporary config fixture");
+    );
 
     let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
         .args(["registry", "plan"])

@@ -4,22 +4,11 @@ mod common;
 
 use std::{fs, process::Command};
 
-use common::workspace_file;
+use common::{workspace_file, write_temp_json};
 
 fn write_temp_config(contents: &str) -> std::path::PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!(
-        "vinput-config-{}-{}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock should be after unix epoch")
-            .as_nanos()
-    ));
-    fs::write(&path, contents).expect("write temporary config fixture");
-    path
+    write_temp_json("vinput-config", contents)
 }
-
 fn default_config_path() -> std::path::PathBuf {
     let path = workspace_file("data/default-config.json");
     assert!(path.exists(), "default config fixture should exist");
