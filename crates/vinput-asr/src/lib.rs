@@ -598,6 +598,97 @@ fn write_i16_le_pcm(mut writer: impl Write, samples: &[i16]) -> std::io::Result<
     Ok(())
 }
 
+/// Process runner for legacy command-streaming ASR providers.
+///
+/// This runner sends the legacy JSON-line protocol using one committed audio
+/// chunk followed by a finish control event, then parses stdout JSON event
+/// lines. A fully incremental long-lived session can build on the same payload
+/// and event helpers later.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LegacyCommandStreamingRunner;
+
+impl CommandAsrRunner for LegacyCommandStreamingRunner {
+    fn recognize(
+        &self,
+        spec: &CommandAsrSpec,
+        request: &CommandAsrRequest,
+    ) -> Result<Vec<RecognitionEvent>, AsrError> {
+        let mut child = Command::new(&spec.command)
+            .args(&spec.args)
+            .envs(&spec.env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to spawn legacy command streaming ASR provider `{}`: {error}",
+                    spec.provider_id
+                ))
+            })?;
+
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            AsrError::Backend(format!(
+                "legacy command streaming ASR provider `{}` did not expose stdin",
+                spec.provider_id
+            ))
+        })?;
+        let write_result = (|| {
+            stdin.write_all(
+                legacy_command_streaming_audio_line(&request.samples, true).as_bytes(),
+            )?;
+            stdin.write_all(
+                b"
+",
+            )?;
+            stdin.write_all(legacy_command_streaming_finish_line().as_bytes())?;
+            stdin.write_all(
+                b"
+",
+            )?;
+            Ok::<(), std::io::Error>(())
+        })()
+        .map_err(|error| {
+            AsrError::Backend(format!(
+                "failed to write legacy command streaming events for `{}`: {error}",
+                spec.provider_id
+            ))
+        });
+        drop(stdin);
+
+        if let Err(write_error) = write_result {
+            let output = wait_for_command_output(spec, child)?;
+            if !output.status.success() {
+                return command_exit_error(spec, &output);
+            }
+            return Err(write_error);
+        }
+
+        let output = wait_for_command_output(spec, child)?;
+        if !output.status.success() {
+            return command_exit_error(spec, &output);
+        }
+        parse_legacy_command_streaming_stdout(&output.stdout)
+    }
+}
+
+fn parse_legacy_command_streaming_stdout(stdout: &[u8]) -> Result<Vec<RecognitionEvent>, AsrError> {
+    let stdout = String::from_utf8_lossy(stdout);
+    let mut events = Vec::new();
+    for line in stdout.lines() {
+        events.extend(parse_legacy_command_streaming_line(line)?);
+    }
+    if events.is_empty() {
+        return Err(AsrError::Backend(
+            "legacy command streaming provider returned no events".to_owned(),
+        ));
+    }
+    if !matches!(events.last(), Some(RecognitionEvent::Completed)) {
+        events.push(RecognitionEvent::Completed);
+    }
+    Ok(events)
+}
+
 /// Process runner for command-backed ASR providers.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProcessCommandAsrRunner;
@@ -1080,8 +1171,8 @@ mod tests {
     use super::{
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
         CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
-        LegacyCommandBatchRunner, MockAsrBackend, RecognitionContext, RecognitionEvent,
-        events_to_payload, legacy_command_streaming_audio_line,
+        LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrBackend, RecognitionContext,
+        RecognitionEvent, events_to_payload, legacy_command_streaming_audio_line,
         legacy_command_streaming_finish_line, parse_legacy_command_streaming_line,
     };
     use vinput_audio::{PcmBuffer, PcmSpec};
@@ -1815,6 +1906,87 @@ sys.stdout.write('|'.join(str(sample) for sample in samples))
                 message: "failed.".to_owned()
             }]
         );
+    }
+
+    #[test]
+    fn legacy_command_streaming_runner_sends_audio_and_finish_lines() {
+        let script_path = write_temp_script(
+            "vinput-legacy-command-streaming-asr",
+            r"
+import base64
+import json
+import struct
+import sys
+lines = [json.loads(line) for line in sys.stdin if line.strip()]
+audio = base64.b64decode(lines[0]['audio_base64'])
+samples = [value[0] for value in struct.iter_unpack('<h', audio)]
+print(json.dumps({'type':'partial','text':'partial'}))
+print(json.dumps({'type':'final','text':'|'.join(str(sample) for sample in samples)}))
+print(json.dumps({'type':'closed'}))
+assert lines[0]['type'] == 'audio'
+assert lines[0]['commit'] is True
+assert lines[1]['type'] == 'finish'
+",
+        );
+        let spec = CommandAsrSpec {
+            provider_id: "cmd.streaming".to_owned(),
+            command: "python3".to_owned(),
+            args: vec![script_path.to_string_lossy().into_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(1_000),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", Some("zh".to_owned())),
+            vec![1, -2, 258],
+        );
+
+        let events = LegacyCommandStreamingRunner
+            .recognize(&spec, &request)
+            .expect("legacy streaming runner should parse helper events");
+        std::fs::remove_file(script_path).unwrap();
+
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::PartialText {
+                    text: "partial".to_owned()
+                },
+                RecognitionEvent::FinalText {
+                    text: "1|-2|258".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_command_streaming_runner_rejects_empty_stdout() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd.streaming".to_owned(),
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "cat >/dev/null".to_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(1_000),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", None),
+            vec![1, 2, 3],
+        );
+
+        let error = LegacyCommandStreamingRunner
+            .recognize(&spec, &request)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("legacy command streaming provider returned no events")
+        ));
     }
 
     #[test]
