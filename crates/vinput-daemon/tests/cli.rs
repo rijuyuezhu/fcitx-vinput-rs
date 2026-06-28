@@ -154,16 +154,10 @@ fn asr_state_uses_config_file() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("asr-state")
-        .output()
-        .expect("run vinput-daemon asr-state");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(&config.path, &["asr-state"], "run vinput-daemon asr-state"),
+        "ASR state",
+    );
     assert_eq!(value["target_provider_id"], "mock");
     assert_eq!(value["target_model_id"], "fixture");
     assert_eq!(value["has_effective_backend"], true);
@@ -188,16 +182,10 @@ fn asr_state_preserves_remote_endpoint() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("asr-state")
-        .output()
-        .expect("run vinput-daemon asr-state");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(&config.path, &["asr-state"], "run vinput-daemon asr-state"),
+        "ASR state",
+    );
     assert_eq!(value["target_provider_id"], "remote");
     assert_eq!(value["target_model_id"], "cloud");
     assert_eq!(value["has_effective_backend"], false);
@@ -226,16 +214,10 @@ fn asr_state_preserves_command_provider_metadata() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("asr-state")
-        .output()
-        .expect("run vinput-daemon asr-state");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(&config.path, &["asr-state"], "run vinput-daemon asr-state"),
+        "ASR state",
+    );
     assert_eq!(value["target_provider_id"], "cmd");
     assert_eq!(value["target_model_id"], "cmd-model");
     assert_eq!(value["effective_provider_id"], "cmd");
@@ -320,16 +302,14 @@ fn text_adapters_uses_config_file() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("text-adapters")
-        .output()
-        .expect("run vinput-daemon text-adapters");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("text adapter diagnostics should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &["text-adapters"],
+            "run vinput-daemon text-adapters",
+        ),
+        "text adapter diagnostics",
+    );
     assert_eq!(value["adapter_count"], 1);
     assert_eq!(value["adapter_ids"], serde_json::json!(["cmd-adapter"]));
     assert_eq!(value["single_adapter_id"], "cmd-adapter");
