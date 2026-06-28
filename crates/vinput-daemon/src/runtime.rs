@@ -606,6 +606,35 @@ mod tests {
     }
 
     #[test]
+    fn configured_text_adapter_state_preserves_multiple_config_order() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+            id: "first".to_owned(),
+            command: "first-helper".to_owned(),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+            id: "second".to_owned(),
+            command: "second-helper".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+
+        let state = RuntimeState::configured_text_adapter_state(&config);
+        assert_eq!(state.adapter_count, 2);
+        assert_eq!(state.adapter_ids, ["first", "second"]);
+        assert!(state.single_adapter_id.is_none());
+        assert_eq!(state.adapters[0].command, "first-helper");
+        assert_eq!(state.adapters[1].command, "second-helper");
+        assert_eq!(state.adapters[1].args, ["--json"]);
+    }
+
+    #[test]
     fn configured_asr_builds_mock_provider() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "mock".to_owned();
