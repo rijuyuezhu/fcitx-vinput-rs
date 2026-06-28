@@ -182,6 +182,60 @@ fn print_config_with_default_fixture_ignores_configured_backend_runtime_init() {
 }
 
 #[test]
+fn audio_devices_reports_default_capture_target_and_unavailable_backend() {
+    let value = assert_json_success(
+        run_daemon_with_config(
+            default_config_path(),
+            &["audio-devices"],
+            "run vinput-daemon audio-devices on default fixture",
+        ),
+        "audio devices",
+    );
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["capture_device"], "default");
+    assert_eq!(value["capture_target"]["kind"], "default");
+    assert_eq!(value["backend"], "unavailable");
+    assert_eq!(value["live"], false);
+    assert_eq!(value["devices"].as_array().unwrap().len(), 0);
+    assert_eq!(value["enumeration_error"], serde_json::Value::Null);
+}
+
+#[test]
+fn audio_devices_preserves_configured_capture_target_object() {
+    let config = TempConfig::write(
+        "audio-devices",
+        r#"
+        {
+          "version": 1,
+          "global": {"capture_device": "alsa_input.usb-mic"},
+          "asr": {
+            "active_provider": "mock",
+            "providers": [{"id":"mock","type":"local","model":"fixture"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &["audio-devices"],
+            "run vinput-daemon audio-devices with object capture target",
+        ),
+        "audio devices",
+    );
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["capture_device"], "alsa_input.usb-mic");
+    assert_eq!(value["capture_target"]["kind"], "object");
+    assert_eq!(value["capture_target"]["value"], "alsa_input.usb-mic");
+    assert_eq!(value["backend"], "unavailable");
+    assert_eq!(value["live"], false);
+}
+
+#[test]
 fn asr_state_accepts_committed_default_fixture() {
     let value = assert_json_success(
         run_daemon_with_config(
@@ -775,5 +829,6 @@ fn help_lists_diagnostics_commands() {
     assert!(stdout.contains("asr-state"));
     assert!(stdout.contains("configured ASR backend diagnostics"));
     assert!(stdout.contains("text-adapters"));
+    assert!(stdout.contains("audio-devices"));
     assert!(stdout.contains("configured command text adapter diagnostics"));
 }

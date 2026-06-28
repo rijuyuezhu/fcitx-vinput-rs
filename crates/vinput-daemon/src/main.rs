@@ -6,7 +6,7 @@ use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use tracing::info;
 use vinput_asr::{AsrBackendFactory, MockAsrBackend};
-use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
+use vinput_audio::{CaptureTarget, CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
 
@@ -64,6 +64,8 @@ enum Command {
     AsrState,
     /// Print configured command text adapter diagnostics as JSON.
     TextAdapters,
+    /// Print configured audio capture diagnostics as JSON.
+    AudioDevices,
 }
 
 #[tokio::main]
@@ -98,6 +100,12 @@ async fn main() -> anyhow::Result<()> {
                     serde_json::to_string_pretty(&RuntimeState::configured_text_adapter_state(
                         &config
                     ))?
+                );
+            }
+            Command::AudioDevices => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&audio_devices_summary(&config)?)?
                 );
             }
         }
@@ -139,6 +147,26 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn audio_devices_summary(config: &VinputConfig) -> anyhow::Result<serde_json::Value> {
+    let capture_target = RuntimeState::configured_capture_target(config)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "capture_device": config.global.capture_device,
+        "capture_target": capture_target_json(&capture_target),
+        "backend": "unavailable",
+        "live": false,
+        "devices": [],
+        "enumeration_error": null,
+    }))
+}
+
+fn capture_target_json(target: &CaptureTarget) -> serde_json::Value {
+    match target {
+        CaptureTarget::Default => serde_json::json!({"kind": "default"}),
+        CaptureTarget::Object(value) => serde_json::json!({"kind": "object", "value": value}),
+    }
 }
 
 fn build_runtime(args: &Args, config: VinputConfig) -> anyhow::Result<RuntimeState> {
