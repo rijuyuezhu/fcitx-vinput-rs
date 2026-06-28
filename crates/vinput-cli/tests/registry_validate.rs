@@ -2,9 +2,9 @@
 
 mod common;
 
-use std::{fs, process::Command};
+use std::fs;
 
-use common::{workspace_file, write_temp_json};
+use common::{vinput_command, workspace_file, write_temp_json};
 use vinput_registry::RegistryIndex;
 
 fn write_temp_registry(contents: &str) -> std::path::PathBuf {
@@ -46,7 +46,7 @@ fn registry_sample_fixture_preserves_contract_ids() {
 fn registry_validate_accepts_committed_sample_fixture() {
     let path = sample_registry_path();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -65,7 +65,7 @@ fn registry_validate_accepts_committed_sample_fixture() {
 fn registry_plan_accepts_committed_sample_fixture() {
     let path = sample_registry_path();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .arg("--summary-only")
@@ -111,7 +111,7 @@ fn registry_validate_prints_summary_for_valid_index() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -133,7 +133,7 @@ fn registry_validate_fails_for_unsafe_asset_path() {
         r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"../bad"}]}]}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -159,7 +159,7 @@ fn registry_validate_fails_for_duplicate_model_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -189,7 +189,7 @@ fn registry_validate_fails_for_duplicate_asset_paths() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -207,7 +207,7 @@ fn registry_validate_fails_for_empty_asset_paths() {
         r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"   "}]}]}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -225,7 +225,7 @@ fn registry_validate_fails_for_invalid_checksum() {
         r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"m.tar","sha256":"ABC"}]}]}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -263,7 +263,7 @@ fn registry_plan_prints_assets_with_resolved_urls() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .output()
@@ -322,7 +322,7 @@ fn registry_install_plan_prints_targets_and_checksum_policy() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "install-plan"])
         .arg(&path)
         .args(["--target-root", "/tmp/vinput-assets"])
@@ -364,7 +364,7 @@ fn registry_install_plan_summary_only_can_select_one_model() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "install-plan"])
         .arg(&path)
         .args(["--target-root", "/tmp/vinput-assets"])
@@ -417,7 +417,7 @@ fn registry_plan_uses_custom_config_mirrors() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&registry_path)
         .args(["--config"])
@@ -445,7 +445,7 @@ fn registry_install_plan_rejects_invalid_config_mirrors() {
         r#"{"version":1,"registry":{"base_urls":[""]},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "install-plan"])
         .arg(&registry_path)
         .args(["--target-root", "/tmp/vinput-assets", "--config"])
@@ -467,7 +467,7 @@ fn registry_install_plan_uses_custom_config_mirrors() {
         r#"{"version":1,"registry":{"base_urls":["mirror"]},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "install-plan"])
         .arg(&registry_path)
         .args(["--target-root", "/tmp/vinput-assets"])
@@ -493,7 +493,7 @@ fn registry_plan_rejects_invalid_config_mirrors() {
         r#"{"version":1,"registry":{"base_urls":[""]},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&registry_path)
         .args(["--config"])
@@ -522,7 +522,7 @@ fn registry_plan_can_select_one_model() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .args(["--model", "m"])
@@ -551,7 +551,7 @@ fn registry_plan_fails_for_unknown_model() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .args(["--model", "missing"])
@@ -580,7 +580,7 @@ fn registry_plan_can_select_one_adapter() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .args(["--adapter", "a"])
@@ -600,7 +600,7 @@ fn registry_plan_can_select_one_adapter() {
 fn registry_plan_rejects_model_and_adapter_together() {
     let path = write_temp_registry(r#"{"version":1}"#);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .args(["--model", "m", "--adapter", "a"])
@@ -626,7 +626,7 @@ fn registry_plan_fails_for_unknown_adapter() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .args(["--adapter", "missing"])
@@ -652,7 +652,7 @@ fn registry_install_plan_fails_for_unknown_adapter() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "install-plan"])
         .arg(&path)
         .args(["--target-root", "/tmp/vinput-assets"])
@@ -679,7 +679,7 @@ fn registry_plan_summary_only_omits_assets() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "plan"])
         .arg(&path)
         .args(["--summary-only"])
@@ -709,7 +709,7 @@ fn registry_validate_fails_for_empty_model_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -734,7 +734,7 @@ fn registry_validate_fails_for_empty_adapter_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -759,7 +759,7 @@ fn registry_validate_fails_for_empty_model_provider() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -784,7 +784,7 @@ fn registry_validate_fails_for_empty_adapter_kind() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry", "validate"])
         .arg(&path)
         .output()
@@ -798,7 +798,7 @@ fn registry_validate_fails_for_empty_adapter_kind() {
 
 #[test]
 fn registry_prints_bundled_mirror_summary() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["registry"])
         .output()
         .expect("run vinput registry");

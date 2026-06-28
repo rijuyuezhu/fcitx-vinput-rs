@@ -2,9 +2,9 @@
 
 mod common;
 
-use std::{fs, process::Command};
+use std::fs;
 
-use common::{workspace_file, write_temp_json};
+use common::{vinput_command, workspace_file, write_temp_json};
 
 fn write_temp_config(contents: &str) -> std::path::PathBuf {
     write_temp_json("vinput-config", contents)
@@ -18,7 +18,7 @@ fn default_config_path() -> std::path::PathBuf {
 fn config_validate_accepts_committed_default_fixture() {
     let path = default_config_path();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .arg("--summary-only")
@@ -53,7 +53,7 @@ fn config_validate_prints_summary_for_valid_config() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -96,7 +96,7 @@ fn config_validate_accepts_object_llm_provider_extra_body() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -127,7 +127,7 @@ fn config_validate_fails_for_duplicate_scene_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -158,7 +158,7 @@ fn config_validate_fails_for_empty_registry_mirror() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -191,7 +191,7 @@ fn config_validate_fails_for_duplicate_provider_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -221,7 +221,7 @@ fn config_validate_fails_for_unknown_active_provider() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -251,7 +251,7 @@ fn config_validate_fails_for_unknown_active_scene() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -284,7 +284,7 @@ fn config_validate_fails_for_duplicate_registry_mirrors() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -314,7 +314,7 @@ fn config_validate_summary_only_matches_summary_shape() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .args(["--summary-only"])
@@ -348,7 +348,7 @@ fn config_validate_fails_for_empty_provider_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -366,7 +366,7 @@ fn config_validate_fails_for_empty_capture_device() {
         r#"{"version":1,"global":{"capture_device":"   "},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -384,7 +384,7 @@ fn config_validate_fails_for_empty_active_provider() {
         r#"{"version":1,"asr":{"active_provider":"   ","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -402,7 +402,7 @@ fn config_validate_fails_for_empty_default_language() {
         r#"{"version":1,"global":{"default_language":"   "},"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"Raw","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -420,7 +420,7 @@ fn config_validate_fails_for_empty_scene_ids() {
         r#"{"version":1,"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"","definitions":[{"id":"   ","label":"Raw","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -438,7 +438,7 @@ fn config_validate_fails_for_empty_scene_labels() {
         r#"{"version":1,"asr":{"active_provider":"p","providers":[{"id":"p","type":"local"}]},"scenes":{"active_scene":"raw","definitions":[{"id":"raw","label":"   ","candidate_count":0}]}}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -468,7 +468,7 @@ fn config_validate_fails_for_too_many_candidates() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -498,7 +498,7 @@ fn config_validate_fails_for_too_many_context_lines() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -528,7 +528,7 @@ fn config_validate_fails_for_zero_scene_timeout() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -558,7 +558,7 @@ fn config_validate_fails_for_empty_scene_model() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -588,7 +588,7 @@ fn config_validate_fails_for_empty_scene_prompt() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -624,7 +624,7 @@ fn config_validate_fails_for_duplicate_llm_adapter_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -656,7 +656,7 @@ fn config_validate_fails_for_empty_llm_adapter_id() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -688,7 +688,7 @@ fn config_validate_fails_for_empty_llm_adapter_env_key() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -721,7 +721,7 @@ fn config_validate_fails_for_empty_llm_adapter_command() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -753,7 +753,7 @@ fn config_validate_fails_for_empty_llm_adapter_working_dir() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -778,7 +778,7 @@ fn config_validate_fails_for_empty_llm_provider_id() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -808,7 +808,7 @@ fn config_validate_fails_for_duplicate_llm_provider_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -833,7 +833,7 @@ fn config_validate_fails_for_empty_llm_provider_base_url() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -865,7 +865,7 @@ fn config_validate_fails_for_empty_llm_provider_model() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -898,7 +898,7 @@ fn config_validate_fails_for_non_object_llm_provider_extra_body() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -934,7 +934,7 @@ fn config_validate_fails_for_unknown_scene_provider() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -950,7 +950,7 @@ fn config_validate_fails_for_unknown_scene_provider() {
 fn asr_state_accepts_committed_default_fixture() {
     let path = default_config_path();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .arg("asr-state")
         .arg("--config")
         .arg(&path)
@@ -983,7 +983,7 @@ fn asr_state_reports_mock_provider_ready() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .arg("asr-state")
         .arg("--config")
         .arg(&path)
@@ -1018,7 +1018,7 @@ fn asr_state_reports_unavailable_provider() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .arg("asr-state")
         .arg("--config")
         .arg(&path)
@@ -1058,7 +1058,7 @@ fn asr_state_reports_remote_provider_endpoint() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .arg("asr-state")
         .arg("--config")
         .arg(&path)
@@ -1095,7 +1095,7 @@ fn asr_state_reports_command_provider_skeleton_ready() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .arg("asr-state")
         .arg("--config")
         .arg(&path)
@@ -1132,7 +1132,7 @@ fn config_validate_fails_for_empty_asr_provider_model() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1161,7 +1161,7 @@ fn config_validate_accepts_positive_asr_provider_timeout() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1193,7 +1193,7 @@ fn config_validate_fails_for_empty_asr_provider_hotwords_file() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1222,7 +1222,7 @@ fn config_validate_fails_for_empty_asr_provider_command() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1252,7 +1252,7 @@ fn config_validate_fails_for_empty_asr_provider_endpoint() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1282,7 +1282,7 @@ fn config_validate_fails_for_empty_asr_provider_env_key() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1311,7 +1311,7 @@ fn config_validate_fails_for_zero_asr_provider_timeout() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1346,7 +1346,7 @@ fn config_validate_accepts_command_asr_provider() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1374,7 +1374,7 @@ fn config_validate_fails_for_command_provider_without_command() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()
@@ -1388,7 +1388,7 @@ fn config_validate_fails_for_command_provider_without_command() {
 
 #[test]
 fn config_prints_bundled_summary() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config"])
         .output()
         .expect("run vinput config");
@@ -1420,7 +1420,7 @@ fn config_validate_fails_for_remote_provider_without_endpoint() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+    let output = vinput_command()
         .args(["config", "validate"])
         .arg(&path)
         .output()

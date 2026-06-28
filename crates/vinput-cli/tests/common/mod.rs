@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, process::Command};
 
 pub fn workspace_file(path: &str) -> PathBuf {
     let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -36,4 +36,9 @@ pub fn write_temp_json(prefix: &str, contents: &str) -> PathBuf {
     ));
     fs::write(&path, contents).expect("write temporary JSON fixture");
     path
+}
+
+#[allow(dead_code)]
+pub fn vinput_command() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_vinput"))
 }
