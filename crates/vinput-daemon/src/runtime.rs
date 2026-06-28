@@ -10,8 +10,8 @@ use vinput_asr::{
     RecognitionSession, events_to_payload,
 };
 use vinput_audio::{
-    AudioError, AudioProcessingOptions, AudioSource, CaptureTarget, CapturedAudio, MockAudioSource,
-    PcmBuffer,
+    AudioError, AudioProcessingOptions, AudioRecorder, AudioSource, CaptureTarget, CapturedAudio,
+    MockAudioSource, PcmBuffer, SourceAudioRecorder,
 };
 use vinput_config::{LlmAdapterConfig, VinputConfig};
 use vinput_protocol::{
@@ -49,7 +49,7 @@ pub struct RuntimeState {
     selected_text: Option<String>,
     partial_text: Option<String>,
     asr_backend: Box<dyn AsrBackend>,
-    audio_source: Box<dyn AudioSource>,
+    audio_recorder: Box<dyn AudioRecorder>,
     text_processor: Box<dyn TextProcessor>,
     active_session: Option<Box<dyn RecognitionSession>>,
     adapter_runtime_paths: AdapterRuntimePaths,
@@ -58,6 +58,7 @@ pub struct RuntimeState {
 
 impl Drop for RuntimeState {
     fn drop(&mut self) {
+        let _ = self.audio_recorder.cancel_recording();
         for (adapter_id, mut process) in self.adapter_processes.drain() {
             let _ = process.child.kill();
             let _ = process.child.wait();
@@ -141,6 +142,35 @@ impl RuntimeState {
         audio_source: Box<dyn AudioSource>,
         text_processor: Box<dyn TextProcessor>,
     ) -> Result<Self, RuntimeError> {
+        Self::with_recorder_components(
+            config,
+            asr_backend,
+            Box::new(SourceAudioRecorder::new(audio_source)),
+            text_processor,
+        )
+    }
+
+    /// Builds an idle runtime from validated config and an injected recorder seam.
+    pub fn with_audio_recorder(
+        config: VinputConfig,
+        asr_backend: Box<dyn AsrBackend>,
+        audio_recorder: Box<dyn AudioRecorder>,
+    ) -> Result<Self, RuntimeError> {
+        Self::with_recorder_components(
+            config,
+            asr_backend,
+            audio_recorder,
+            Box::new(MockTextProcessor::new()),
+        )
+    }
+
+    /// Builds an idle runtime from validated config and injected recorder/text seams.
+    pub fn with_recorder_components(
+        config: VinputConfig,
+        asr_backend: Box<dyn AsrBackend>,
+        audio_recorder: Box<dyn AudioRecorder>,
+        text_processor: Box<dyn TextProcessor>,
+    ) -> Result<Self, RuntimeError> {
         config.validate().map_err(RuntimeError::InvalidConfig)?;
         Ok(Self {
             config,
@@ -150,7 +180,7 @@ impl RuntimeState {
             selected_text: None,
             partial_text: None,
             asr_backend,
-            audio_source,
+            audio_recorder,
             text_processor,
             active_session: None,
             adapter_runtime_paths: AdapterRuntimePaths::for_current_user(),
@@ -366,12 +396,12 @@ impl RuntimeState {
                 .active_session
                 .take()
                 .ok_or(RuntimeError::MissingAsrSession)?;
-            let pcm = self.read_captured_pcm()?;
+            let pcm = self.stop_and_process_recording()?;
             session.push_pcm(&pcm).map_err(RuntimeError::Asr)?;
             self.capture_partial_events(&mut *session)?;
             session.finish().map_err(RuntimeError::Asr)?;
             let events = session.poll_events().map_err(RuntimeError::Asr)?;
-            let partial_text = latest_partial_text(&events);
+            let partial_text = latest_partial_text(&events).or_else(|| self.partial_text.clone());
             let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
             let scene_definition = self.scene_definition(&scene);
             let payload = self
@@ -388,6 +418,10 @@ impl RuntimeState {
             })
         })();
 
+        if result.is_err() && self.audio_recorder.is_recording() {
+            let _ = self.audio_recorder.cancel_recording();
+        }
+        self.audio_recorder.set_chunk_callback(None);
         self.reset_to_idle();
         result
     }
@@ -438,15 +472,15 @@ impl RuntimeState {
         selected_text: Option<String>,
     ) -> Result<(), RuntimeError> {
         self.ensure_idle()?;
-        let _capture_target = self.capture_target_for_runtime()?;
+        let capture_target = self.capture_target_for_runtime()?;
         let context = self.recognition_context(&scene_id, selected_text.as_deref());
-        let mut session = self
+        let session = self
             .asr_backend
             .create_session(context)
             .map_err(RuntimeError::Asr)?;
-        let pcm = self.read_captured_pcm()?;
-        session.push_pcm(&pcm).map_err(RuntimeError::Asr)?;
-        self.capture_partial_events(&mut *session)?;
+        self.audio_recorder
+            .begin_recording(capture_target)
+            .map_err(RuntimeError::Audio)?;
         self.status = ServiceStatus::Recording;
         self.current_scene = Some(scene_id);
         self.selected_text = selected_text;
@@ -485,10 +519,10 @@ impl RuntimeState {
         }
     }
 
-    fn read_captured_pcm(&mut self) -> Result<PcmBuffer, RuntimeError> {
+    fn stop_and_process_recording(&mut self) -> Result<PcmBuffer, RuntimeError> {
         let captured = self
-            .audio_source
-            .read_buffer()
+            .audio_recorder
+            .stop_and_get_buffer()
             .map_err(RuntimeError::Audio)?;
         Ok(self.process_captured_pcm(&captured.pcm))
     }
@@ -671,11 +705,10 @@ mod tests {
             super::RuntimeError::Busy(ServiceStatus::Recording)
         ));
         assert_eq!(runtime.status(), ServiceStatus::Recording);
-        assert_eq!(runtime.partial_text(), Some("mock partial"));
-        assert_eq!(
-            runtime.stop_recording(None).unwrap().commit_text,
-            "mock recognition result"
-        );
+        assert!(runtime.partial_text().is_none());
+        let report = runtime.stop_recording_report(None).unwrap();
+        assert_eq!(report.partial_text.as_deref(), Some("mock partial"));
+        assert_eq!(report.payload.commit_text, "mock recognition result");
     }
 
     #[test]
@@ -699,9 +732,10 @@ mod tests {
         let mut runtime = RuntimeState::new(config).unwrap();
         runtime.start_recording().unwrap();
         assert_eq!(runtime.status(), ServiceStatus::Recording);
-        assert_eq!(runtime.partial_text(), Some("mock partial"));
-        let payload = runtime.stop_recording(None).unwrap();
-        assert_eq!(payload.commit_text, "mock recognition result");
+        assert!(runtime.partial_text().is_none());
+        let report = runtime.stop_recording_report(None).unwrap();
+        assert_eq!(report.partial_text.as_deref(), Some("mock partial"));
+        assert_eq!(report.payload.commit_text, "mock recognition result");
         assert_eq!(runtime.status(), ServiceStatus::Idle);
     }
 
@@ -1017,7 +1051,7 @@ mod tests {
 
         let bytes = std::fs::read(&capture_path).unwrap();
         std::fs::remove_file(&capture_path).unwrap();
-        let expected_samples = [4000_i16, -8000, 12000, -16000, 4000, -8000, 12000, -16000];
+        let expected_samples = [4000_i16, -8000, 12000, -16000];
         let expected_bytes = expected_samples
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
@@ -1163,9 +1197,10 @@ mod tests {
         let backend = MockAsrBackend::streaming("listening", "custom final");
         let mut runtime = RuntimeState::with_asr_backend(config, Box::new(backend)).unwrap();
         runtime.start_recording().unwrap();
-        assert_eq!(runtime.partial_text(), Some("listening"));
-        let payload = runtime.stop_recording(None).unwrap();
-        assert_eq!(payload.commit_text, "custom final");
+        assert!(runtime.partial_text().is_none());
+        let report = runtime.stop_recording_report(None).unwrap();
+        assert_eq!(report.partial_text.as_deref(), Some("listening"));
+        assert_eq!(report.payload.commit_text, "custom final");
     }
 
     #[test]

@@ -179,7 +179,10 @@ fn pcm16le_audio_source(
         channels,
     };
     let pcm = read_pcm16le(path, spec)?;
-    file_audio_source(format!("pcm16le:{}", path.display()), pcm)
+    Ok(file_audio_source(
+        format!("pcm16le:{}", path.display()),
+        pcm,
+    ))
 }
 
 fn wav_audio_source(path: &Path) -> anyhow::Result<MockAudioSource> {
@@ -187,16 +190,11 @@ fn wav_audio_source(path: &Path) -> anyhow::Result<MockAudioSource> {
         std::fs::read(path).with_context(|| format!("read WAV file `{}`", path.display()))?;
     let pcm = PcmBuffer::from_wav_pcm16le_bytes(&bytes)
         .with_context(|| format!("decode WAV file `{}`", path.display()))?;
-    file_audio_source(format!("wav:{}", path.display()), pcm)
+    Ok(file_audio_source(format!("wav:{}", path.display()), pcm))
 }
 
-fn file_audio_source(source_name: String, pcm: PcmBuffer) -> anyhow::Result<MockAudioSource> {
-    let empty = PcmBuffer::with_spec(pcm.spec(), Vec::<i16>::new())
-        .context("build empty warm-up audio frame")?;
-    Ok(MockAudioSource::from_frames(vec![
-        CapturedAudio::named(empty, source_name.clone()),
-        CapturedAudio::named(pcm, source_name),
-    ]))
+fn file_audio_source(source_name: String, pcm: PcmBuffer) -> MockAudioSource {
+    MockAudioSource::once(CapturedAudio::named(pcm, source_name))
 }
 
 fn read_pcm16le(path: &Path, spec: PcmSpec) -> anyhow::Result<PcmBuffer> {

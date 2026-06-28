@@ -57,13 +57,10 @@ fn configured_command_runtime() -> anyhow::Result<RuntimeState> {
     )?;
     config.validate()?;
     let backend = AsrBackendFactory::build_active(&config.asr)?;
-    let audio_source = MockAudioSource::from_frames(vec![
-        CapturedAudio::named(PcmBuffer::at_default_rate(Vec::<i16>::new()), "warm-up"),
-        CapturedAudio::named(
-            PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
-            "dbus-e2e",
-        ),
-    ]);
+    let audio_source = MockAudioSource::once(CapturedAudio::named(
+        PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
+        "dbus-e2e",
+    ));
     RuntimeState::with_configured_text(config, backend, Box::new(audio_source)).map_err(Into::into)
 }
 
@@ -90,13 +87,10 @@ fn configured_command_text_runtime() -> anyhow::Result<RuntimeState> {
     )?;
     config.validate()?;
     let backend = AsrBackendFactory::build_active(&config.asr)?;
-    let audio_source = MockAudioSource::from_frames(vec![
-        CapturedAudio::named(PcmBuffer::at_default_rate(Vec::<i16>::new()), "warm-up"),
-        CapturedAudio::named(
-            PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
-            "dbus-text-e2e",
-        ),
-    ]);
+    let audio_source = MockAudioSource::once(CapturedAudio::named(
+        PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
+        "dbus-text-e2e",
+    ));
     RuntimeState::with_configured_text(config, backend, Box::new(audio_source)).map_err(Into::into)
 }
 
@@ -288,10 +282,7 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "recording");
     assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
-    assert_eq!(
-        next_string_signal(&mut partial_signals).await?,
-        "mock partial"
-    );
+    expect_no_string_signal(&mut partial_signals).await?;
 
     let duplicate_start: zbus::Result<()> = proxy.call(dbus::method::START_RECORDING, &()).await;
     let duplicate_start_error = duplicate_start.expect_err("duplicate start should fail");
@@ -319,6 +310,10 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let payload = RecognitionPayload::from_json_str(&payload_json)?;
     assert_eq!(payload.commit_text, "mock recognition result");
     assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
+    assert_eq!(
+        next_string_signal(&mut partial_signals).await?,
+        "mock partial"
+    );
     let result_payload_json = next_string_signal(&mut result_signals).await?;
     let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
     assert_eq!(signal_payload.commit_text, "mock recognition result");
@@ -330,10 +325,7 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "recording");
     assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
-    assert_eq!(
-        next_string_signal(&mut partial_signals).await?,
-        "mock partial"
-    );
+    expect_no_string_signal(&mut partial_signals).await?;
 
     let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
     let payload = RecognitionPayload::from_json_str(&payload_json)?;
@@ -342,6 +334,10 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         "mock command result for: selected text"
     );
     assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
+    assert_eq!(
+        next_string_signal(&mut partial_signals).await?,
+        "mock partial"
+    );
     let result_payload_json = next_string_signal(&mut result_signals).await?;
     let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
     assert_eq!(
