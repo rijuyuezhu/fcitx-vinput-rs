@@ -74,3 +74,15 @@ fn bootstrap_doc_lists_all_workspace_crates() {
         );
     }
 }
+
+#[test]
+fn target_architecture_lists_all_workspace_crates() {
+    let target = std::fs::read_to_string(architecture_dir().join("target-architecture.md"))
+        .expect("read target architecture doc");
+    for crate_name in workspace_crate_names() {
+        assert!(
+            target.contains(&crate_name),
+            "target architecture doc should list `{crate_name}`"
+        );
+    }
+}
