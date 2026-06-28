@@ -51,6 +51,23 @@ fn print_config_accepts_committed_default_fixture() {
 }
 
 #[test]
+fn asr_state_accepts_committed_default_fixture() {
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(default_config_path())
+        .arg("asr-state")
+        .output()
+        .expect("run vinput-daemon asr-state on default fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "sherpa-onnx");
+    assert_eq!(value["target_model_id"], "");
+    assert_eq!(value["has_effective_backend"], false);
+}
+
+#[test]
 fn asr_state_uses_config_file() {
     let config = TempConfig::write(
         "asr-state",
