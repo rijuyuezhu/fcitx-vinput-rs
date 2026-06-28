@@ -622,6 +622,25 @@ mod tests {
     }
 
     #[test]
+    fn wav_pcm16le_parser_skips_unknown_padded_chunks() {
+        let bytes = wav_pcm16le_bytes(16_000, 1, &[100, -100]);
+        let riff_size = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let mut with_junk = Vec::new();
+        with_junk.extend_from_slice(&bytes[..12]);
+        with_junk.extend_from_slice(b"JUNK");
+        with_junk.extend_from_slice(&3_u32.to_le_bytes());
+        with_junk.extend_from_slice(b"abc");
+        with_junk.push(0);
+        with_junk.extend_from_slice(&bytes[12..]);
+        with_junk[4..8].copy_from_slice(&(riff_size + 12).to_le_bytes());
+
+        let pcm = PcmBuffer::from_wav_pcm16le_bytes(&with_junk).unwrap();
+        assert_eq!(pcm.sample_rate_hz(), 16_000);
+        assert_eq!(pcm.channels(), 1);
+        assert_eq!(pcm.samples(), &[100, -100]);
+    }
+
+    #[test]
     fn wav_pcm16le_parser_rejects_inconsistent_layout_metadata() {
         let mut bytes = wav_pcm16le_bytes(16_000, 2, &[1, -1]);
         bytes[32..34].copy_from_slice(&2_u16.to_le_bytes());
