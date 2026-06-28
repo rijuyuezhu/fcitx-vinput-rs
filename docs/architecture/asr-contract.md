@@ -44,7 +44,7 @@ StopRecording
   -> reset Idle
 ```
 
-Command mode still carries selected text in `RecognitionContext`; command-scene post-processing can move to `vinput-postprocess` later without changing the ASR trait boundary.
+Command mode still carries selected text in `RecognitionContext`; command-scene post-processing can move to `vinput-text` later without changing the ASR trait boundary.
 
 ## Command helper JSON contract
 
@@ -100,5 +100,5 @@ Both `vinput-cli asr-state` and `vinput-daemon asr-state` serialize `AsrBackendS
 
 ## Next ASR steps
 
-1. Move command-scene prompt and post-processing policy to `vinput-postprocess` while preserving `RecognitionContext` as the frontend/runtime seam.
+1. Move command-scene prompt and post-processing policy to `vinput-text` while preserving `RecognitionContext` as the frontend/runtime seam.
 2. Add a feature-gated sherpa-onnx backend only after the command and mock contracts stay stable.
