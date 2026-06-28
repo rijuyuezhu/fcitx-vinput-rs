@@ -46,9 +46,9 @@ Equivalent raw commands:
 
 ```sh
 cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
 dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
-cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
 cargo run -q -p vinput-cli -- protocol
 cargo run -q -p vinput-cli -- config
