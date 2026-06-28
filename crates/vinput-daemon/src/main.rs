@@ -57,6 +57,29 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let config = load_config(args.config.as_ref())?;
     config.validate().context("validate daemon config")?;
+    if let Some(command) = &args.command {
+        match command {
+            Command::PrintConfig => {
+                println!("{}", serde_json::to_string_pretty(&config)?);
+            }
+            Command::AsrState => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&RuntimeState::configured_asr_state(&config))?
+                );
+            }
+            Command::TextAdapters => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&RuntimeState::configured_text_adapter_state(
+                        &config
+                    ))?
+                );
+            }
+        }
+        return Ok(());
+    }
+
     let mut runtime = if args.configured_backends {
         RuntimeState::with_configured_backends(config.clone())
     } else {
