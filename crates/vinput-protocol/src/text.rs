@@ -83,6 +83,19 @@ mod tests {
         assert_eq!(state.single_adapter_id.as_deref(), Some("cmd"));
         assert_eq!(state.adapters[0].command, "helper");
         assert_eq!(state.adapters[0].env_count, 2);
+        let ambiguous = TextAdapterState::from_adapters(vec![
+            TextAdapterSummary {
+                id: "first".to_owned(),
+                ..TextAdapterSummary::default()
+            },
+            TextAdapterSummary {
+                id: "second".to_owned(),
+                ..TextAdapterSummary::default()
+            },
+        ]);
+        assert_eq!(ambiguous.adapter_count, 2);
+        assert_eq!(ambiguous.adapter_ids, ["first", "second"]);
+        assert!(ambiguous.single_adapter_id.is_none());
     }
 
     #[test]
