@@ -421,6 +421,80 @@ impl CommandAsrRunner for UnsupportedCommandAsrRunner {
     }
 }
 
+/// Legacy process runner for command ASR providers.
+///
+/// The original C++ batch command backend writes raw signed 16-bit little-endian
+/// PCM bytes to stdin and treats trimmed stdout as the final recognized text.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LegacyCommandBatchRunner;
+
+impl CommandAsrRunner for LegacyCommandBatchRunner {
+    fn recognize(
+        &self,
+        spec: &CommandAsrSpec,
+        request: &CommandAsrRequest,
+    ) -> Result<Vec<RecognitionEvent>, AsrError> {
+        let mut child = Command::new(&spec.command)
+            .args(&spec.args)
+            .envs(&spec.env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                AsrError::Backend(format!(
+                    "failed to spawn legacy command ASR provider `{}`: {error}",
+                    spec.provider_id
+                ))
+            })?;
+
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            AsrError::Backend(format!(
+                "legacy command ASR provider `{}` did not expose stdin",
+                spec.provider_id
+            ))
+        })?;
+        let write_result = write_i16_le_pcm(&mut stdin, &request.samples).map_err(|error| {
+            AsrError::Backend(format!(
+                "failed to write legacy command ASR PCM for `{}`: {error}",
+                spec.provider_id
+            ))
+        });
+        drop(stdin);
+
+        if let Err(write_error) = write_result {
+            let output = wait_for_command_output(spec, child)?;
+            if !output.status.success() {
+                return command_exit_error(spec, &output);
+            }
+            return Err(write_error);
+        }
+
+        let output = wait_for_command_output(spec, child)?;
+        if !output.status.success() {
+            return command_exit_error(spec, &output);
+        }
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if text.is_empty() {
+            return Err(AsrError::Backend(format!(
+                "legacy command ASR provider `{}` returned no text",
+                spec.provider_id
+            )));
+        }
+        Ok(vec![
+            RecognitionEvent::FinalText { text },
+            RecognitionEvent::Completed,
+        ])
+    }
+}
+
+fn write_i16_le_pcm(mut writer: impl Write, samples: &[i16]) -> std::io::Result<()> {
+    for sample in samples {
+        writer.write_all(&sample.to_le_bytes())?;
+    }
+    Ok(())
+}
+
 /// Process runner for command-backed ASR providers.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProcessCommandAsrRunner;
@@ -902,11 +976,27 @@ impl RecognitionSession for MockRecognitionSession {
 mod tests {
     use super::{
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
-        CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec, MockAsrBackend,
-        RecognitionContext, RecognitionEvent, events_to_payload,
+        CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
+        LegacyCommandBatchRunner, MockAsrBackend, RecognitionContext, RecognitionEvent,
+        events_to_payload,
     };
     use vinput_audio::{PcmBuffer, PcmSpec};
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
+
+    fn write_temp_script(prefix: &str, body: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "{}-{}-{}.py",
+            prefix,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::write(&path, body).expect("write temporary script");
+        path
+    }
 
     #[derive(Debug, Clone, Copy)]
     struct FinalTextCommandRunner;
@@ -1461,6 +1551,75 @@ mod tests {
             payload.commit_text,
             "cmd|helper|--format,json|fast|paraformer|/tmp/hotwords.txt|2500|dictation|zh|0"
         );
+    }
+
+    #[test]
+    fn legacy_command_batch_runner_writes_raw_little_endian_pcm() {
+        let script_path = write_temp_script(
+            "vinput-legacy-command-asr",
+            r"
+import struct
+import sys
+samples = [value[0] for value in struct.iter_unpack('<h', sys.stdin.buffer.read())]
+sys.stdout.write('|'.join(str(sample) for sample in samples))
+",
+        );
+        let spec = CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "python3".to_owned(),
+            args: vec![script_path.to_string_lossy().into_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(1_000),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", Some("zh".to_owned())),
+            vec![1, -2, 258],
+        );
+
+        let events = LegacyCommandBatchRunner
+            .recognize(&spec, &request)
+            .expect("legacy runner should decode helper output");
+        std::fs::remove_file(script_path).unwrap();
+
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::FinalText {
+                    text: "1|-2|258".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_command_batch_runner_rejects_empty_stdout() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "cat >/dev/null".to_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(1_000),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", None),
+            vec![1, 2, 3],
+        );
+
+        let error = LegacyCommandBatchRunner
+            .recognize(&spec, &request)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("legacy command ASR provider `cmd` returned no text")
+        ));
     }
 
     #[test]
