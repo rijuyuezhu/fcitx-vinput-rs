@@ -21,3 +21,5 @@ jobs:
       - run: cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
       - run: cargo test -p vinput-audio --features=pipewire-backend
       - run: cargo clippy -p vinput-audio --all-targets --features=pipewire-backend -- -D warnings
+      - run: cargo test -p vinput-cli --features=pipewire-backend --test audio_devices
+      - run: cargo clippy -p vinput-cli --all-targets --features=pipewire-backend -- -D warnings
