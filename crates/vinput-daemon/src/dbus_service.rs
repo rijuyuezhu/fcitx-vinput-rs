@@ -234,7 +234,8 @@ impl VinputDbusService {
     /// Return text adapter diagnostic state JSON.
     #[zbus(name = "GetTextAdapterState")]
     async fn get_text_adapter_state(&self) -> fdo::Result<String> {
-        let runtime = self.runtime.lock().await;
+        let mut runtime = self.runtime.lock().await;
+        runtime.refresh_text_adapters();
         serde_json::to_string(&runtime.configured_text_adapter_state_for_runtime())
             .map_err(Self::map_json_error)
     }

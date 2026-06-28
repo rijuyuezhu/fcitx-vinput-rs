@@ -235,6 +235,23 @@ impl RuntimeState {
         self.text_adapter_pid(adapter_id).is_some()
     }
 
+    /// Reaps supervised text adapters that have already exited.
+    pub fn refresh_text_adapters(&mut self) -> Vec<String> {
+        let exited_adapter_ids: Vec<_> = self
+            .adapter_processes
+            .iter_mut()
+            .filter_map(|(adapter_id, process)| match process.child.try_wait() {
+                Ok(Some(_status)) => Some(adapter_id.clone()),
+                Ok(None) | Err(_) => None,
+            })
+            .collect();
+        for adapter_id in &exited_adapter_ids {
+            self.adapter_processes.remove(adapter_id);
+            let _ = self.adapter_runtime_paths.remove_pid(adapter_id);
+        }
+        exited_adapter_ids
+    }
+
     /// Starts a configured command text adapter process.
     pub fn start_text_adapter(&mut self, adapter_id: &str) -> Result<u32, RuntimeError> {
         if self.adapter_processes.contains_key(adapter_id) {
@@ -792,6 +809,42 @@ mod tests {
 
         drop(runtime);
 
+        assert!(!pid_path.exists());
+        let _ = std::fs::remove_dir_all(runtime_dir);
+    }
+
+    #[test]
+    fn refresh_text_adapters_reaps_exited_processes() {
+        let runtime_dir = unique_adapter_runtime_dir("refresh-exited");
+        let pid_path = runtime_dir.join("cmd-adapter.pid");
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "true".to_owned(),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        let mut runtime = RuntimeState::new(config)
+            .unwrap()
+            .with_adapter_runtime_paths(AdapterRuntimePaths::new(runtime_dir.clone()));
+
+        runtime.start_text_adapter("cmd-adapter").unwrap();
+        assert!(pid_path.exists());
+
+        let mut exited = Vec::new();
+        for _ in 0..20 {
+            exited = runtime.refresh_text_adapters();
+            if !exited.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        assert_eq!(exited, ["cmd-adapter".to_owned()]);
+        assert!(!runtime.is_text_adapter_running("cmd-adapter"));
+        assert_eq!(runtime.text_adapter_pid("cmd-adapter"), None);
         assert!(!pid_path.exists());
         let _ = std::fs::remove_dir_all(runtime_dir);
     }
