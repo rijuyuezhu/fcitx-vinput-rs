@@ -396,7 +396,13 @@ impl RuntimeState {
                 .active_session
                 .take()
                 .ok_or(RuntimeError::MissingAsrSession)?;
-            let pcm = self.stop_and_process_recording()?;
+            let pcm = match self.stop_and_process_recording() {
+                Ok(pcm) => pcm,
+                Err(error) => {
+                    let _ = session.cancel();
+                    return Err(error);
+                }
+            };
             session.push_pcm(&pcm).map_err(RuntimeError::Asr)?;
             self.capture_partial_events(&mut *session)?;
             session.finish().map_err(RuntimeError::Asr)?;
@@ -1378,7 +1384,8 @@ mod tests {
     #[test]
     fn recorder_stop_failure_cancels_and_returns_to_idle() {
         let config = VinputConfig::bundled_default().unwrap();
-        let backend = MockAsrBackend::streaming("listening", "custom final");
+        let cancelled = Arc::new(Mutex::new(false));
+        let backend = CancelTrackingBackend::new(Arc::clone(&cancelled));
         let events = Arc::new(Mutex::new(Vec::new()));
         let recorder = StopFailureRecorder::new(Arc::clone(&events));
         let mut runtime =
@@ -1395,6 +1402,7 @@ mod tests {
         ));
         assert_eq!(runtime.status(), ServiceStatus::Idle);
         assert!(runtime.partial_text().is_none());
+        assert!(*cancelled.lock().expect("cancel lock poisoned"));
         assert_eq!(
             *events.lock().expect("events lock poisoned"),
             vec!["begin", "stop-error", "cancel"]
