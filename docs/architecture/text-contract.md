@@ -41,4 +41,4 @@ The daemon exposes `text-adapters` as a CLI diagnostic subcommand and `GetTextAd
 - `single_adapter_id`: the only configured adapter id, or `null` when no unique adapter exists.
 - `adapters`: sanitized per-adapter summaries with `id`, `kind`, `command`, `args`, `env_count`, and `has_working_dir`.
 
-Diagnostics intentionally do not execute helpers. They include command and args for routing visibility, but never include environment values or the configured working directory path.
+Diagnostics intentionally do not execute helpers or construct runtime backends. They include command and args for routing visibility, but never include environment values or the configured working directory path. Passing `--configured-backends` does not change `print-config`, `asr-state`, or `text-adapters`; those commands are safe to run even when configured runtime backends are unavailable.
