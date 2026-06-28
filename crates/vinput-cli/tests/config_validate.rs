@@ -16,6 +16,34 @@ fn write_temp_config(contents: &str) -> std::path::PathBuf {
     path
 }
 
+fn default_config_path() -> std::path::PathBuf {
+    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../../data/default-config.json");
+    assert!(path.exists(), "default config fixture should exist");
+    path
+}
+
+#[test]
+fn config_validate_accepts_committed_default_fixture() {
+    let path = default_config_path();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["config", "validate"])
+        .arg(&path)
+        .arg("--summary-only")
+        .output()
+        .expect("run vinput config validate on default fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["active_provider"], "sherpa-onnx");
+    assert_eq!(value["active_scene"], "__raw__");
+    assert_eq!(value["provider_count"], 1);
+    assert_eq!(value["scene_count"], 2);
+}
+
 #[test]
 fn config_validate_prints_summary_for_valid_config() {
     let path = write_temp_config(
