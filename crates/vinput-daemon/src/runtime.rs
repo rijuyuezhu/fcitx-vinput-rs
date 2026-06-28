@@ -747,6 +747,56 @@ mod tests {
         }
     }
 
+    struct StopFailureRecorder {
+        events: Arc<Mutex<Vec<&'static str>>>,
+        recording: bool,
+    }
+
+    impl StopFailureRecorder {
+        fn new(events: Arc<Mutex<Vec<&'static str>>>) -> Self {
+            Self {
+                events,
+                recording: false,
+            }
+        }
+    }
+
+    impl AudioRecorder for StopFailureRecorder {
+        fn begin_recording(&mut self, _target: CaptureTarget) -> Result<(), AudioError> {
+            self.events
+                .lock()
+                .expect("events lock poisoned")
+                .push("begin");
+            self.recording = true;
+            Ok(())
+        }
+
+        fn set_chunk_callback(&mut self, _callback: Option<AudioChunkCallback>) {}
+
+        fn stop_and_get_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
+            self.events
+                .lock()
+                .expect("events lock poisoned")
+                .push("stop-error");
+            Err(AudioError::RecordingBackendUnavailable(
+                "test stop failed".to_owned(),
+            ))
+        }
+
+        fn cancel_recording(&mut self) -> Result<(), AudioError> {
+            self.events
+                .lock()
+                .expect("events lock poisoned")
+                .push("cancel");
+            self.recording = false;
+            Ok(())
+        }
+
+        fn is_recording(&self) -> bool {
+            self.recording
+        }
+    }
+
     struct BeginFailureRecorder;
 
     impl AudioRecorder for BeginFailureRecorder {
@@ -1270,6 +1320,32 @@ mod tests {
             panic!("default backend should be unsupported in current prototype");
         };
         assert!(matches!(error, super::RuntimeError::Asr(_)));
+    }
+
+    #[test]
+    fn recorder_stop_failure_cancels_and_returns_to_idle() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let backend = MockAsrBackend::streaming("listening", "custom final");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let recorder = StopFailureRecorder::new(Arc::clone(&events));
+        let mut runtime =
+            RuntimeState::with_audio_recorder(config, Box::new(backend), Box::new(recorder))
+                .unwrap();
+
+        runtime.start_recording().unwrap();
+        let error = runtime.stop_recording(None).unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::RuntimeError::Audio(AudioError::RecordingBackendUnavailable(message))
+                if message == "test stop failed"
+        ));
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
+        assert_eq!(
+            *events.lock().expect("events lock poisoned"),
+            vec!["begin", "stop-error", "cancel"]
+        );
     }
 
     #[test]
