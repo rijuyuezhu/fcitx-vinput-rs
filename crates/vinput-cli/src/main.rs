@@ -186,6 +186,7 @@ fn print_protocol() -> anyhow::Result<()> {
             dbus::method::STOP_RECORDING,
             dbus::method::GET_STATUS,
             dbus::method::GET_ASR_BACKEND_STATE,
+            dbus::method::GET_TEXT_ADAPTER_STATE,
             dbus::method::RELOAD_ASR_BACKEND,
             dbus::method::START_ADAPTER,
             dbus::method::STOP_ADAPTER,

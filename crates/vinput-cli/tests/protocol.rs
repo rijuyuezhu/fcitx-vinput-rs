@@ -22,6 +22,12 @@ fn protocol_prints_legacy_dbus_contract() {
             .contains(&serde_json::Value::String("StartRecording".to_owned()))
     );
     assert!(
+        value["methods"]
+            .as_array()
+            .expect("methods should be an array")
+            .contains(&serde_json::Value::String("GetTextAdapterState".to_owned()))
+    );
+    assert!(
         value["signals"]
             .as_array()
             .expect("signals should be an array")
