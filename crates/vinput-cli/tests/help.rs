@@ -1,4 +1,4 @@
-//! Integration tests for top-level CLI help output.
+//! Integration tests for CLI help output.
 
 use std::process::Command;
 
