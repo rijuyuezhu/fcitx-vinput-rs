@@ -67,3 +67,20 @@ pub fn assert_json_success(output: Output, context: &str) -> serde_json::Value {
         )
     })
 }
+
+#[allow(dead_code)]
+pub fn markdown_note_names(dir: &std::path::Path) -> Vec<String> {
+    let mut note_files = std::fs::read_dir(dir)
+        .expect("read markdown note dir")
+        .map(|entry| entry.expect("read markdown note entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
+        .filter_map(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .filter(|name| name != "README.md")
+        .collect::<Vec<_>>();
+    note_files.sort();
+    assert!(!note_files.is_empty(), "markdown notes should exist");
+    note_files
+}

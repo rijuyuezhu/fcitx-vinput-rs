@@ -4,7 +4,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::{workspace_crate_names, workspace_file};
+use common::{markdown_note_names, workspace_crate_names, workspace_file};
 
 fn architecture_dir() -> PathBuf {
     workspace_file("docs/architecture")
@@ -29,20 +29,9 @@ fn markdown_link_targets(markdown: &str) -> Vec<&str> {
 fn architecture_index_lists_all_notes() {
     let dir = architecture_dir();
     let index = std::fs::read_to_string(dir.join("README.md")).expect("read architecture index");
-    let mut note_files = std::fs::read_dir(&dir)
-        .expect("read architecture dir")
-        .map(|entry| entry.expect("read architecture entry").path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
-        .filter_map(|path| path.file_name().map(ToOwned::to_owned))
-        .filter(|name| name != "README.md")
-        .collect::<Vec<_>>();
-    note_files.sort();
-
-    assert!(!note_files.is_empty(), "architecture notes should exist");
-    for file_name in note_files {
-        let file_name = file_name.to_string_lossy();
+    for file_name in markdown_note_names(&dir) {
         assert!(
-            index.contains(file_name.as_ref()),
+            index.contains(&file_name),
             "architecture index should link `{file_name}`"
         );
     }
