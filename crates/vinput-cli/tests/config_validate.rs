@@ -62,7 +62,7 @@ fn config_validate_prints_summary_for_valid_config() {
     assert_eq!(value["ok"], true);
     assert_eq!(value["active_scene"], "raw");
     assert_eq!(value["active_provider"], "p");
-    assert_eq!(value["scene_count"], 1);
+    assert_eq!(value["scene_count"], 3);
     assert_eq!(value["provider_count"], 1);
     assert_eq!(value["registry_mirror_count"], 0);
 }
@@ -320,7 +320,7 @@ fn config_validate_summary_only_matches_summary_shape() {
 
     let value = assert_json_success(output, "config summary");
     assert_eq!(value["ok"], true);
-    assert_eq!(value["scene_count"], 1);
+    assert_eq!(value["scene_count"], 3);
     assert!(value.get("scenes").is_none());
 }
 

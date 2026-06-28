@@ -73,6 +73,7 @@ impl VinputConfig {
         if self.scenes.active_scene.is_empty() {
             RAW_SCENE_ID.clone_into(&mut self.scenes.active_scene);
         }
+        ensure_builtin_scenes(&mut self.scenes.definitions);
         self
     }
 
@@ -107,6 +108,33 @@ impl VinputConfig {
             .definitions
             .iter()
             .find(|scene| scene.id == self.scenes.active_scene)
+    }
+}
+
+fn ensure_builtin_scenes(definitions: &mut Vec<SceneDefinition>) {
+    if !definitions.iter().any(|scene| scene.id == RAW_SCENE_ID) {
+        definitions.push(SceneDefinition {
+            id: RAW_SCENE_ID.to_owned(),
+            label: "__label_raw__".to_owned(),
+            prompt: None,
+            provider_id: None,
+            model: None,
+            candidate_count: 0,
+            timeout_ms: None,
+            context_lines: 0,
+        });
+    }
+    if !definitions.iter().any(|scene| scene.id == COMMAND_SCENE_ID) {
+        definitions.push(SceneDefinition {
+            id: COMMAND_SCENE_ID.to_owned(),
+            label: "__label_command__".to_owned(),
+            prompt: None,
+            provider_id: None,
+            model: None,
+            candidate_count: 1,
+            timeout_ms: None,
+            context_lines: 0,
+        });
     }
 }
 
@@ -854,6 +882,67 @@ mod tests {
             error,
             super::ConfigError::ReadFile { path: error_path, .. } if error_path == path
         ));
+    }
+
+    #[test]
+    fn normalization_inserts_legacy_builtin_scenes_for_minimal_configs() {
+        let config = VinputConfig::from_json_str(
+            r#"{
+              "version": 1,
+              "asr": {
+                "active_provider": "p",
+                "providers": [{"id":"p","type":"local"}]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.scenes.active_scene, RAW_SCENE_ID);
+        let raw = config
+            .scenes
+            .definitions
+            .iter()
+            .find(|scene| scene.id == RAW_SCENE_ID)
+            .unwrap();
+        let command = config
+            .scenes
+            .definitions
+            .iter()
+            .find(|scene| scene.id == COMMAND_SCENE_ID)
+            .unwrap();
+        assert_eq!(raw.label, "__label_raw__");
+        assert_eq!(raw.candidate_count, 0);
+        assert_eq!(command.label, "__label_command__");
+        assert_eq!(command.candidate_count, 1);
+    }
+
+    #[test]
+    fn normalization_preserves_existing_builtin_scene_definitions() {
+        let config = VinputConfig::from_json_str(
+            r#"{
+              "version": 1,
+              "asr": {
+                "active_provider": "p",
+                "providers": [{"id":"p","type":"local"}]
+              },
+              "scenes": {
+                "active_scene": "__raw__",
+                "definitions": [
+                  {"id":"__raw__","label":"Custom Raw","candidate_count":2},
+                  {"id":"__command__","label":"Custom Command","candidate_count":3}
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.scenes.definitions.len(), 2);
+        assert_eq!(config.scenes.definitions[0].label, "Custom Raw");
+        assert_eq!(config.scenes.definitions[0].candidate_count, 2);
+        assert_eq!(config.scenes.definitions[1].label, "Custom Command");
+        assert_eq!(config.scenes.definitions[1].candidate_count, 3);
     }
 
     #[test]
