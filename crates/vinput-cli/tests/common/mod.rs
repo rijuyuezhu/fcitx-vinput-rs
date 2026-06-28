@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf, process::Command};
+use std::{
+    fs,
+    path::PathBuf,
+    process::{Command, Output},
+};
 
 pub fn workspace_file(path: &str) -> PathBuf {
     let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -41,4 +45,25 @@ pub fn write_temp_json(prefix: &str, contents: &str) -> PathBuf {
 #[allow(dead_code)]
 pub fn vinput_command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_vinput"))
+}
+
+#[allow(dead_code)]
+pub fn assert_json_success(output: Output, context: &str) -> serde_json::Value {
+    let Output {
+        status,
+        stdout,
+        stderr,
+    } = output;
+    assert!(
+        status.success(),
+        "{context}: command failed with status {:?}, stderr: {}",
+        status.code(),
+        String::from_utf8_lossy(&stderr)
+    );
+    serde_json::from_slice(&stdout).unwrap_or_else(|error| {
+        panic!(
+            "{context}: stdout should be JSON: {error}; stdout: {}",
+            String::from_utf8_lossy(&stdout)
+        )
+    })
 }

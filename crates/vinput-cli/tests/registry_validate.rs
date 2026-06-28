@@ -4,7 +4,7 @@ mod common;
 
 use std::fs;
 
-use common::{vinput_command, workspace_file, write_temp_json};
+use common::{assert_json_success, vinput_command, workspace_file, write_temp_json};
 use vinput_registry::RegistryIndex;
 
 fn write_temp_registry(contents: &str) -> std::path::PathBuf {
@@ -52,9 +52,7 @@ fn registry_validate_accepts_committed_sample_fixture() {
         .output()
         .expect("run vinput registry validate on sample fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry summary should be JSON");
+    let value = assert_json_success(output, "registry summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["model_count"], 1);
     assert_eq!(value["adapter_count"], 1);
@@ -72,9 +70,7 @@ fn registry_plan_accepts_committed_sample_fixture() {
         .output()
         .expect("run vinput registry plan on sample fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry plan summary should be JSON");
+    let value = assert_json_success(output, "registry plan summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["asset_count"], 1);
     assert_eq!(value["unknown_size_count"], 1);
@@ -118,9 +114,7 @@ fn registry_validate_prints_summary_for_valid_index() {
         .expect("run vinput registry validate");
     fs::remove_file(&path).expect("remove temporary registry fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry summary should be JSON");
+    let value = assert_json_success(output, "registry summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["model_count"], 1);
     assert_eq!(value["adapter_count"], 1);
@@ -270,9 +264,7 @@ fn registry_plan_prints_assets_with_resolved_urls() {
         .expect("run vinput registry plan");
     fs::remove_file(&path).expect("remove temporary registry fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    let value = assert_json_success(output, "registry plan");
     assert_eq!(value["ok"], true);
     assert_eq!(value["asset_count"], 2);
     assert_eq!(value["known_size_bytes"], 5);
@@ -330,9 +322,7 @@ fn registry_install_plan_prints_targets_and_checksum_policy() {
         .expect("run vinput registry install-plan");
     fs::remove_file(&path).expect("remove temporary registry fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry install plan should be JSON");
+    let value = assert_json_success(output, "registry install plan");
     assert_eq!(value["ok"], true);
     assert_eq!(value["target_root"], "/tmp/vinput-assets");
     assert_eq!(value["asset_count"], 2);
@@ -373,9 +363,7 @@ fn registry_install_plan_summary_only_can_select_one_model() {
         .expect("run vinput registry install-plan");
     fs::remove_file(&path).expect("remove temporary registry fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry install plan should be JSON");
+    let value = assert_json_success(output, "registry install plan");
     assert_eq!(value["ok"], true);
     assert_eq!(value["asset_count"], 1);
     assert_eq!(value["known_size_bytes"], 5);
@@ -427,9 +415,7 @@ fn registry_plan_uses_custom_config_mirrors() {
     fs::remove_file(&registry_path).expect("remove temporary registry fixture");
     fs::remove_file(&config_path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    let value = assert_json_success(output, "registry plan");
     assert_eq!(
         value["assets"][0]["urls"][0],
         "https://custom.invalid/root/models/m.tar"
@@ -478,9 +464,7 @@ fn registry_install_plan_uses_custom_config_mirrors() {
     fs::remove_file(&registry_path).expect("remove temporary registry fixture");
     fs::remove_file(&config_path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry install plan should be JSON");
+    let value = assert_json_success(output, "registry install plan");
     assert_eq!(value["assets"][0]["urls"][0], "mirror/models/m.tar");
 }
 
@@ -530,9 +514,7 @@ fn registry_plan_can_select_one_model() {
         .expect("run vinput registry plan");
     fs::remove_file(&path).expect("remove temporary registry fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    let value = assert_json_success(output, "registry plan");
     assert_eq!(value["asset_count"], 1);
     assert_eq!(value["assets"][0]["entry_kind"], "model");
     assert_eq!(value["assets"][0]["entry_id"], "m");
@@ -588,9 +570,7 @@ fn registry_plan_can_select_one_adapter() {
         .expect("run vinput registry plan");
     fs::remove_file(&path).expect("remove temporary registry fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    let value = assert_json_success(output, "registry plan");
     assert_eq!(value["asset_count"], 1);
     assert_eq!(value["assets"][0]["entry_kind"], "adapter");
     assert_eq!(value["assets"][0]["entry_id"], "a");
@@ -687,9 +667,7 @@ fn registry_plan_summary_only_omits_assets() {
         .expect("run vinput registry plan");
     fs::remove_file(&path).expect("remove temporary registry fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry plan should be JSON");
+    let value = assert_json_success(output, "registry plan");
     assert_eq!(value["asset_count"], 1);
     assert_eq!(value["known_size_bytes"], 9);
     assert_eq!(value["unknown_size_count"], 0);
@@ -803,9 +781,7 @@ fn registry_prints_bundled_mirror_summary() {
         .output()
         .expect("run vinput registry");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("registry summary should be JSON");
+    let value = assert_json_success(output, "registry summary");
     assert!(value["base_url_count"].as_u64().unwrap_or_default() > 0);
     assert!(
         value["index_urls"]

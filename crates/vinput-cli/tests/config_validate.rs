@@ -4,7 +4,7 @@ mod common;
 
 use std::fs;
 
-use common::{vinput_command, workspace_file, write_temp_json};
+use common::{assert_json_success, vinput_command, workspace_file, write_temp_json};
 
 fn write_temp_config(contents: &str) -> std::path::PathBuf {
     write_temp_json("vinput-config", contents)
@@ -25,9 +25,7 @@ fn config_validate_accepts_committed_default_fixture() {
         .output()
         .expect("run vinput config validate on default fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    let value = assert_json_success(output, "config summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["active_provider"], "sherpa-onnx");
     assert_eq!(value["active_scene"], "__raw__");
@@ -60,9 +58,7 @@ fn config_validate_prints_summary_for_valid_config() {
         .expect("run vinput config validate");
     fs::remove_file(&path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    let value = assert_json_success(output, "config summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["active_scene"], "raw");
     assert_eq!(value["active_provider"], "p");
@@ -322,9 +318,7 @@ fn config_validate_summary_only_matches_summary_shape() {
         .expect("run vinput config validate");
     fs::remove_file(&path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    let value = assert_json_success(output, "config summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["scene_count"], 1);
     assert!(value.get("scenes").is_none());
@@ -957,9 +951,7 @@ fn asr_state_accepts_committed_default_fixture() {
         .output()
         .expect("run vinput asr-state on default fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(output, "ASR state");
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["target_model_id"], "");
     assert_eq!(value["has_effective_backend"], false);
@@ -991,9 +983,7 @@ fn asr_state_reports_mock_provider_ready() {
         .expect("run vinput asr-state");
     fs::remove_file(&path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(output, "ASR state");
     assert_eq!(value["target_provider_id"], "mock");
     assert_eq!(value["target_model_id"], "fixture-model");
     assert_eq!(value["effective_provider_id"], "mock");
@@ -1026,9 +1016,7 @@ fn asr_state_reports_unavailable_provider() {
         .expect("run vinput asr-state");
     fs::remove_file(&path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(output, "ASR state");
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["target_model_id"], "paraformer");
     assert_eq!(value["has_effective_backend"], false);
@@ -1066,9 +1054,7 @@ fn asr_state_reports_remote_provider_endpoint() {
         .expect("run vinput asr-state");
     fs::remove_file(&path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(output, "ASR state");
     assert_eq!(value["target_provider_id"], "remote");
     assert_eq!(value["target_model_id"], "cloud");
     assert_eq!(
@@ -1103,9 +1089,7 @@ fn asr_state_reports_command_provider_skeleton_ready() {
         .expect("run vinput asr-state");
     fs::remove_file(&path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(output, "ASR state");
     assert_eq!(value["target_provider_id"], "cmd");
     assert_eq!(value["target_model_id"], "cmd-model");
     assert_eq!(value["effective_provider_id"], "cmd");
@@ -1168,9 +1152,7 @@ fn config_validate_accepts_positive_asr_provider_timeout() {
         .expect("run vinput config validate");
     fs::remove_file(&path).expect("remove temporary config fixture");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    let value = assert_json_success(output, "config summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["active_provider"], "p");
 }
@@ -1393,9 +1375,7 @@ fn config_prints_bundled_summary() {
         .output()
         .expect("run vinput config");
 
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("config summary should be JSON");
+    let value = assert_json_success(output, "config summary");
     assert_eq!(value["ok"], true);
     assert_eq!(value["active_scene"], "__raw__");
     assert_eq!(value["active_provider"], "sherpa-onnx");
