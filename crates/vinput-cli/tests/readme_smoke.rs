@@ -28,15 +28,25 @@ fn just_check_recipes(justfile: &str) -> Vec<&str> {
         .collect()
 }
 
-fn assert_readme_lists_in_order(readme: &str, commands: impl IntoIterator<Item = impl AsRef<str>>) {
-    let mut search_from = 0;
-    for command in commands {
-        let command = command.as_ref();
-        let offset = readme[search_from..]
-            .find(command)
-            .unwrap_or_else(|| panic!("README should list command `{command}`"));
-        search_from += offset + command.len();
-    }
+fn readme_raw_commands(readme: &str) -> Vec<&str> {
+    let raw_heading = "Equivalent raw commands:";
+    let after_heading = readme
+        .split_once(raw_heading)
+        .map(|(_, suffix)| suffix)
+        .expect("README should include equivalent raw commands heading");
+    let after_opening_fence = after_heading
+        .split_once("```sh")
+        .map(|(_, suffix)| suffix)
+        .expect("README raw commands should use a shell code block");
+    let block = after_opening_fence
+        .split_once("```")
+        .map(|(block, _)| block)
+        .expect("README raw commands shell block should be closed");
+    block
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect()
 }
 
 #[test]
@@ -52,7 +62,12 @@ fn readme_lists_just_ci_commands_in_order() {
         !commands.is_empty(),
         "justfile check recipe should expand to commands"
     );
-    assert_readme_lists_in_order(&readme, commands);
+    let raw_commands = readme_raw_commands(&readme);
+    assert_eq!(
+        &raw_commands[..commands.len()],
+        commands.as_slice(),
+        "README raw command block should start with just ci commands"
+    );
 }
 
 #[test]
@@ -65,5 +80,14 @@ fn readme_lists_just_smoke_commands_in_order() {
         !smoke_commands.is_empty(),
         "justfile should define smoke commands"
     );
-    assert_readme_lists_in_order(&readme, smoke_commands);
+    let check_command_count = just_check_recipes(&justfile)
+        .into_iter()
+        .flat_map(|recipe| just_recipe_commands(&justfile, recipe))
+        .count();
+    let raw_commands = readme_raw_commands(&readme);
+    assert_eq!(
+        &raw_commands[check_command_count..],
+        smoke_commands.as_slice(),
+        "README raw command block should end with just smoke commands"
+    );
 }
