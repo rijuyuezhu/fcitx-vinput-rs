@@ -24,6 +24,10 @@ struct Args {
     #[arg(long)]
     dbus: bool,
 
+    /// Use configured ASR and command text adapters instead of mock runtime backends.
+    #[arg(long)]
+    configured_backends: bool,
+
     /// Optional config JSON file. Omitted to use the bundled default config.
     #[arg(long)]
     config: Option<PathBuf>,
@@ -51,7 +55,12 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let config = load_config(args.config.as_ref())?;
     config.validate().context("validate daemon config")?;
-    let mut runtime = RuntimeState::new(config.clone()).context("initialize runtime")?;
+    let mut runtime = if args.configured_backends {
+        RuntimeState::with_configured_backends(config.clone())
+    } else {
+        RuntimeState::new(config.clone())
+    }
+    .context("initialize runtime")?;
 
     match args.command {
         Some(Command::PrintConfig) => {

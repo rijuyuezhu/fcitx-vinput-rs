@@ -132,6 +132,46 @@ fn asr_state_preserves_command_provider_metadata() {
 }
 
 #[test]
+fn once_can_use_configured_backends() {
+    let config = TempConfig::write(
+        "configured-backends-once",
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "mock",
+            "providers": [{"id":"mock","type":"local","model":"fixture"}]
+          },
+          "llm": {
+            "adapters": [{
+              "id":"cmd-adapter",
+              "command":"python3",
+              "args":["-c", "import sys; sys.stdin.read(); print('{\"text\":\"cli configured final\"}')"]
+            }]
+          },
+          "scenes": {
+            "active_scene": "needs-adapter",
+            "definitions": [{"id":"needs-adapter","label":"Needs adapter","prompt":"polish","candidate_count":1}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&config.path)
+        .arg("--configured-backends")
+        .arg("--once")
+        .output()
+        .expect("run vinput-daemon --once with configured backends");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("recognition payload should be JSON");
+    assert_eq!(value["commit_text"], "cli configured final");
+}
+
+#[test]
 fn help_lists_config_option() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")
@@ -141,4 +181,5 @@ fn help_lists_config_option() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
     assert!(stdout.contains("--config"));
+    assert!(stdout.contains("--configured-backends"));
 }
