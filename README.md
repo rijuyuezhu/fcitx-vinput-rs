@@ -56,6 +56,8 @@ cargo run -p vinput-cli -- config validate data/default-config.json --summary-on
 cargo run -p vinput-cli -- asr-state
 cargo run -p vinput-cli -- asr-state --config data/default-config.json
 cargo run -p vinput-cli -- registry
+cargo run -p vinput-cli -- registry validate data/sample-registry-index.json
+cargo run -p vinput-cli -- registry plan data/sample-registry-index.json --summary-only
 cargo run -p vinput-cli -- mock-result '你好'
 cargo run -p vinput-daemon -- print-config
 cargo run -p vinput-daemon -- asr-state
