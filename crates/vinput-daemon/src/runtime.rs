@@ -120,6 +120,14 @@ impl RuntimeState {
         AdapterRegistry::from_configs(&self.config.llm.adapters)
     }
 
+    /// Returns the only configured command text adapter id, if exactly one exists.
+    #[must_use]
+    pub fn single_configured_text_adapter_id(&self) -> Option<String> {
+        self.configured_text_adapters()
+            .single_command_adapter()
+            .map(|adapter| adapter.id().to_owned())
+    }
+
     /// Current daemon status.
     #[must_use]
     pub const fn status(&self) -> ServiceStatus {
@@ -531,6 +539,10 @@ mod tests {
                 .command_adapter("cmd-adapter")
                 .map(vinput_text::CommandTextAdapter::command),
             Some("vinput-postprocess")
+        );
+        assert_eq!(
+            runtime.single_configured_text_adapter_id().as_deref(),
+            Some("cmd-adapter")
         );
     }
 
