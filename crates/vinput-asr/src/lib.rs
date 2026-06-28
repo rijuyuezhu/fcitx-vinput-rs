@@ -421,6 +421,58 @@ impl CommandAsrRunner for UnsupportedCommandAsrRunner {
     }
 }
 
+/// Parses one legacy command-streaming JSON line into recognition events.
+///
+/// Supported legacy event types are `session_started`, `partial`, `final`,
+/// `final_timestamps`, `error`, and `closed`. Unknown event types are ignored.
+pub fn parse_legacy_command_streaming_line(line: &str) -> Result<Vec<RecognitionEvent>, AsrError> {
+    let line = line.trim();
+    if line.is_empty() {
+        return Ok(Vec::new());
+    }
+    let payload = serde_json::from_str::<serde_json::Value>(line)
+        .map_err(|error| AsrError::Backend(format!("invalid streaming provider JSON: {error}")))?;
+    let event_type = payload
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    match event_type {
+        "partial" => Ok(payload
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(|text| {
+                vec![RecognitionEvent::PartialText {
+                    text: text.to_owned(),
+                }]
+            })
+            .unwrap_or_default()),
+        "final" | "final_timestamps" => Ok(payload
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(|text| {
+                vec![RecognitionEvent::FinalText {
+                    text: text.to_owned(),
+                }]
+            })
+            .unwrap_or_default()),
+        "error" => Ok(vec![RecognitionEvent::Error {
+            message: payload
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|message| !message.is_empty())
+                .unwrap_or("failed.")
+                .to_owned(),
+        }]),
+        "closed" => Ok(vec![RecognitionEvent::Completed]),
+        _ => Ok(Vec::new()),
+    }
+}
+
 /// Legacy process runner for command ASR providers.
 ///
 /// The original C++ batch command backend writes raw signed 16-bit little-endian
@@ -978,7 +1030,7 @@ mod tests {
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
         CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
         LegacyCommandBatchRunner, MockAsrBackend, RecognitionContext, RecognitionEvent,
-        events_to_payload,
+        events_to_payload, parse_legacy_command_streaming_line,
     };
     use vinput_audio::{PcmBuffer, PcmSpec};
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
@@ -1620,6 +1672,79 @@ sys.stdout.write('|'.join(str(sample) for sample in samples))
             AsrError::Backend(message)
                 if message.contains("legacy command ASR provider `cmd` returned no text")
         ));
+    }
+
+    #[test]
+    fn legacy_command_streaming_line_parser_maps_known_events() {
+        assert_eq!(
+            parse_legacy_command_streaming_line(r#"{"type":"partial","text":" hello "}"#).unwrap(),
+            vec![RecognitionEvent::PartialText {
+                text: "hello".to_owned()
+            }]
+        );
+        assert_eq!(
+            parse_legacy_command_streaming_line(r#"{"type":"final","text":" done "}"#).unwrap(),
+            vec![RecognitionEvent::FinalText {
+                text: "done".to_owned()
+            }]
+        );
+        assert_eq!(
+            parse_legacy_command_streaming_line(
+                r#"{"type":"final_timestamps","text":" timed final ","timestamps":[1]}"#,
+            )
+            .unwrap(),
+            vec![RecognitionEvent::FinalText {
+                text: "timed final".to_owned()
+            }]
+        );
+        assert_eq!(
+            parse_legacy_command_streaming_line(r#"{"type":"error","message":" boom "}"#).unwrap(),
+            vec![RecognitionEvent::Error {
+                message: "boom".to_owned()
+            }]
+        );
+        assert_eq!(
+            parse_legacy_command_streaming_line(r#"{"type":"closed"}"#).unwrap(),
+            vec![RecognitionEvent::Completed]
+        );
+    }
+
+    #[test]
+    fn legacy_command_streaming_line_parser_ignores_noop_events() {
+        for line in [
+            "",
+            "   ",
+            r#"{"type":"session_started"}"#,
+            r#"{"type":"partial","text":""}"#,
+            r#"{"type":"final","text":""}"#,
+            r#"{"type":"unknown","text":"ignored"}"#,
+        ] {
+            assert!(
+                parse_legacy_command_streaming_line(line)
+                    .unwrap()
+                    .is_empty(),
+                "line should not yield events: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_command_streaming_line_parser_rejects_invalid_json() {
+        let error = parse_legacy_command_streaming_line("not json").unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message) if message.contains("invalid streaming provider JSON")
+        ));
+    }
+
+    #[test]
+    fn legacy_command_streaming_line_parser_defaults_blank_error_message() {
+        assert_eq!(
+            parse_legacy_command_streaming_line(r#"{"type":"error","message":""}"#).unwrap(),
+            vec![RecognitionEvent::Error {
+                message: "failed.".to_owned()
+            }]
+        );
     }
 
     #[test]
