@@ -53,6 +53,7 @@ cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D wa
 cargo run -p vinput-cli -- protocol
 cargo run -p vinput-cli -- config
 cargo run -p vinput-cli -- asr-state
+cargo run -p vinput-cli -- asr-state --config data/default-config.json
 cargo run -p vinput-cli -- registry
 cargo run -p vinput-cli -- mock-result '你好'
 cargo run -p vinput-daemon -- print-config
