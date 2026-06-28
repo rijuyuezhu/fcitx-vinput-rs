@@ -453,8 +453,8 @@ mod tests {
 
     use super::RuntimeState;
     use vinput_asr::{
-        AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, CommandAsrRequest,
-        MockAsrBackend, RecognitionContext, RecognitionSession,
+        AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, MockAsrBackend,
+        RecognitionContext, RecognitionSession,
     };
     use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
     use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
@@ -689,8 +689,8 @@ mod tests {
             command: Some("sh".to_owned()),
             args: vec![
                 "-c".to_owned(),
-                r#"cat >/dev/null; printf '%s
-' '{"text":"runtime command final"}'"#
+                r"cat >/dev/null; printf '%s
+' 'runtime command final'"
                     .to_owned(),
             ],
             env: std::collections::HashMap::new(),
@@ -729,7 +729,7 @@ mod tests {
             args: vec![
                 "-c".to_owned(),
                 r#"cat > "$ASR_REQUEST"; printf '%s
-' '{"text":"runtime command final"}'"#
+' 'runtime command final'"#
                     .to_owned(),
             ],
             env: std::collections::HashMap::from([(
@@ -759,17 +759,19 @@ mod tests {
         let payload = runtime.stop_recording(None).unwrap();
         assert_eq!(payload.commit_text, "runtime command final");
 
-        let request: CommandAsrRequest =
-            serde_json::from_str(&std::fs::read_to_string(&capture_path).unwrap()).unwrap();
+        let bytes = std::fs::read(&capture_path).unwrap();
         std::fs::remove_file(&capture_path).unwrap();
-        assert_eq!(request.pcm.sample_rate_hz, 48_000);
-        assert_eq!(request.pcm.channels, 2);
-        assert_eq!(request.samples.len(), 8);
+        let expected_samples = [4000_i16, -8000, 12000, -16000, 4000, -8000, 12000, -16000];
+        let expected_bytes = expected_samples
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(bytes, expected_bytes);
         assert_eq!(runtime.status(), ServiceStatus::Idle);
     }
 
     #[test]
-    fn configured_command_asr_report_includes_stop_partial() {
+    fn configured_legacy_command_asr_report_has_no_stop_partial() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "cmd".to_owned();
         config.asr.providers.push(AsrProviderConfig {
@@ -781,8 +783,8 @@ mod tests {
             command: Some("sh".to_owned()),
             args: vec![
                 "-c".to_owned(),
-                r#"cat >/dev/null; printf '%s
-' '{"partial_text":"runtime partial","text":"runtime final"}'"#
+                r"cat >/dev/null; printf '%s
+' 'runtime final'"
                     .to_owned(),
             ],
             env: std::collections::HashMap::new(),
@@ -794,7 +796,7 @@ mod tests {
         let report = runtime.stop_recording_report(None).unwrap();
 
         assert_eq!(report.payload.commit_text, "runtime final");
-        assert_eq!(report.partial_text.as_deref(), Some("runtime partial"));
+        assert!(report.partial_text.is_none());
         assert_eq!(runtime.status(), ServiceStatus::Idle);
         assert!(runtime.partial_text().is_none());
     }

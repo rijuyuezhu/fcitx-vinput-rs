@@ -923,7 +923,7 @@ impl AsrBackendFactory {
         if provider.kind == AsrProviderKind::Command {
             return Ok(Box::new(CommandAsrBackend::with_config(
                 provider,
-                ProcessCommandAsrRunner,
+                LegacyCommandBatchRunner,
             )?));
         }
         unsupported_provider(&provider.id, &provider.kind)
@@ -1171,9 +1171,10 @@ mod tests {
     use super::{
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
         CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
-        LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrBackend, RecognitionContext,
-        RecognitionEvent, events_to_payload, legacy_command_streaming_audio_line,
-        legacy_command_streaming_finish_line, parse_legacy_command_streaming_line,
+        LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrBackend,
+        ProcessCommandAsrRunner, RecognitionContext, RecognitionEvent, events_to_payload,
+        legacy_command_streaming_audio_line, legacy_command_streaming_finish_line,
+        parse_legacy_command_streaming_line,
     };
     use vinput_audio::{PcmBuffer, PcmSpec};
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
@@ -2008,7 +2009,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2059,7 +2060,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::command(
                 "__command__",
@@ -2111,7 +2112,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2137,7 +2138,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2162,7 +2163,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2193,7 +2194,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2221,7 +2222,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2246,7 +2247,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2380,7 +2381,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let mut session = backend
             .create_session(RecognitionContext::normal("raw", None))
             .expect("process runner should create a buffering session");
@@ -2389,6 +2390,38 @@ assert lines[1]['type'] == 'finish'
         assert_eq!(
             events_to_payload(&events).unwrap().commit_text,
             "asr failed"
+        );
+    }
+
+    #[test]
+    fn backend_factory_uses_legacy_batch_protocol_for_command_provider() {
+        let provider = AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: None,
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec!["-c".to_owned(), "cat >/dev/null; printf final".to_owned()],
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("legacy command backend should create a session");
+        session.push_audio(&[1, -2, 258]).unwrap();
+        session.finish().unwrap();
+
+        assert_eq!(
+            session.poll_events().unwrap(),
+            vec![
+                RecognitionEvent::FinalText {
+                    text: "final".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
         );
     }
 
@@ -2429,7 +2462,7 @@ assert lines[1]['type'] == 'finish'
             endpoint: None,
         };
 
-        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let backend = CommandAsrBackend::with_config(&provider, ProcessCommandAsrRunner).unwrap();
         let descriptor = backend.describe();
         assert_eq!(descriptor.provider_id, "cmd");
         assert_eq!(descriptor.model_id, "cmd-model");

@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dbus_facade_exposes_stop_time_partial() {
+    async fn dbus_facade_handles_legacy_command_asr_stdout() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "cmd".to_owned();
         config.asr.providers.push(AsrProviderConfig {
@@ -411,8 +411,8 @@ mod tests {
             command: Some("sh".to_owned()),
             args: vec![
                 "-c".to_owned(),
-                r#"cat >/dev/null; printf '%s
-' '{"partial_text":"dbus partial","text":"dbus final"}'"#
+                r"cat >/dev/null; printf '%s
+' 'dbus final'"
                     .to_owned(),
             ],
             env: std::collections::HashMap::new(),
@@ -430,7 +430,7 @@ mod tests {
 
         assert_eq!(payload.commit_text, "dbus final");
         assert_eq!(status, "idle");
-        assert_eq!(partial_text.as_deref(), Some("dbus partial"));
+        assert!(partial_text.is_none());
     }
 
     #[tokio::test]
