@@ -383,6 +383,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dbus_facade_uses_configured_text_adapter() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "mock".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "mock".to_owned(),
+            kind: AsrProviderKind::Local,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        config.scenes.active_scene = "needs-adapter".to_owned();
+        config
+            .scenes
+            .definitions
+            .push(vinput_config::SceneDefinition {
+                id: "needs-adapter".to_owned(),
+                label: "Needs adapter".to_owned(),
+                prompt: Some("polish".to_owned()),
+                provider_id: None,
+                model: None,
+                candidate_count: 1,
+                timeout_ms: None,
+                context_lines: 0,
+            });
+        config.llm.adapters.push(LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"text":"dbus configured final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        let service =
+            VinputDbusService::new(RuntimeState::with_configured_backends(config).unwrap());
+
+        assert_eq!(
+            service.start_recording_state().await.unwrap().0,
+            "recording"
+        );
+        let payload =
+            RecognitionPayload::from_json_str(&service.stop_recording_payload("").await.unwrap().0)
+                .unwrap();
+        assert_eq!(payload.commit_text, "dbus configured final");
+    }
+
+    #[tokio::test]
     async fn dbus_facade_preserves_remote_asr_endpoint() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "remote".to_owned();
