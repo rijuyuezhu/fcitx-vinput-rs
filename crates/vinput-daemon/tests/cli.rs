@@ -1,6 +1,11 @@
 //! Daemon binary CLI integration tests.
 
-use std::{fs, path::PathBuf, process::Command};
+use std::{
+    ffi::OsStr,
+    fs,
+    path::PathBuf,
+    process::{Command, Output},
+};
 
 struct TempConfig {
     path: PathBuf,
@@ -34,34 +39,69 @@ fn default_config_path() -> PathBuf {
     path
 }
 
+fn daemon_command() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+}
+
+fn run_daemon(args: &[&str], context: &str) -> Output {
+    daemon_command()
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| panic!("{context}: {error}"))
+}
+
+fn run_daemon_with_config(config_path: impl AsRef<OsStr>, args: &[&str], context: &str) -> Output {
+    let mut command = daemon_command();
+    command.arg("--config").arg(config_path).args(args);
+    command
+        .output()
+        .unwrap_or_else(|error| panic!("{context}: {error}"))
+}
+
+fn assert_json_success(output: Output, context: &str) -> serde_json::Value {
+    let Output {
+        status,
+        stdout,
+        stderr,
+    } = output;
+    assert!(
+        status.success(),
+        "{context}: command failed with status {:?}, stderr: {}",
+        status.code(),
+        String::from_utf8_lossy(&stderr)
+    );
+    serde_json::from_slice(&stdout).unwrap_or_else(|error| {
+        panic!(
+            "{context}: stdout should be JSON: {error}; stdout: {}",
+            String::from_utf8_lossy(&stdout)
+        )
+    })
+}
+
 #[test]
 fn print_config_accepts_committed_default_fixture() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(default_config_path())
-        .arg("print-config")
-        .output()
-        .expect("run vinput-daemon print-config on default fixture");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("print-config output should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(
+            default_config_path(),
+            &["print-config"],
+            "run vinput-daemon print-config on default fixture",
+        ),
+        "print-config output",
+    );
     assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
     assert_eq!(value["scenes"]["active_scene"], "__raw__");
 }
 
 #[test]
 fn asr_state_accepts_committed_default_fixture() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(default_config_path())
-        .arg("asr-state")
-        .output()
-        .expect("run vinput-daemon asr-state on default fixture");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(
+            default_config_path(),
+            &["asr-state"],
+            "run vinput-daemon asr-state on default fixture",
+        ),
+        "ASR state",
+    );
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["target_model_id"], "");
     assert_eq!(value["has_effective_backend"], false);
@@ -177,46 +217,40 @@ fn asr_state_preserves_command_provider_metadata() {
 
 #[test]
 fn print_config_ignores_configured_backend_runtime_init() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--configured-backends")
-        .arg("print-config")
-        .output()
-        .expect("run vinput-daemon --configured-backends print-config");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("config should be JSON");
+    let value = assert_json_success(
+        run_daemon(
+            &["--configured-backends", "print-config"],
+            "run vinput-daemon --configured-backends print-config",
+        ),
+        "config",
+    );
     assert_eq!(value["version"], 1);
     assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
 }
 
 #[test]
 fn asr_state_ignores_configured_backend_runtime_init() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--configured-backends")
-        .arg("asr-state")
-        .output()
-        .expect("run vinput-daemon --configured-backends asr-state");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    let value = assert_json_success(
+        run_daemon(
+            &["--configured-backends", "asr-state"],
+            "run vinput-daemon --configured-backends asr-state",
+        ),
+        "ASR state",
+    );
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["has_effective_backend"], false);
 }
 
 #[test]
 fn text_adapters_accepts_committed_default_fixture() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(default_config_path())
-        .arg("text-adapters")
-        .output()
-        .expect("run vinput-daemon text-adapters on default fixture");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("text adapter state should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(
+            default_config_path(),
+            &["text-adapters"],
+            "run vinput-daemon text-adapters on default fixture",
+        ),
+        "text adapter state",
+    );
     assert_eq!(value["adapter_count"], 0);
     assert_eq!(value["adapter_ids"], serde_json::json!([]));
     assert!(value["single_adapter_id"].is_null());
@@ -261,15 +295,13 @@ fn text_adapters_uses_config_file() {
 
 #[test]
 fn text_adapters_ignores_configured_backend_runtime_init() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--configured-backends")
-        .arg("text-adapters")
-        .output()
-        .expect("run vinput-daemon --configured-backends text-adapters");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("text adapter diagnostics should be JSON");
+    let value = assert_json_success(
+        run_daemon(
+            &["--configured-backends", "text-adapters"],
+            "run vinput-daemon --configured-backends text-adapters",
+        ),
+        "text adapter diagnostics",
+    );
     assert_eq!(value["adapter_count"], 0);
     assert_eq!(value["adapter_ids"], serde_json::json!([]));
 }
