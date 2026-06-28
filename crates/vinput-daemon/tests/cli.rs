@@ -688,6 +688,8 @@ fn text_adapters_reports_configured_adapter_summary() {
     assert_eq!(value["adapters"][0]["command"], "helper");
     assert_eq!(value["adapters"][0]["args"], serde_json::json!(["--json"]));
     assert_eq!(value["adapters"][0]["env_count"], 1);
+    assert_eq!(value["adapters"][0]["is_running"], false);
+    assert!(value["adapters"][0]["pid"].is_null());
     assert_eq!(value["adapters"][0]["has_working_dir"], true);
 }
 
