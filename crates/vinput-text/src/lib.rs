@@ -194,6 +194,44 @@ pub struct StartedAdapterProcess {
     pub child: Child,
 }
 
+/// Result of asking the supervisor to stop an adapter process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdapterStopOutcome {
+    /// No pid file existed, so no process was targeted.
+    NotRunning,
+    /// A TERM signal was sent and the pid file was removed.
+    Stopped {
+        /// Process id read from the pid file.
+        pid: u32,
+    },
+}
+
+/// Stops a text adapter process from its pid file and removes the pid file.
+pub fn stop_adapter_process(
+    adapter_id: &str,
+    paths: &AdapterRuntimePaths,
+) -> Result<AdapterStopOutcome, TextError> {
+    let Some(pid) = paths.read_pid(adapter_id)? else {
+        return Ok(AdapterStopOutcome::NotRunning);
+    };
+    let status = Command::new("kill")
+        .arg("-TERM")
+        .arg(pid.to_string())
+        .status()
+        .map_err(|error| {
+            TextError::AdapterRuntimeIo(format!(
+                "failed to invoke kill for text adapter `{adapter_id}` pid {pid}: {error}"
+            ))
+        })?;
+    if !status.success() {
+        return Err(TextError::AdapterRuntimeIo(format!(
+            "failed to stop text adapter `{adapter_id}` pid {pid}: kill exited with {status}"
+        )));
+    }
+    paths.remove_pid(adapter_id)?;
+    Ok(AdapterStopOutcome::Stopped { pid })
+}
+
 /// Starts a text adapter process and writes its pid file.
 pub fn start_adapter_process(
     spec: &AdapterProcessSpec,
@@ -980,11 +1018,12 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        AdapterProcessSpec, AdapterRuntimePaths, CommandTextAdapter, CommandTextProcessor,
-        CommandTextRequest, CommandTextResponse, CommandTextRunner, LlmTextProcessor,
-        MockTextProcessor, ProcessCommandTextRunner, PromptContext, PromptTemplate, TextError,
-        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
-        extract_openai_compatible_candidates, start_adapter_process,
+        AdapterProcessSpec, AdapterRuntimePaths, AdapterStopOutcome, CommandTextAdapter,
+        CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
+        LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
+        PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
+        UnsupportedTextAdapter, extract_openai_compatible_candidates, start_adapter_process,
+        stop_adapter_process,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -1289,6 +1328,53 @@ mod tests {
                 if message.contains("failed to spawn text adapter `cmd-adapter`")
         ));
         assert_eq!(paths.read_pid("cmd-adapter").unwrap(), None);
+    }
+
+    #[test]
+    fn stop_adapter_process_terminates_child_and_removes_pid_file() {
+        let mut runtime_dir = std::env::temp_dir();
+        runtime_dir.push(format!(
+            "vinput-text-stop-runtime-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let paths = AdapterRuntimePaths::new(&runtime_dir);
+        let spec = AdapterProcessSpec {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "sleep 30".to_owned()],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+        };
+        let mut started = start_adapter_process(&spec, &paths).unwrap();
+
+        let outcome = stop_adapter_process("cmd-adapter", &paths).unwrap();
+        assert_eq!(outcome, AdapterStopOutcome::Stopped { pid: started.pid });
+        let _ = started.child.wait();
+        assert_eq!(paths.read_pid("cmd-adapter").unwrap(), None);
+        std::fs::remove_dir_all(runtime_dir).unwrap();
+    }
+
+    #[test]
+    fn stop_adapter_process_reports_not_running_without_pid_file() {
+        let mut runtime_dir = std::env::temp_dir();
+        runtime_dir.push(format!(
+            "vinput-text-stop-runtime-empty-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let paths = AdapterRuntimePaths::new(&runtime_dir);
+
+        assert_eq!(
+            stop_adapter_process("cmd-adapter", &paths).unwrap(),
+            AdapterStopOutcome::NotRunning
+        );
     }
 
     #[test]
