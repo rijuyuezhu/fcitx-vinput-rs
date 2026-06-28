@@ -403,7 +403,10 @@ impl RuntimeState {
                     return Err(error);
                 }
             };
-            session.push_pcm(&pcm).map_err(RuntimeError::Asr)?;
+            if let Err(error) = session.push_pcm(&pcm) {
+                let _ = session.cancel();
+                return Err(RuntimeError::Asr(error));
+            }
             self.capture_partial_events(&mut *session)?;
             session.finish().map_err(RuntimeError::Asr)?;
             let events = session.poll_events().map_err(RuntimeError::Asr)?;
@@ -736,6 +739,58 @@ mod tests {
     impl RecognitionSession for CancelTrackingSession {
         fn push_audio(&mut self, _samples: &[i16]) -> Result<(), AsrError> {
             Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn cancel(&mut self) -> Result<(), AsrError> {
+            *self.cancelled.lock().expect("cancel lock poisoned") = true;
+            Ok(())
+        }
+
+        fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct PushFailureBackend {
+        inner: MockAsrBackend,
+        cancelled: Arc<Mutex<bool>>,
+    }
+
+    impl PushFailureBackend {
+        fn new(cancelled: Arc<Mutex<bool>>) -> Self {
+            Self {
+                inner: MockAsrBackend::streaming("listening", "custom final"),
+                cancelled,
+            }
+        }
+    }
+
+    impl AsrBackend for PushFailureBackend {
+        fn describe(&self) -> BackendDescriptor {
+            self.inner.describe()
+        }
+
+        fn create_session(
+            &self,
+            _context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            Ok(Box::new(PushFailureSession {
+                cancelled: Arc::clone(&self.cancelled),
+            }))
+        }
+    }
+
+    struct PushFailureSession {
+        cancelled: Arc<Mutex<bool>>,
+    }
+
+    impl RecognitionSession for PushFailureSession {
+        fn push_audio(&mut self, _samples: &[i16]) -> Result<(), AsrError> {
+            Err(AsrError::Backend("test push failed".to_owned()))
         }
 
         fn finish(&mut self) -> Result<(), AsrError> {
@@ -1379,6 +1434,37 @@ mod tests {
             panic!("default backend should be unsupported in current prototype");
         };
         assert!(matches!(error, super::RuntimeError::Asr(_)));
+    }
+
+    #[test]
+    fn asr_push_failure_cancels_session_and_returns_to_idle() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let cancelled = Arc::new(Mutex::new(false));
+        let backend = PushFailureBackend::new(Arc::clone(&cancelled));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let recorder = EventRecordingRecorder::new(
+            Arc::clone(&events),
+            CapturedAudio::anonymous(PcmBuffer::at_default_rate(vec![0, 96, -96, 0])),
+        );
+        let mut runtime =
+            RuntimeState::with_audio_recorder(config, Box::new(backend), Box::new(recorder))
+                .unwrap();
+
+        runtime.start_recording().unwrap();
+        let error = runtime.stop_recording(None).unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::RuntimeError::Asr(AsrError::Backend(message))
+                if message == "test push failed"
+        ));
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
+        assert!(*cancelled.lock().expect("cancel lock poisoned"));
+        assert_eq!(
+            *events.lock().expect("events lock poisoned"),
+            vec!["begin", "stop"]
+        );
     }
 
     #[test]
