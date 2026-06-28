@@ -921,6 +921,12 @@ impl AsrBackendFactory {
             )));
         }
         if provider.kind == AsrProviderKind::Command {
+            if is_legacy_streaming_command_provider(&provider.id) {
+                return Ok(Box::new(CommandAsrBackend::with_config(
+                    provider,
+                    LegacyCommandStreamingRunner,
+                )?));
+            }
             return Ok(Box::new(CommandAsrBackend::with_config(
                 provider,
                 LegacyCommandBatchRunner,
@@ -954,6 +960,10 @@ impl AsrBackendFactory {
             }
         }
     }
+}
+
+fn is_legacy_streaming_command_provider(provider_id: &str) -> bool {
+    provider_id.ends_with(".streaming")
 }
 
 fn active_provider(config: &AsrConfig) -> Option<&AsrProviderConfig> {
@@ -2390,6 +2400,55 @@ assert lines[1]['type'] == 'finish'
         assert_eq!(
             events_to_payload(&events).unwrap().commit_text,
             "asr failed"
+        );
+    }
+
+    #[test]
+    fn backend_factory_uses_legacy_streaming_protocol_for_streaming_command_provider() {
+        let script_path = write_temp_script(
+            "vinput-factory-legacy-streaming-asr",
+            r"
+import json
+import sys
+lines = [json.loads(line) for line in sys.stdin if line.strip()]
+assert lines[0]['type'] == 'audio'
+assert lines[1]['type'] == 'finish'
+print(json.dumps({'type':'partial','text':'factory partial'}))
+print(json.dumps({'type':'final','text':'factory final'}))
+print(json.dumps({'type':'closed'}))
+",
+        );
+        let provider = AsrProviderConfig {
+            id: "cmd.streaming".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: None,
+            hotwords_file: None,
+            command: Some("python3".to_owned()),
+            args: vec![script_path.to_string_lossy().into_owned()],
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let backend = AsrBackendFactory::build_provider(&provider).unwrap();
+        let mut session = backend
+            .create_session(RecognitionContext::normal("raw", None))
+            .expect("legacy streaming command backend should create a session");
+        session.push_audio(&[1, -2, 258]).unwrap();
+        session.finish().unwrap();
+        std::fs::remove_file(script_path).unwrap();
+
+        assert_eq!(
+            session.poll_events().unwrap(),
+            vec![
+                RecognitionEvent::PartialText {
+                    text: "factory partial".to_owned()
+                },
+                RecognitionEvent::FinalText {
+                    text: "factory final".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
         );
     }
 
