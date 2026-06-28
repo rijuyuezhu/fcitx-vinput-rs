@@ -126,16 +126,6 @@ impl VinputDbusService {
             report.partial_text,
         ))
     }
-
-    async fn adapter_placeholder(&self, adapter_id: &str, action: &str) -> String {
-        let runtime = self.runtime.lock().await;
-        let registry = runtime.configured_text_adapters();
-        if registry.contains_command_adapter(adapter_id) {
-            format!("adapter `{adapter_id}` {action} is not implemented yet")
-        } else {
-            format!("adapter `{adapter_id}` is not configured")
-        }
-    }
 }
 
 #[allow(missing_docs)]
@@ -259,20 +249,24 @@ impl VinputDbusService {
         Ok(())
     }
 
-    /// Start a configured adapter. Stubbed until adapter supervision is ported.
+    /// Start a configured adapter using the runtime supervisor.
     #[zbus(name = "StartAdapter")]
     async fn start_adapter(&self, adapter_id: &str) -> fdo::Result<()> {
-        Err(fdo::Error::Failed(
-            self.adapter_placeholder(adapter_id, "start").await,
-        ))
+        let mut runtime = self.runtime.lock().await;
+        runtime
+            .start_text_adapter(adapter_id)
+            .map_err(|error| Self::map_runtime_error(&error))?;
+        Ok(())
     }
 
-    /// Stop a configured adapter. Stubbed until adapter supervision is ported.
+    /// Stop a configured adapter using the runtime supervisor.
     #[zbus(name = "StopAdapter")]
     async fn stop_adapter(&self, adapter_id: &str) -> fdo::Result<()> {
-        Err(fdo::Error::Failed(
-            self.adapter_placeholder(adapter_id, "stop").await,
-        ))
+        let mut runtime = self.runtime.lock().await;
+        runtime
+            .stop_text_adapter(adapter_id)
+            .map_err(|error| Self::map_runtime_error(&error))?;
+        Ok(())
     }
 
     /// Frontend notification compatibility placeholder.
@@ -329,6 +323,17 @@ mod tests {
     fn service() -> VinputDbusService {
         let config = VinputConfig::bundled_default().unwrap();
         VinputDbusService::new(RuntimeState::new(config).unwrap())
+    }
+
+    fn unique_adapter_runtime_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "vinput-daemon-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ))
     }
 
     #[tokio::test]
@@ -538,7 +543,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dbus_facade_reports_adapter_placeholders() {
+    async fn dbus_facade_supervises_configured_adapter() {
         let service = service();
         let start_error = service
             .start_adapter("mock-adapter")
@@ -547,7 +552,7 @@ mod tests {
         assert!(
             start_error
                 .to_string()
-                .contains("adapter `mock-adapter` is not configured")
+                .contains("text adapter `mock-adapter` is not configured")
         );
         let stop_error = service
             .stop_adapter("mock-adapter")
@@ -556,37 +561,40 @@ mod tests {
         assert!(
             stop_error
                 .to_string()
-                .contains("adapter `mock-adapter` is not configured")
+                .contains("text adapter `mock-adapter` is not configured")
         );
 
+        let runtime_dir = unique_adapter_runtime_dir("dbus-supervisor");
+        let pid_path = runtime_dir.join("mock-adapter.pid");
         let mut config = VinputConfig::bundled_default().unwrap();
         config.llm.adapters.push(LlmAdapterConfig {
             id: "mock-adapter".to_owned(),
-            command: "vinput-postprocess".to_owned(),
-            args: Vec::new(),
+            command: "sleep".to_owned(),
+            args: vec!["30".to_owned()],
             env: std::collections::HashMap::default(),
             working_dir: None,
             extra: std::collections::HashMap::default(),
         });
-        let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
-        let start_error = service
+        let runtime = RuntimeState::new(config)
+            .unwrap()
+            .with_adapter_runtime_paths(vinput_text::AdapterRuntimePaths::new(runtime_dir.clone()));
+        let service = VinputDbusService::new(runtime);
+
+        service.start_adapter("mock-adapter").await.unwrap();
+        assert!(pid_path.exists());
+        let duplicate_error = service
             .start_adapter("mock-adapter")
             .await
-            .expect_err("configured adapter start should fail until supervision lands");
+            .expect_err("duplicate adapter start should fail");
         assert!(
-            start_error
+            duplicate_error
                 .to_string()
-                .contains("adapter `mock-adapter` start is not implemented yet")
+                .contains("text adapter `mock-adapter` is already running")
         );
-        let stop_error = service
-            .stop_adapter("mock-adapter")
-            .await
-            .expect_err("configured adapter stop should fail until supervision lands");
-        assert!(
-            stop_error
-                .to_string()
-                .contains("adapter `mock-adapter` stop is not implemented yet")
-        );
+        service.stop_adapter("mock-adapter").await.unwrap();
+        assert!(!pid_path.exists());
+        service.stop_adapter("mock-adapter").await.unwrap();
+        let _ = std::fs::remove_dir_all(runtime_dir);
     }
 
     #[tokio::test]

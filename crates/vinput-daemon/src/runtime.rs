@@ -1,6 +1,9 @@
 //! Minimal daemon runtime used before real PipeWire/ASR/D-Bus integration lands.
 
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 use vinput_asr::{
     AsrBackend, AsrBackendFactory, AsrError, MockAsrBackend, RecognitionContext, RecognitionEvent,
@@ -14,8 +17,9 @@ use vinput_protocol::{
     AsrBackendState, RecognitionPayload, ServiceStatus, TextAdapterState, TextAdapterSummary,
 };
 use vinput_text::{
-    AdapterRegistry, CommandTextProcessor, MockTextProcessor, ProcessCommandTextRunner,
-    TextProcessor, TextRequest,
+    AdapterProcessSpec, AdapterRegistry, AdapterRuntimePaths, AdapterStopOutcome,
+    CommandTextProcessor, MockTextProcessor, ProcessCommandTextRunner, StartedAdapterProcess,
+    TextProcessor, TextRequest, start_adapter_process, stop_adapter_process,
 };
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
@@ -34,6 +38,8 @@ pub struct RuntimeState {
     audio_source: Box<dyn AudioSource>,
     text_processor: Box<dyn TextProcessor>,
     active_session: Option<Box<dyn RecognitionSession>>,
+    adapter_runtime_paths: AdapterRuntimePaths,
+    adapter_processes: HashMap<String, StartedAdapterProcess>,
 }
 
 /// Payload and stop-time metadata produced by a completed recording.
@@ -123,7 +129,16 @@ impl RuntimeState {
             audio_source,
             text_processor,
             active_session: None,
+            adapter_runtime_paths: AdapterRuntimePaths::for_current_user(),
+            adapter_processes: HashMap::new(),
         })
+    }
+
+    /// Overrides adapter runtime paths for tests or embedded callers.
+    #[must_use]
+    pub fn with_adapter_runtime_paths(mut self, paths: AdapterRuntimePaths) -> Self {
+        self.adapter_runtime_paths = paths;
+        self
     }
 
     /// Builds a diagnostic ASR state from config without constructing a runtime.
@@ -175,6 +190,53 @@ impl RuntimeState {
     pub fn single_configured_text_adapter_id(&self) -> Option<String> {
         self.configured_text_adapter_state_for_runtime()
             .single_adapter_id
+    }
+
+    /// Starts a configured command text adapter process.
+    pub fn start_text_adapter(&mut self, adapter_id: &str) -> Result<u32, RuntimeError> {
+        if self.adapter_processes.contains_key(adapter_id) {
+            return Err(RuntimeError::TextAdapterAlreadyRunning(
+                adapter_id.to_owned(),
+            ));
+        }
+        let adapter = self
+            .config
+            .llm
+            .adapters
+            .iter()
+            .find(|adapter| adapter.id == adapter_id)
+            .ok_or_else(|| RuntimeError::TextAdapterNotConfigured(adapter_id.to_owned()))?;
+        let spec = AdapterProcessSpec::from_config(adapter);
+        let process = start_adapter_process(&spec, &self.adapter_runtime_paths)
+            .map_err(RuntimeError::TextAdapterSupervisor)?;
+        let pid = process.pid;
+        self.adapter_processes
+            .insert(adapter_id.to_owned(), process);
+        Ok(pid)
+    }
+
+    /// Stops a configured command text adapter process.
+    pub fn stop_text_adapter(
+        &mut self,
+        adapter_id: &str,
+    ) -> Result<AdapterStopOutcome, RuntimeError> {
+        if !self
+            .configured_text_adapters()
+            .contains_command_adapter(adapter_id)
+        {
+            return Err(RuntimeError::TextAdapterNotConfigured(
+                adapter_id.to_owned(),
+            ));
+        }
+        let outcome = stop_adapter_process(adapter_id, &self.adapter_runtime_paths)
+            .map_err(RuntimeError::TextAdapterSupervisor)?;
+        if let Some(mut process) = self.adapter_processes.remove(adapter_id) {
+            if matches!(outcome, AdapterStopOutcome::NotRunning) {
+                let _ = process.child.kill();
+            }
+            let _ = process.child.wait();
+        }
+        Ok(outcome)
     }
 
     /// Current daemon status.
@@ -445,6 +507,15 @@ pub enum RuntimeError {
     /// Result finishing failed.
     #[error("result finishing error: {0}")]
     Finish(#[source] vinput_text::TextError),
+    /// Requested text adapter is not configured.
+    #[error("text adapter `{0}` is not configured")]
+    TextAdapterNotConfigured(String),
+    /// Requested text adapter is already managed by this runtime.
+    #[error("text adapter `{0}` is already running")]
+    TextAdapterAlreadyRunning(String),
+    /// Text adapter process supervision failed.
+    #[error("text adapter supervisor error: {0}")]
+    TextAdapterSupervisor(#[source] vinput_text::TextError),
 }
 
 #[cfg(test)]
