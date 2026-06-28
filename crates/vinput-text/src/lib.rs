@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
-    io::Write,
+    fs,
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
 };
@@ -86,6 +87,56 @@ impl AdapterRuntimePaths {
     /// Builds a path for an adapter pid file using a safe adapter id.
     pub fn pid_path(&self, adapter_id: &str) -> Result<PathBuf, TextError> {
         Ok(self.runtime_dir.join(adapter_pid_file_name(adapter_id)?))
+    }
+
+    /// Writes an adapter pid file and returns its path.
+    pub fn write_pid(&self, adapter_id: &str, pid: u32) -> Result<PathBuf, TextError> {
+        let path = self.pid_path(adapter_id)?;
+        fs::create_dir_all(&self.runtime_dir).map_err(|error| {
+            TextError::AdapterRuntimeIo(format!(
+                "failed to create adapter runtime directory `{}`: {error}",
+                self.runtime_dir.display()
+            ))
+        })?;
+        fs::write(&path, pid.to_string()).map_err(|error| {
+            TextError::AdapterRuntimeIo(format!(
+                "failed to write adapter pid file `{}`: {error}",
+                path.display()
+            ))
+        })?;
+        Ok(path)
+    }
+
+    /// Reads an adapter pid file. Missing files return `Ok(None)`.
+    pub fn read_pid(&self, adapter_id: &str) -> Result<Option<u32>, TextError> {
+        let path = self.pid_path(adapter_id)?;
+        let content = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(TextError::AdapterRuntimeIo(format!(
+                    "failed to read adapter pid file `{}`: {error}",
+                    path.display()
+                )));
+            }
+        };
+        let trimmed = content.trim();
+        trimmed.parse::<u32>().map(Some).map_err(|error| {
+            TextError::InvalidAdapterPid(format!("invalid pid in `{}`: {error}", path.display()))
+        })
+    }
+
+    /// Removes an adapter pid file. Missing files return `Ok(false)`.
+    pub fn remove_pid(&self, adapter_id: &str) -> Result<bool, TextError> {
+        let path = self.pid_path(adapter_id)?;
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(TextError::AdapterRuntimeIo(format!(
+                "failed to remove adapter pid file `{}`: {error}",
+                path.display()
+            ))),
+        }
     }
 }
 
@@ -806,6 +857,12 @@ pub enum TextError {
     /// Command adapter id is unsafe for runtime paths.
     #[error("invalid text adapter id for runtime path: {0}")]
     InvalidAdapterId(String),
+    /// Adapter runtime filesystem operation failed.
+    #[error("text adapter runtime I/O failed: {0}")]
+    AdapterRuntimeIo(String),
+    /// Adapter runtime pid file was malformed.
+    #[error("text adapter runtime pid file is invalid: {0}")]
+    InvalidAdapterPid(String),
     /// Command adapter helper returned an error or invalid response.
     #[error("text adapter failed: {0}")]
     AdapterFailed(String),
@@ -1018,6 +1075,50 @@ mod tests {
             paths.runtime_dir(),
             std::path::Path::new("/tmp/vinput-runtime")
         );
+    }
+
+    #[test]
+    fn adapter_runtime_paths_roundtrip_pid_files() {
+        let mut runtime_dir = std::env::temp_dir();
+        runtime_dir.push(format!(
+            "vinput-text-runtime-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let paths = AdapterRuntimePaths::new(&runtime_dir);
+
+        let pid_path = paths.write_pid("adapter.demo", 12345).unwrap();
+        assert_eq!(pid_path, runtime_dir.join("adapter.demo.pid"));
+        assert_eq!(paths.read_pid("adapter.demo").unwrap(), Some(12345));
+        assert!(paths.remove_pid("adapter.demo").unwrap());
+        assert_eq!(paths.read_pid("adapter.demo").unwrap(), None);
+        assert!(!paths.remove_pid("adapter.demo").unwrap());
+        std::fs::remove_dir_all(runtime_dir).unwrap();
+    }
+
+    #[test]
+    fn adapter_runtime_paths_reject_malformed_pid_files() {
+        let mut runtime_dir = std::env::temp_dir();
+        runtime_dir.push(format!(
+            "vinput-text-runtime-bad-pid-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&runtime_dir).unwrap();
+        std::fs::write(runtime_dir.join("adapter.demo.pid"), "not-a-pid").unwrap();
+        let paths = AdapterRuntimePaths::new(&runtime_dir);
+
+        let error = paths.read_pid("adapter.demo").unwrap_err();
+        assert!(
+            matches!(error, TextError::InvalidAdapterPid(message) if message.contains("not-a-pid") || message.contains("invalid digit"))
+        );
+        std::fs::remove_dir_all(runtime_dir).unwrap();
     }
 
     #[test]
