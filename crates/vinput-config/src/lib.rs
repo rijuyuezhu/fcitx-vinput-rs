@@ -1360,4 +1360,25 @@ mod tests {
                 if scene_id == RAW_SCENE_ID && provider_id == "missing-provider"
         ));
     }
+
+    #[test]
+    fn validation_rejects_scene_provider_that_only_matches_adapter() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(super::LlmAdapterConfig {
+            id: "adapter-only".to_owned(),
+            command: "adapter-helper".to_owned(),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        config.scenes.definitions[0].provider_id = Some("adapter-only".to_owned());
+
+        let error = config.validate().unwrap_err();
+        assert!(matches!(
+            error,
+            super::ConfigError::UnknownSceneProviderId { scene_id, provider_id }
+                if scene_id == RAW_SCENE_ID && provider_id == "adapter-only"
+        ));
+    }
 }
