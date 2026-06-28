@@ -474,13 +474,14 @@ impl RuntimeState {
         self.ensure_idle()?;
         let capture_target = self.capture_target_for_runtime()?;
         let context = self.recognition_context(&scene_id, selected_text.as_deref());
-        let session = self
+        let mut session = self
             .asr_backend
             .create_session(context)
             .map_err(RuntimeError::Asr)?;
-        self.audio_recorder
-            .begin_recording(capture_target)
-            .map_err(RuntimeError::Audio)?;
+        if let Err(error) = self.audio_recorder.begin_recording(capture_target) {
+            let _ = session.cancel();
+            return Err(RuntimeError::Audio(error));
+        }
         self.status = ServiceStatus::Recording;
         self.current_scene = Some(scene_id);
         self.selected_text = selected_text;
@@ -631,7 +632,7 @@ mod tests {
     use super::RuntimeState;
     use vinput_asr::{
         AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, MockAsrBackend,
-        RecognitionContext, RecognitionSession,
+        RecognitionContext, RecognitionEvent, RecognitionSession,
     };
     use vinput_audio::{
         AudioChunkCallback, AudioError, AudioRecorder, CaptureTarget, CapturedAudio,
@@ -690,6 +691,58 @@ mod tests {
         ) -> Result<Box<dyn RecognitionSession>, AsrError> {
             *self.captured.lock().expect("context lock poisoned") = Some(context.clone());
             self.inner.create_session(context)
+        }
+    }
+
+    struct CancelTrackingBackend {
+        inner: MockAsrBackend,
+        cancelled: Arc<Mutex<bool>>,
+    }
+
+    impl CancelTrackingBackend {
+        fn new(cancelled: Arc<Mutex<bool>>) -> Self {
+            Self {
+                inner: MockAsrBackend::streaming("listening", "custom final"),
+                cancelled,
+            }
+        }
+    }
+
+    impl AsrBackend for CancelTrackingBackend {
+        fn describe(&self) -> BackendDescriptor {
+            self.inner.describe()
+        }
+
+        fn create_session(
+            &self,
+            _context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            Ok(Box::new(CancelTrackingSession {
+                cancelled: Arc::clone(&self.cancelled),
+            }))
+        }
+    }
+
+    struct CancelTrackingSession {
+        cancelled: Arc<Mutex<bool>>,
+    }
+
+    impl RecognitionSession for CancelTrackingSession {
+        fn push_audio(&mut self, _samples: &[i16]) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn cancel(&mut self) -> Result<(), AsrError> {
+            *self.cancelled.lock().expect("cancel lock poisoned") = true;
+            Ok(())
+        }
+
+        fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
+            Ok(Vec::new())
         }
     }
 
@@ -1351,7 +1404,8 @@ mod tests {
     #[test]
     fn recorder_begin_failure_leaves_runtime_idle() {
         let config = VinputConfig::bundled_default().unwrap();
-        let backend = MockAsrBackend::streaming("listening", "custom final");
+        let cancelled = Arc::new(Mutex::new(false));
+        let backend = CancelTrackingBackend::new(Arc::clone(&cancelled));
         let mut runtime = RuntimeState::with_audio_recorder(
             config,
             Box::new(backend),
@@ -1368,6 +1422,7 @@ mod tests {
         ));
         assert_eq!(runtime.status(), ServiceStatus::Idle);
         assert!(runtime.partial_text().is_none());
+        assert!(*cancelled.lock().expect("cancel lock poisoned"));
         assert!(matches!(
             runtime.stop_recording(None).unwrap_err(),
             super::RuntimeError::NotRecording(ServiceStatus::Idle)
