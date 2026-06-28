@@ -72,6 +72,7 @@ Every transition should have a unit test before it is wired to D-Bus or PipeWire
 - status strings: `idle`, `recording`, `inferring`, `postprocessing`, `error`
 - recognition result JSON: `{ "commit_text": string, "candidates": [{ "text": string, "source": string }] }`
 - ASR backend state JSON fields matching the original frontend expectations
+- Registry metadata and planning behavior: see `docs/architecture/registry-contract.md`
 
 Any change to this crate must include compatibility tests.
 
