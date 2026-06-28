@@ -459,5 +459,7 @@ fn help_lists_config_option() {
     assert!(stdout.contains("--configured-backends"));
     assert!(stdout.contains("print-config"));
     assert!(stdout.contains("asr-state"));
+    assert!(stdout.contains("configured ASR backend diagnostics"));
     assert!(stdout.contains("text-adapters"));
+    assert!(stdout.contains("configured command text adapter diagnostics"));
 }
