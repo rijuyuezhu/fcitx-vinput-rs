@@ -13,6 +13,7 @@ Contract references:
 - [`config-contract.md`](config-contract.md): committed default config fixture and diagnostics behavior.
 - [`registry-contract.md`](registry-contract.md): registry metadata shape, planning, and sample fixture ids.
 - [`asr-contract.md`](asr-contract.md): ASR backend/session seams and diagnostic payloads.
+- [`audio-contract.md`](audio-contract.md): PCM layout, raw byte, WAV decode, and processing order contracts.
 - [`text-contract.md`](text-contract.md): text adapter and scene post-processing seams.
 
 Keep these documents aligned with committed fixtures, smoke checks, and integration tests. Planning scratch notes live under `docs/plan/` and are intentionally not part of this public architecture index.
