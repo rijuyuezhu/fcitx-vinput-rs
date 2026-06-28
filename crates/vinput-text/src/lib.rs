@@ -565,6 +565,73 @@ impl AdapterRegistry {
     }
 }
 
+/// Text processor that dispatches post-processing scenes to configured command adapters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandTextProcessor<R = UnsupportedCommandTextRunner> {
+    adapters: Vec<CommandTextAdapter<R>>,
+}
+
+impl CommandTextProcessor<UnsupportedCommandTextRunner> {
+    /// Builds a processor from typed command adapter config entries.
+    #[must_use]
+    pub fn from_configs(adapters: &[LlmAdapterConfig]) -> Self {
+        Self {
+            adapters: adapters
+                .iter()
+                .map(CommandTextAdapter::from_config)
+                .collect(),
+        }
+    }
+}
+
+impl<R> CommandTextProcessor<R> {
+    /// Builds a processor from already-constructed command adapters.
+    #[must_use]
+    pub fn from_adapters(adapters: Vec<CommandTextAdapter<R>>) -> Self {
+        Self { adapters }
+    }
+
+    /// Returns the number of configured command adapters.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.adapters.len()
+    }
+
+    /// Returns whether no command adapters are configured.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.adapters.is_empty()
+    }
+}
+
+impl<R: Clone> CommandTextProcessor<R> {
+    /// Builds a processor from typed command adapter config entries and one reusable runner.
+    #[must_use]
+    pub fn from_configs_with_runner(adapters: &[LlmAdapterConfig], runner: R) -> Self {
+        Self {
+            adapters: adapters
+                .iter()
+                .map(|adapter| CommandTextAdapter::with_adapter_config(adapter, runner.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl<R: CommandTextRunner> TextProcessor for CommandTextProcessor<R> {
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        if request.scene.id == RAW_SCENE_ID || !scene_needs_postprocessing(request.scene) {
+            return Ok(RecognitionPayload::raw(request.raw_text));
+        }
+        let [adapter] = self.adapters.as_slice() else {
+            if self.adapters.is_empty() {
+                return Err(TextError::AdapterRequired(request.scene.id.clone()));
+            }
+            return Err(TextError::AmbiguousAdapter(request.scene.id.clone()));
+        };
+        adapter.finish(request)
+    }
+}
+
 /// Adapter placeholder used until concrete local adapters are ported.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UnsupportedTextAdapter;
@@ -690,9 +757,9 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandTextAdapter, CommandTextRequest, CommandTextResponse, CommandTextRunner,
-        LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
-        PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
+        CommandTextAdapter, CommandTextProcessor, CommandTextRequest, CommandTextResponse,
+        CommandTextRunner, LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner,
+        PromptContext, PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
         UnsupportedTextAdapter,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
@@ -1026,6 +1093,106 @@ mod tests {
             },
         ]);
         assert!(registry.single_command_adapter().is_none());
+    }
+
+    #[test]
+    fn command_text_processor_keeps_raw_scene_without_adapters() {
+        let raw = scene(RAW_SCENE_ID, 0);
+        let payload = CommandTextProcessor::from_configs(&[])
+            .finish(&TextRequest {
+                raw_text: "raw text",
+                scene: &raw,
+                selected_text: None,
+            })
+            .unwrap();
+
+        assert_eq!(payload.commit_text, "raw text");
+    }
+
+    #[test]
+    fn command_text_processor_requires_adapter_for_prompted_scene() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let error = CommandTextProcessor::from_configs(&[])
+            .finish(&TextRequest {
+                raw_text: "raw text",
+                scene: &prompted,
+                selected_text: None,
+            })
+            .unwrap_err();
+
+        assert_eq!(error, TextError::AdapterRequired("polish".to_owned()));
+    }
+
+    #[test]
+    fn command_text_processor_rejects_ambiguous_adapters() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let processor = CommandTextProcessor::from_configs_with_runner(
+            &[
+                LlmAdapterConfig {
+                    id: "first".to_owned(),
+                    command: "first-command".to_owned(),
+                    args: Vec::new(),
+                    env: std::collections::HashMap::default(),
+                    working_dir: None,
+                    extra: std::collections::HashMap::default(),
+                },
+                LlmAdapterConfig {
+                    id: "second".to_owned(),
+                    command: "second-command".to_owned(),
+                    args: Vec::new(),
+                    env: std::collections::HashMap::default(),
+                    working_dir: None,
+                    extra: std::collections::HashMap::default(),
+                },
+            ],
+            EchoCommandRunner,
+        );
+        let error = processor
+            .finish(&TextRequest {
+                raw_text: "raw text",
+                scene: &prompted,
+                selected_text: None,
+            })
+            .unwrap_err();
+
+        assert_eq!(error, TextError::AmbiguousAdapter("polish".to_owned()));
+    }
+
+    #[test]
+    fn command_text_processor_delegates_to_single_adapter() {
+        let prompted = SceneDefinition {
+            prompt: Some("polish".to_owned()),
+            ..scene("polish", 0)
+        };
+        let processor = CommandTextProcessor::from_configs_with_runner(
+            &[LlmAdapterConfig {
+                id: "cmd-adapter".to_owned(),
+                command: "vinput-postprocess".to_owned(),
+                args: vec!["--json".to_owned()],
+                env: std::collections::HashMap::from([("MODE".to_owned(), "mock".to_owned())]),
+                working_dir: Some("/tmp/vinput".to_owned()),
+                extra: std::collections::HashMap::default(),
+            }],
+            EchoCommandRunner,
+        );
+        let payload = processor
+            .finish(&TextRequest {
+                raw_text: "raw text",
+                scene: &prompted,
+                selected_text: None,
+            })
+            .unwrap();
+
+        assert_eq!(
+            payload.commit_text,
+            "vinput-postprocess --json mock /tmp/vinput: raw text"
+        );
     }
 
     #[test]
