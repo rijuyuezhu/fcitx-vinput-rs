@@ -132,6 +132,42 @@ fn asr_state_preserves_command_provider_metadata() {
 }
 
 #[test]
+fn text_adapters_uses_config_file() {
+    let config = TempConfig::write(
+        "text-adapters",
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "mock",
+            "providers": [{"id":"mock","type":"local","model":"fixture"}]
+          },
+          "llm": {
+            "adapters": [{"id":"cmd-adapter","command":"vinput-postprocess","args":["--json"]}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&config.path)
+        .arg("text-adapters")
+        .output()
+        .expect("run vinput-daemon text-adapters");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("text adapter diagnostics should be JSON");
+    assert_eq!(value["adapter_count"], 1);
+    assert_eq!(value["single_adapter_id"], "cmd-adapter");
+}
+
+#[test]
 fn once_can_use_configured_backends() {
     let config = TempConfig::write(
         "configured-backends-once",
@@ -274,7 +310,6 @@ fn text_adapters_reports_configured_adapter_summary() {
 }
 
 #[test]
-fn help_lists_config_option() {
 fn help_lists_config_option() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")

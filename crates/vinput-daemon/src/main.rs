@@ -44,6 +44,8 @@ enum Command {
     PrintConfig,
     /// Print mock ASR backend state as JSON.
     AsrState,
+    /// Print configured command text adapter diagnostics as JSON.
+    TextAdapters,
 }
 
 #[tokio::main]
@@ -70,6 +72,16 @@ async fn main() -> anyhow::Result<()> {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&RuntimeState::configured_asr_state(&config))?
+            );
+        }
+        Some(Command::TextAdapters) => {
+            let registry = runtime.configured_text_adapters();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "adapter_count": registry.len(),
+                    "single_adapter_id": runtime.single_configured_text_adapter_id(),
+                }))?
             );
         }
         None if args.once => {
