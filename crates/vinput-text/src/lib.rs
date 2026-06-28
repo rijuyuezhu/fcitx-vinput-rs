@@ -1127,9 +1127,10 @@ mod tests {
     }
 
     #[test]
-    fn command_text_processor_rejects_ambiguous_adapters() {
+    fn command_text_processor_rejects_ambiguous_adapters_despite_provider_id() {
         let prompted = SceneDefinition {
             prompt: Some("polish".to_owned()),
+            provider_id: Some("first".to_owned()),
             ..scene("polish", 0)
         };
         let processor = CommandTextProcessor::from_configs_with_runner(

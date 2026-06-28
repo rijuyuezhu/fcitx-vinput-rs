@@ -30,7 +30,7 @@ The command text adapter contract mirrors the command ASR helper style: one JSON
 
 The default daemon constructor still uses mock text processing for prototype compatibility. To exercise configured backends explicitly, run the daemon with `--configured-backends`. That path builds ASR from `asr.active_provider` and text post-processing from `llm.adapters[]`.
 
-`CommandTextProcessor` only dispatches a post-processing scene when exactly one command adapter is configured. With no adapters it returns `AdapterRequired`; with multiple adapters it returns `AmbiguousAdapter` instead of guessing. Runtime code can use `RuntimeState::with_configured_backends` for configured ASR plus configured command text adapters, or `RuntimeState::with_configured_text` when ASR/audio seams are injected in tests.
+`CommandTextProcessor` only dispatches a post-processing scene when exactly one command adapter is configured. With no adapters it returns `AdapterRequired`; with multiple adapters it returns `AmbiguousAdapter` instead of guessing. `SceneDefinition::provider_id` is kept as provider metadata; adapter selection needs a future explicit field or mapping. Runtime code can use `RuntimeState::with_configured_backends` for configured ASR plus configured command text adapters, or `RuntimeState::with_configured_text` when ASR/audio seams are injected in tests.
 
 ## Diagnostics
 
