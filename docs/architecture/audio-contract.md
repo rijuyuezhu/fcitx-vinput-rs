@@ -18,6 +18,18 @@ Raw PCM bytes are signed 16-bit little-endian. Use `PcmBuffer::from_pcm16le_byte
 
 WAV decoding supports uncompressed RIFF/WAVE PCM format tag 1 with 16-bit samples. The parser preserves sample rate and channel metadata, skips unknown chunks using RIFF padding rules, rejects odd data chunk byte counts, and validates `block_align` plus `byte_rate` against the parsed sample format.
 
+## Capture lifecycle
+
+Desktop recorders should implement the stateful `AudioRecorder` contract instead of overloading `AudioSource`. The contract mirrors the legacy daemon lifecycle:
+
+1. Parse `global.capture_device` with `CaptureTarget::from_config_value`; `default` maps to the backend default, any other non-empty value is passed as a concrete backend target object.
+2. `begin_recording` starts a fresh capture session and rejects duplicate starts.
+3. Optional chunk callbacks may receive interleaved `PcmBuffer` chunks for streaming ASR sessions.
+4. `stop_and_get_buffer` stops capture and returns the accumulated PCM buffer.
+5. `cancel_recording` stops capture and discards pending audio.
+
+A future PipeWire backend should negotiate signed 16-bit 16 kHz mono PCM first, then materialize `CapturedAudio` with source metadata. The existing `AudioSource` trait remains a one-shot source for deterministic tests and file-input demos.
+
 ## Processing order
 
 `AudioProcessingOptions::process` applies deterministic transforms in this order:

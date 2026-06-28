@@ -332,6 +332,136 @@ impl CapturedAudio {
     }
 }
 
+/// Capture target selected by config or UI.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CaptureTarget {
+    /// Use the default desktop audio source.
+    #[default]
+    Default,
+    /// Use a concrete backend target object such as a `PipeWire` node name.
+    Object(String),
+}
+
+impl CaptureTarget {
+    /// Parses a config value such as `default` or a backend object id.
+    pub fn from_config_value(value: &str) -> Result<Self, AudioError> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(AudioError::InvalidCaptureTarget(value.to_owned()));
+        }
+        if trimmed == "default" {
+            return Ok(Self::Default);
+        }
+        Ok(Self::Object(trimmed.to_owned()))
+    }
+
+    /// Returns the backend object value for non-default targets.
+    #[must_use]
+    pub fn target_object(&self) -> Option<&str> {
+        match self {
+            Self::Default => None,
+            Self::Object(value) => Some(value),
+        }
+    }
+}
+
+/// Callback used by streaming capture backends to forward PCM chunks.
+pub type AudioChunkCallback = Box<dyn FnMut(&PcmBuffer) + Send>;
+
+/// Stateful recorder contract mirroring the legacy daemon capture lifecycle.
+pub trait AudioRecorder: Send {
+    /// Begin a recording session for the selected target.
+    fn begin_recording(&mut self, target: CaptureTarget) -> Result<(), AudioError>;
+
+    /// Install or clear a callback for chunks observed while recording.
+    fn set_chunk_callback(&mut self, callback: Option<AudioChunkCallback>);
+
+    /// Stop recording and return the accumulated PCM buffer.
+    fn stop_and_get_buffer(&mut self) -> Result<CapturedAudio, AudioError>;
+
+    /// Stop recording and discard any accumulated audio.
+    fn cancel_recording(&mut self) -> Result<(), AudioError>;
+
+    /// Return whether a recording session is active.
+    fn is_recording(&self) -> bool;
+}
+
+/// Deterministic stateful recorder for tests and runtime wiring.
+pub struct MockAudioRecorder {
+    recordings: Vec<CapturedAudio>,
+    next: usize,
+    recording: bool,
+    target: CaptureTarget,
+    chunk_callback: Option<AudioChunkCallback>,
+}
+
+impl MockAudioRecorder {
+    /// Creates a mock recorder from a sequence of completed recordings.
+    #[must_use]
+    pub fn from_recordings(recordings: impl Into<Vec<CapturedAudio>>) -> Self {
+        Self {
+            recordings: recordings.into(),
+            next: 0,
+            recording: false,
+            target: CaptureTarget::default(),
+            chunk_callback: None,
+        }
+    }
+
+    /// Creates a mock recorder that returns one completed recording.
+    #[must_use]
+    pub fn once(recording: CapturedAudio) -> Self {
+        Self::from_recordings(vec![recording])
+    }
+
+    /// Returns the last target passed to `begin_recording`.
+    #[must_use]
+    pub const fn target(&self) -> &CaptureTarget {
+        &self.target
+    }
+}
+
+impl AudioRecorder for MockAudioRecorder {
+    fn begin_recording(&mut self, target: CaptureTarget) -> Result<(), AudioError> {
+        if self.recording {
+            return Err(AudioError::RecorderAlreadyRecording);
+        }
+        self.target = target;
+        self.recording = true;
+        Ok(())
+    }
+
+    fn set_chunk_callback(&mut self, callback: Option<AudioChunkCallback>) {
+        self.chunk_callback = callback;
+    }
+
+    fn stop_and_get_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
+        if !self.recording {
+            return Err(AudioError::RecorderNotRecording);
+        }
+        self.recording = false;
+        let recording = self
+            .recordings
+            .get(self.next)
+            .cloned()
+            .ok_or(AudioError::SourceExhausted)?;
+        self.next += 1;
+        if let Some(callback) = &mut self.chunk_callback {
+            callback(&recording.pcm);
+        }
+        Ok(recording)
+    }
+
+    fn cancel_recording(&mut self) -> Result<(), AudioError> {
+        self.recording = false;
+        Ok(())
+    }
+
+    fn is_recording(&self) -> bool {
+        self.recording
+    }
+}
+
 /// Audio source abstraction used before a concrete desktop backend is wired in.
 pub trait AudioSource: Send {
     /// Read one PCM buffer.
@@ -400,6 +530,15 @@ pub enum AudioError {
     /// Empty mock buffer list.
     #[error("no more buffers")]
     SourceExhausted,
+    /// Capture target is blank after trimming.
+    #[error("invalid capture target: {0:?}")]
+    InvalidCaptureTarget(String),
+    /// Recorder was asked to begin while already recording.
+    #[error("recorder is already recording")]
+    RecorderAlreadyRecording,
+    /// Recorder was asked to stop while idle.
+    #[error("recorder is not recording")]
+    RecorderNotRecording,
 }
 
 fn decode_wav_pcm16le(bytes: &[u8]) -> Result<PcmBuffer, AudioError> {
@@ -518,7 +657,8 @@ fn scale_sample(sample: i16, gain: f32) -> i16 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioError, CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ, PcmBuffer, PcmSpec,
+        AudioError, AudioRecorder, CaptureTarget, CapturedAudio, DEFAULT_CHANNELS,
+        DEFAULT_SAMPLE_RATE_HZ, MockAudioRecorder, PcmBuffer, PcmSpec,
     };
 
     fn wav_pcm16le_bytes(sample_rate_hz: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
@@ -819,6 +959,78 @@ mod tests {
             CapturedAudio::named(PcmBuffer::new(1_000, vec![0; 250]).unwrap(), "fixture");
         assert_eq!(captured.duration_ms(), 250);
         assert_eq!(captured.source_name.as_deref(), Some("fixture"));
+    }
+
+    #[test]
+    fn capture_target_parses_config_values() {
+        assert_eq!(
+            CaptureTarget::from_config_value("default").unwrap(),
+            CaptureTarget::Default
+        );
+        assert_eq!(
+            CaptureTarget::from_config_value("  alsa_input.usb-mic  ").unwrap(),
+            CaptureTarget::Object("alsa_input.usb-mic".to_owned())
+        );
+        assert_eq!(
+            CaptureTarget::from_config_value("  ").unwrap_err(),
+            AudioError::InvalidCaptureTarget("  ".to_owned())
+        );
+        assert_eq!(
+            CaptureTarget::Object("node".to_owned()).target_object(),
+            Some("node")
+        );
+        assert_eq!(CaptureTarget::Default.target_object(), None);
+    }
+
+    #[test]
+    fn mock_audio_recorder_tracks_legacy_lifecycle() {
+        use std::sync::{Arc, Mutex};
+
+        let captured = CapturedAudio::named(PcmBuffer::at_default_rate(vec![1, -1]), "fixture");
+        let seen_chunk = Arc::new(Mutex::new(Vec::<i16>::new()));
+        let seen_chunk_for_callback = Arc::clone(&seen_chunk);
+        let mut recorder = MockAudioRecorder::once(captured.clone());
+
+        assert!(!recorder.is_recording());
+        assert_eq!(
+            recorder.stop_and_get_buffer().unwrap_err(),
+            AudioError::RecorderNotRecording
+        );
+        recorder
+            .begin_recording(CaptureTarget::Object("mic".to_owned()))
+            .unwrap();
+        assert_eq!(recorder.target(), &CaptureTarget::Object("mic".to_owned()));
+        assert!(recorder.is_recording());
+        assert_eq!(
+            recorder
+                .begin_recording(CaptureTarget::Default)
+                .unwrap_err(),
+            AudioError::RecorderAlreadyRecording
+        );
+        recorder.set_chunk_callback(Some(Box::new(move |pcm| {
+            *seen_chunk_for_callback.lock().unwrap() = pcm.samples().to_vec();
+        })));
+
+        assert_eq!(recorder.stop_and_get_buffer().unwrap(), captured);
+        assert!(!recorder.is_recording());
+        assert_eq!(*seen_chunk.lock().unwrap(), vec![1, -1]);
+    }
+
+    #[test]
+    fn mock_audio_recorder_cancel_discards_active_recording() {
+        let captured = CapturedAudio::named(PcmBuffer::at_default_rate(vec![7]), "fixture");
+        let mut recorder = MockAudioRecorder::once(captured.clone());
+
+        recorder.begin_recording(CaptureTarget::Default).unwrap();
+        recorder.cancel_recording().unwrap();
+        assert!(!recorder.is_recording());
+        assert_eq!(
+            recorder.stop_and_get_buffer().unwrap_err(),
+            AudioError::RecorderNotRecording
+        );
+
+        recorder.begin_recording(CaptureTarget::Default).unwrap();
+        assert_eq!(recorder.stop_and_get_buffer().unwrap(), captured);
     }
 
     #[test]
