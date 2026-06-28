@@ -40,9 +40,9 @@ struct Args {
 /// One-shot utility commands useful while bootstrapping the daemon.
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Print the parsed bundled config as normalized JSON.
+    /// Print the parsed config as normalized JSON.
     PrintConfig,
-    /// Print mock ASR backend state as JSON.
+    /// Print configured ASR backend diagnostics as JSON.
     AsrState,
     /// Print configured command text adapter diagnostics as JSON.
     TextAdapters,
