@@ -9,8 +9,13 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+pipewire-backend = ["dep:pipewire"]
+
 [dependencies]
 schemars.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true
+pipewire = { workspace = true, optional = true }

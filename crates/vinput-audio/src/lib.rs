@@ -8,6 +8,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[cfg(feature = "pipewire-backend")]
+pub mod pipewire_backend;
+
 /// Default sample rate used by the original daemon's ASR pipeline.
 pub const DEFAULT_SAMPLE_RATE_HZ: u32 = 16_000;
 
