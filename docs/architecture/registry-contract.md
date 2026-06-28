@@ -17,8 +17,8 @@ Each asset path must be a safe relative path. Optional `sha256` checksums must b
 `vinput-cli registry` prints the configured registry mirror URLs from the bundled config. File-backed diagnostics use explicit paths:
 
 ```sh
-cargo run -p vinput-cli -- registry validate data/sample-registry-index.json
-cargo run -p vinput-cli -- registry plan data/sample-registry-index.json --summary-only
+cargo run -q -p vinput-cli -- registry validate data/sample-registry-index.json
+cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --summary-only
 ```
 
 These commands parse local JSON only. They do not download assets or touch install directories.

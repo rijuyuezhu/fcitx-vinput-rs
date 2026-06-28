@@ -7,8 +7,8 @@
 `data/default-config.json` is the committed compatibility baseline copied from the original project. It is also the stable smoke fixture for explicit config CLI paths:
 
 ```sh
-cargo run -p vinput-cli -- config validate data/default-config.json --summary-only
-cargo run -p vinput-cli -- asr-state --config data/default-config.json
+cargo run -q -p vinput-cli -- config validate data/default-config.json --summary-only
+cargo run -q -p vinput-cli -- asr-state --config data/default-config.json
 ```
 
 Integration tests consume the same committed fixture directly, so changes to config parsing or defaults must keep the CLI summary and ASR diagnostics contracts stable.

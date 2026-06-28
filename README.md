@@ -50,24 +50,24 @@ cargo test --workspace --all-targets
 dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
-cargo run -p vinput-cli -- protocol
-cargo run -p vinput-cli -- config
-cargo run -p vinput-cli -- config validate data/default-config.json --summary-only
-cargo run -p vinput-cli -- asr-state
-cargo run -p vinput-cli -- asr-state --config data/default-config.json
-cargo run -p vinput-cli -- registry
-cargo run -p vinput-cli -- registry validate data/sample-registry-index.json
-cargo run -p vinput-cli -- registry plan data/sample-registry-index.json --summary-only
-cargo run -p vinput-cli -- mock-result '你好'
-cargo run -p vinput-daemon -- print-config
-cargo run -p vinput-daemon -- asr-state
-cargo run -p vinput-daemon -- text-adapters
-cargo run -p vinput-daemon -- --once
+cargo run -q -p vinput-cli -- protocol
+cargo run -q -p vinput-cli -- config
+cargo run -q -p vinput-cli -- config validate data/default-config.json --summary-only
+cargo run -q -p vinput-cli -- asr-state
+cargo run -q -p vinput-cli -- asr-state --config data/default-config.json
+cargo run -q -p vinput-cli -- registry
+cargo run -q -p vinput-cli -- registry validate data/sample-registry-index.json
+cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --summary-only
+cargo run -q -p vinput-cli -- mock-result '你好'
+cargo run -q -p vinput-daemon -- print-config
+cargo run -q -p vinput-daemon -- asr-state
+cargo run -q -p vinput-daemon -- text-adapters
+cargo run -q -p vinput-daemon -- --once
 ```
 
 Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspect ASR diagnostics for a custom config without starting daemon runtime backends.
 
-`data/default-config.json` and `data/sample-registry-index.json` are stable smoke fixtures for explicit config and registry CLI paths.
+`data/default-config.json` and `data/sample-registry-index.json` are stable smoke fixtures for explicit config and registry CLI paths. See [`docs/architecture/config-contract.md`](docs/architecture/config-contract.md) and [`docs/architecture/registry-contract.md`](docs/architecture/registry-contract.md) for their fixture contracts.
 
 Run the mock D-Bus service inside an existing session bus with:
 
