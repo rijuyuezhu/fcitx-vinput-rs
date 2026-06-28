@@ -421,6 +421,57 @@ impl CommandAsrRunner for UnsupportedCommandAsrRunner {
     }
 }
 
+/// Builds a legacy command-streaming audio JSON line.
+///
+/// The line contains raw signed 16-bit little-endian PCM bytes encoded as
+/// base64 and a `commit` flag indicating whether the chunk finalizes audio.
+#[must_use]
+pub fn legacy_command_streaming_audio_line(samples: &[i16], commit: bool) -> String {
+    serde_json::json!({
+        "type": "audio",
+        "audio_base64": encode_base64(&i16_le_pcm_bytes(samples)),
+        "commit": commit,
+    })
+    .to_string()
+}
+
+/// Builds a legacy command-streaming finish control JSON line.
+#[must_use]
+pub fn legacy_command_streaming_finish_line() -> String {
+    serde_json::json!({"type": "finish"}).to_string()
+}
+
+fn i16_le_pcm_bytes(samples: &[i16]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(samples.len() * 2);
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        output.push(TABLE[(b0 >> 2) as usize] as char);
+        output.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            output.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            output.push('=');
+        }
+        if chunk.len() > 2 {
+            output.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
+        } else {
+            output.push('=');
+        }
+    }
+    output
+}
+
 /// Parses one legacy command-streaming JSON line into recognition events.
 ///
 /// Supported legacy event types are `session_started`, `partial`, `final`,
@@ -1030,7 +1081,8 @@ mod tests {
         AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
         CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
         LegacyCommandBatchRunner, MockAsrBackend, RecognitionContext, RecognitionEvent,
-        events_to_payload, parse_legacy_command_streaming_line,
+        events_to_payload, legacy_command_streaming_audio_line,
+        legacy_command_streaming_finish_line, parse_legacy_command_streaming_line,
     };
     use vinput_audio::{PcmBuffer, PcmSpec};
     use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
@@ -1672,6 +1724,24 @@ sys.stdout.write('|'.join(str(sample) for sample in samples))
             AsrError::Backend(message)
                 if message.contains("legacy command ASR provider `cmd` returned no text")
         ));
+    }
+
+    #[test]
+    fn legacy_command_streaming_audio_line_encodes_little_endian_pcm() {
+        let line = legacy_command_streaming_audio_line(&[1, -2, 258], true);
+        let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+
+        assert_eq!(value["type"], "audio");
+        assert_eq!(value["audio_base64"], "AQD+/wIB");
+        assert_eq!(value["commit"], true);
+    }
+
+    #[test]
+    fn legacy_command_streaming_finish_line_matches_control_event() {
+        let value: serde_json::Value =
+            serde_json::from_str(&legacy_command_streaming_finish_line()).unwrap();
+
+        assert_eq!(value, serde_json::json!({"type": "finish"}));
     }
 
     #[test]
