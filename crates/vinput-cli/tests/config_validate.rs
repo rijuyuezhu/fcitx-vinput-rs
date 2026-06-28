@@ -1,6 +1,10 @@
 //! Integration tests for config validation CLI paths.
 
+mod common;
+
 use std::{fs, process::Command};
+
+use common::workspace_file;
 
 fn write_temp_config(contents: &str) -> std::path::PathBuf {
     let mut path = std::env::temp_dir();
@@ -17,12 +21,10 @@ fn write_temp_config(contents: &str) -> std::path::PathBuf {
 }
 
 fn default_config_path() -> std::path::PathBuf {
-    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../data/default-config.json");
+    let path = workspace_file("data/default-config.json");
     assert!(path.exists(), "default config fixture should exist");
     path
 }
-
 #[test]
 fn config_validate_accepts_committed_default_fixture() {
     let path = default_config_path();

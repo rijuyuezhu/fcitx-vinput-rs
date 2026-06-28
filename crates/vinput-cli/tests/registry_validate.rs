@@ -1,7 +1,10 @@
 //! Integration tests for registry validation CLI paths.
 
+mod common;
+
 use std::{fs, process::Command};
 
+use common::workspace_file;
 use vinput_registry::RegistryIndex;
 
 fn write_temp_registry(contents: &str) -> std::path::PathBuf {
@@ -33,12 +36,10 @@ fn write_temp_config(contents: &str) -> std::path::PathBuf {
 }
 
 fn sample_registry_path() -> std::path::PathBuf {
-    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../data/sample-registry-index.json");
+    let path = workspace_file("data/sample-registry-index.json");
     assert!(path.exists(), "sample registry fixture should exist");
     path
 }
-
 #[test]
 fn registry_sample_fixture_preserves_contract_ids() {
     let path = sample_registry_path();
