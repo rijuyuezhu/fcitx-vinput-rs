@@ -9,13 +9,16 @@ fmt-check:
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
+dbus-lint:
+    cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
+
 test:
     cargo test --workspace --all-targets
 
 dbus-test:
     dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
 
-check: fmt-check lint test dbus-test
+check: fmt-check lint test dbus-test dbus-lint
 
 ci: check
 
