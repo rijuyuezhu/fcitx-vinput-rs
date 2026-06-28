@@ -16,3 +16,5 @@ Integration tests consume the same committed fixture directly, so changes to con
 ## Diagnostics behavior
 
 Config diagnostics parse local JSON only. They do not construct runtime ASR backends, launch helpers, download registry assets, or require the daemon to be running.
+
+`vinput-daemon --config data/default-config.json print-config`, `asr-state`, and `text-adapters` are covered by integration tests to keep daemon diagnostics aligned with the same committed fixture.
