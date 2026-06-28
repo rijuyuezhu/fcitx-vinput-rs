@@ -27,6 +27,9 @@ smoke:
     cargo run -q -p vinput-cli -- config
     cargo run -q -p vinput-cli -- registry
     cargo run -q -p vinput-cli -- mock-result '你好'
+    cargo run -q -p vinput-daemon -- print-config
+    cargo run -q -p vinput-daemon -- asr-state
+    cargo run -q -p vinput-daemon -- text-adapters
     cargo run -q -p vinput-daemon -- --once
 
 # Run the mock legacy D-Bus service on the current session bus.
