@@ -354,17 +354,14 @@ fn once_can_use_configured_backends() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("--configured-backends")
-        .arg("--once")
-        .output()
-        .expect("run vinput-daemon --once with configured backends");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("recognition payload should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &["--configured-backends", "--once"],
+            "run vinput-daemon --once with configured backends",
+        ),
+        "recognition payload",
+    );
     assert_eq!(value["commit_text"], "cli configured final");
 }
 
@@ -393,13 +390,11 @@ fn once_reports_ambiguous_configured_text_adapters() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("--configured-backends")
-        .arg("--once")
-        .output()
-        .expect("run vinput-daemon --once with ambiguous configured backends");
+    let output = run_daemon_with_config(
+        &config.path,
+        &["--configured-backends", "--once"],
+        "run vinput-daemon --once with ambiguous configured backends",
+    );
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
@@ -425,13 +420,11 @@ fn once_reports_missing_configured_text_adapter() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("--configured-backends")
-        .arg("--once")
-        .output()
-        .expect("run vinput-daemon --once with missing configured text adapter");
+    let output = run_daemon_with_config(
+        &config.path,
+        &["--configured-backends", "--once"],
+        "run vinput-daemon --once with missing configured text adapter",
+    );
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
@@ -462,12 +455,11 @@ fn text_adapters_reports_configured_adapter_summary() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("text-adapters")
-        .output()
-        .expect("run vinput-daemon text-adapters");
+    let output = run_daemon_with_config(
+        &config.path,
+        &["text-adapters"],
+        "run vinput-daemon text-adapters",
+    );
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
@@ -501,16 +493,14 @@ fn text_adapters_reports_empty_adapter_summary() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("text-adapters")
-        .output()
-        .expect("run vinput-daemon text-adapters without adapters");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("text adapter summary should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &["text-adapters"],
+            "run vinput-daemon text-adapters without adapters",
+        ),
+        "text adapter summary",
+    );
     assert_eq!(value["adapter_count"], 0);
     assert_eq!(value["adapter_ids"], serde_json::json!([]));
     assert!(value["single_adapter_id"].is_null());
@@ -538,16 +528,14 @@ fn text_adapters_reports_multiple_adapter_ids() {
         "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--config")
-        .arg(&config.path)
-        .arg("text-adapters")
-        .output()
-        .expect("run vinput-daemon text-adapters with multiple adapters");
-
-    assert!(output.status.success());
-    let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("text adapter summary should be JSON");
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &["text-adapters"],
+            "run vinput-daemon text-adapters with multiple adapters",
+        ),
+        "text adapter summary",
+    );
     assert_eq!(value["adapter_count"], 2);
     assert_eq!(value["adapter_ids"], serde_json::json!(["first", "second"]));
     assert!(value["single_adapter_id"].is_null());
@@ -559,10 +547,7 @@ fn text_adapters_reports_multiple_adapter_ids() {
 
 #[test]
 fn help_lists_diagnostics_commands() {
-    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
-        .arg("--help")
-        .output()
-        .expect("run vinput-daemon --help");
+    let output = run_daemon(&["--help"], "run vinput-daemon --help");
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
