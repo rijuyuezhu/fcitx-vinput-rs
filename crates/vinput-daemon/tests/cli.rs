@@ -210,6 +210,71 @@ fn once_reports_ambiguous_configured_text_adapters() {
 }
 
 #[test]
+fn once_reports_missing_configured_text_adapter() {
+    let config = TempConfig::write(
+        "missing-configured-backends-once",
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "mock",
+            "providers": [{"id":"mock","type":"local","model":"fixture"}]
+          },
+          "scenes": {
+            "active_scene": "needs-adapter",
+            "definitions": [{"id":"needs-adapter","label":"Needs adapter","prompt":"polish","candidate_count":1}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&config.path)
+        .arg("--configured-backends")
+        .arg("--once")
+        .output()
+        .expect("run vinput-daemon --once with missing configured text adapter");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("requires a text adapter"));
+}
+
+#[test]
+fn text_adapters_reports_configured_adapter_summary() {
+    let config = TempConfig::write(
+        "text-adapters",
+        r#"
+        {
+          "version": 1,
+          "llm": {
+            "adapters": [{"id":"cmd-adapter","command":"helper","args":["--json"]}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&config.path)
+        .arg("text-adapters")
+        .output()
+        .expect("run vinput-daemon text-adapters");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("text adapter summary should be JSON");
+    assert_eq!(value["adapter_count"], 1);
+    assert_eq!(value["single_adapter_id"], "cmd-adapter");
+}
+
+#[test]
+fn help_lists_config_option() {
 fn help_lists_config_option() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")
