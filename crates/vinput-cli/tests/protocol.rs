@@ -5,7 +5,7 @@ use std::process::Command;
 use vinput_protocol::dbus;
 
 #[test]
-fn protocol_prints_legacy_dbus_contract() {
+fn protocol_prints_service_dbus_contract() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
         .args(["protocol"])
         .output()
