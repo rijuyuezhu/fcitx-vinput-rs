@@ -37,6 +37,11 @@ smoke:
     cargo run -q -p vinput-daemon -- text-adapters
     cargo run -q -p vinput-daemon -- --once
 
+# Run a deterministic file-input E2E demo through command ASR and text adapter.
+e2e-demo:
+    python3 scripts/write-demo-wav.py target/tmp/vinput-demo.wav
+    cargo run -q -p vinput-daemon -- --config data/e2e-command-demo-config.json --configured-backends --once --wav target/tmp/vinput-demo.wav
+
 # Run the mock legacy D-Bus service on the current session bus.
 dbus:
     cargo run -p vinput-daemon -- --dbus

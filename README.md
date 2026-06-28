@@ -72,6 +72,16 @@ Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspe
 
 `data/default-config.json` and `data/sample-registry-index.json` are stable smoke fixtures for explicit config and registry CLI paths. See [`docs/architecture/config-contract.md`](docs/architecture/config-contract.md) and [`docs/architecture/registry-contract.md`](docs/architecture/registry-contract.md) for their fixture contracts.
 
+## Local E2E demo
+
+Run the deterministic file-input demo with:
+
+```sh
+just e2e-demo
+```
+
+The recipe generates `target/tmp/vinput-demo.wav`, then runs `vinput-daemon --configured-backends --once --wav` with `data/e2e-command-demo-config.json`. This exercises the current product spine end to end: WAV input, command ASR, command text adapter, and final recognition JSON. The demo ASR reports the input byte count instead of performing real speech recognition, which keeps the path deterministic until the concrete ASR backend lands.
+
 Run the mock D-Bus service inside an existing session bus with:
 
 ```sh
