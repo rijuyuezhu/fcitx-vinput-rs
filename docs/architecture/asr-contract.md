@@ -94,6 +94,10 @@ A helper can also return an ASR-level error without a non-zero process exit:
 
 The deprecated `failure` response key is accepted as an alias for `error` while the contract is still settling. Non-zero exits, invalid JSON, missing final text, and timeout paths are surfaced as backend errors.
 
+## Diagnostics
+
+The `asr-state` CLI diagnostic serializes `AsrBackendState` from config only. It does not construct, reload, or probe the runtime backend, so it remains usable with `--configured-backends` even when the selected runtime backend is unavailable.
+
 ## Next ASR steps
 
 1. Move command-scene prompt and post-processing policy to `vinput-postprocess` while preserving `RecognitionContext` as the frontend/runtime seam.
