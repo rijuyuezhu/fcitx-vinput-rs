@@ -226,17 +226,15 @@ fn print_audio_devices(config_path: Option<&PathBuf>) -> anyhow::Result<()> {
         .context("validate config for audio device diagnostics")?;
     let capture_target = CaptureTarget::from_config_value(&config.global.capture_device)
         .context("parse configured capture device")?;
-    #[cfg(feature = "pipewire-backend")]
-    let devices = enumerate_audio_devices()?;
-    #[cfg(not(feature = "pipewire-backend"))]
-    let devices = enumerate_audio_devices();
+    let audio_report = enumerate_audio_devices();
     let summary = serde_json::json!({
         "ok": true,
         "capture_device": config.global.capture_device,
         "capture_target": capture_target_json(&capture_target),
         "backend": audio_devices_backend_name(),
-        "live": audio_devices_backend_is_live(),
-        "devices": devices,
+        "live": audio_report.live,
+        "devices": audio_report.devices,
+        "enumeration_error": audio_report.enumeration_error,
     });
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
@@ -251,19 +249,41 @@ fn capture_target_json(target: &CaptureTarget) -> serde_json::Value {
     }
 }
 
+struct AudioDevicesReport {
+    devices: Vec<vinput_audio::AudioDeviceInfo>,
+    live: bool,
+    enumeration_error: Option<String>,
+}
+
 #[cfg(feature = "pipewire-backend")]
-fn enumerate_audio_devices() -> anyhow::Result<Vec<vinput_audio::AudioDeviceInfo>> {
+fn enumerate_audio_devices() -> AudioDevicesReport {
     use vinput_audio::AudioDeviceEnumerator as _;
 
     let mut enumerator = vinput_audio::pipewire_backend::PipeWireDeviceEnumerator;
-    enumerator
+    match enumerator
         .enumerate_audio_sources()
         .context("enumerate PipeWire audio sources")
+    {
+        Ok(devices) => AudioDevicesReport {
+            devices,
+            live: true,
+            enumeration_error: None,
+        },
+        Err(error) => AudioDevicesReport {
+            devices: Vec::new(),
+            live: false,
+            enumeration_error: Some(format!("{error:#}")),
+        },
+    }
 }
 
 #[cfg(not(feature = "pipewire-backend"))]
-fn enumerate_audio_devices() -> Vec<vinput_audio::AudioDeviceInfo> {
-    Vec::new()
+fn enumerate_audio_devices() -> AudioDevicesReport {
+    AudioDevicesReport {
+        devices: Vec::new(),
+        live: false,
+        enumeration_error: None,
+    }
 }
 
 #[cfg(feature = "pipewire-backend")]
@@ -274,16 +294,6 @@ fn audio_devices_backend_name() -> &'static str {
 #[cfg(not(feature = "pipewire-backend"))]
 fn audio_devices_backend_name() -> &'static str {
     "unavailable"
-}
-
-#[cfg(feature = "pipewire-backend")]
-fn audio_devices_backend_is_live() -> bool {
-    true
-}
-
-#[cfg(not(feature = "pipewire-backend"))]
-fn audio_devices_backend_is_live() -> bool {
-    false
 }
 
 fn config_summary_json(config: &VinputConfig) -> serde_json::Value {
