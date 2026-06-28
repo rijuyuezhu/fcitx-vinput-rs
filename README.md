@@ -52,16 +52,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
 cargo run -p vinput-cli -- protocol
 cargo run -p vinput-cli -- config
+cargo run -p vinput-cli -- registry
 cargo run -p vinput-cli -- mock-result '你好'
-cargo run -p vinput-daemon -- --once
-```
-
-Useful daemon diagnostics:
-
-```sh
 cargo run -p vinput-daemon -- print-config
 cargo run -p vinput-daemon -- asr-state
 cargo run -p vinput-daemon -- text-adapters
+cargo run -p vinput-daemon -- --once
 ```
 
 Run the mock D-Bus service inside an existing session bus with:
