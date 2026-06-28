@@ -8,6 +8,7 @@ use std::{
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use vinput_asr::AsrBackendFactory;
+use vinput_audio::CaptureTarget;
 use vinput_config::{RegistryConfig, VinputConfig};
 use vinput_protocol::{RecognitionPayload, ServiceStatus, dbus};
 use vinput_registry::{AssetEntry, AssetPlanSummary, PlannedAsset, RegistryIndex};
@@ -103,6 +104,12 @@ enum Command {
         #[arg(long)]
         config: Option<PathBuf>,
     },
+    /// Print capture-device diagnostics from config and optional live backend.
+    AudioDevices {
+        /// Optional config JSON file. Omitted to inspect the bundled default config.
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
     /// Create a recognition JSON payload for tests/manual inspection.
     MockResult {
         /// Commit text for the payload.
@@ -159,6 +166,7 @@ fn main() -> anyhow::Result<()> {
             None => print_registry_summary(),
         },
         Command::AsrState { config } => print_asr_state(config.as_ref()),
+        Command::AudioDevices { config } => print_audio_devices(config.as_ref()),
         Command::MockResult { text } => {
             let payload = RecognitionPayload::raw(text);
             println!("{}", payload.to_json_string()?);
@@ -206,6 +214,76 @@ fn print_asr_state(config_path: Option<&PathBuf>) -> anyhow::Result<()> {
     let state = AsrBackendFactory::state_for_config(&config.asr);
     println!("{}", serde_json::to_string_pretty(&state)?);
     Ok(())
+}
+
+fn print_audio_devices(config_path: Option<&PathBuf>) -> anyhow::Result<()> {
+    let config = match config_path {
+        Some(path) => load_config_file(path)?,
+        None => VinputConfig::bundled_default().context("parse bundled config")?,
+    };
+    config
+        .validate()
+        .context("validate config for audio device diagnostics")?;
+    let capture_target = CaptureTarget::from_config_value(&config.global.capture_device)
+        .context("parse configured capture device")?;
+    #[cfg(feature = "pipewire-backend")]
+    let devices = enumerate_audio_devices()?;
+    #[cfg(not(feature = "pipewire-backend"))]
+    let devices = enumerate_audio_devices();
+    let summary = serde_json::json!({
+        "ok": true,
+        "capture_device": config.global.capture_device,
+        "capture_target": capture_target_json(&capture_target),
+        "backend": audio_devices_backend_name(),
+        "live": audio_devices_backend_is_live(),
+        "devices": devices,
+    });
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+fn capture_target_json(target: &CaptureTarget) -> serde_json::Value {
+    match target {
+        CaptureTarget::Default => serde_json::json!({"kind": "default", "target_object": null}),
+        CaptureTarget::Object(value) => {
+            serde_json::json!({"kind": "object", "target_object": value})
+        }
+    }
+}
+
+#[cfg(feature = "pipewire-backend")]
+fn enumerate_audio_devices() -> anyhow::Result<Vec<vinput_audio::AudioDeviceInfo>> {
+    use vinput_audio::AudioDeviceEnumerator as _;
+
+    let mut enumerator = vinput_audio::pipewire_backend::PipeWireDeviceEnumerator;
+    enumerator
+        .enumerate_audio_sources()
+        .context("enumerate PipeWire audio sources")
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+fn enumerate_audio_devices() -> Vec<vinput_audio::AudioDeviceInfo> {
+    Vec::new()
+}
+
+#[cfg(feature = "pipewire-backend")]
+fn audio_devices_backend_name() -> &'static str {
+    "pipewire"
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+fn audio_devices_backend_name() -> &'static str {
+    "unavailable"
+}
+
+#[cfg(feature = "pipewire-backend")]
+fn audio_devices_backend_is_live() -> bool {
+    true
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+fn audio_devices_backend_is_live() -> bool {
+    false
 }
 
 fn config_summary_json(config: &VinputConfig) -> serde_json::Value {

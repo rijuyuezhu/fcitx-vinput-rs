@@ -58,6 +58,7 @@ cargo run -q -p vinput-cli -- config
 cargo run -q -p vinput-cli -- config validate data/default-config.json --summary-only
 cargo run -q -p vinput-cli -- asr-state
 cargo run -q -p vinput-cli -- asr-state --config data/default-config.json
+cargo run -q -p vinput-cli -- audio-devices
 cargo run -q -p vinput-cli -- registry
 cargo run -q -p vinput-cli -- registry validate data/sample-registry-index.json
 cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --summary-only
@@ -68,7 +69,7 @@ cargo run -q -p vinput-daemon -- text-adapters
 cargo run -q -p vinput-daemon -- --once
 ```
 
-Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspect ASR diagnostics for a custom config without starting daemon runtime backends.
+Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspect ASR diagnostics for a custom config without starting daemon runtime backends. Use `cargo run -p vinput-cli -- audio-devices` to inspect capture-device config and, when built with the optional PipeWire feature, live source enumeration.
 
 `data/default-config.json` and `data/sample-registry-index.json` are stable smoke fixtures for explicit config and registry CLI paths. See [`docs/architecture/config-contract.md`](docs/architecture/config-contract.md) and [`docs/architecture/registry-contract.md`](docs/architecture/registry-contract.md) for their fixture contracts.
 

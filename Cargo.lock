@@ -1300,6 +1300,7 @@ dependencies = [
  "clap",
  "serde_json",
  "vinput-asr",
+ "vinput-audio",
  "vinput-config",
  "vinput-protocol",
  "vinput-registry",

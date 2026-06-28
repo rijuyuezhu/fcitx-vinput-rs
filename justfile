@@ -28,6 +28,7 @@ smoke:
     cargo run -q -p vinput-cli -- config validate data/default-config.json --summary-only
     cargo run -q -p vinput-cli -- asr-state
     cargo run -q -p vinput-cli -- asr-state --config data/default-config.json
+    cargo run -q -p vinput-cli -- audio-devices
     cargo run -q -p vinput-cli -- registry
     cargo run -q -p vinput-cli -- registry validate data/sample-registry-index.json
     cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --summary-only

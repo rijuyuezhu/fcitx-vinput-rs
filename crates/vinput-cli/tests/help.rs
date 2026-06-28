@@ -13,8 +13,21 @@ fn help_lists_diagnostic_commands() {
 
     let stdout = assert_stdout_success(output, "help output");
     assert!(stdout.contains("asr-state"));
+    assert!(stdout.contains("audio-devices"));
     assert!(stdout.contains("protocol"));
     assert!(stdout.contains("registry"));
+}
+
+#[test]
+fn audio_devices_help_lists_config_option() {
+    let output = vinput_command()
+        .args(["audio-devices", "--help"])
+        .output()
+        .expect("run vinput audio-devices --help");
+
+    let stdout = assert_stdout_success(output, "help output");
+    assert!(stdout.contains("--config"));
+    assert!(stdout.contains("capture-device diagnostics"));
 }
 
 #[test]
