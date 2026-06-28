@@ -67,6 +67,39 @@ fn configured_command_runtime() -> anyhow::Result<RuntimeState> {
     RuntimeState::with_configured_text(config, backend, Box::new(audio_source)).map_err(Into::into)
 }
 
+fn configured_command_text_runtime() -> anyhow::Result<RuntimeState> {
+    let config: VinputConfig = serde_json::from_str(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "cmd",
+            "normalize_audio": false,
+            "input_gain": 1.0,
+            "providers": [{"id":"cmd","type":"command","command":"sh","args":["-c","cat >/dev/null; printf raw-bus"]}]
+          },
+          "llm": {
+            "adapters": [{"id":"cmd-adapter","command":"sh","args":["-c","cat >/dev/null; printf '{\\\"text\\\":\\\"bus adapter final\\\"}'"]}]
+          },
+          "scenes": {
+            "active_scene": "needs-adapter",
+            "definitions": [{"id":"needs-adapter","label":"Needs adapter","prompt":"polish","candidate_count":1}]
+          }
+        }
+        "#,
+    )?;
+    config.validate()?;
+    let backend = AsrBackendFactory::build_active(&config.asr)?;
+    let audio_source = MockAudioSource::from_frames(vec![
+        CapturedAudio::named(PcmBuffer::at_default_rate(Vec::<i16>::new()), "warm-up"),
+        CapturedAudio::named(
+            PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
+            "dbus-text-e2e",
+        ),
+    ]);
+    RuntimeState::with_configured_text(config, backend, Box::new(audio_source)).map_err(Into::into)
+}
+
 async fn next_string_signal(stream: &mut zbus::proxy::SignalStream<'_>) -> anyhow::Result<String> {
     let message = timeout(Duration::from_secs(2), stream.next())
         .await?
@@ -497,6 +530,40 @@ async fn configured_adapter_supervision_roundtrips_through_session_bus() -> anyh
         .call::<_, _, ()>(dbus::method::STOP_ADAPTER, &"cmd-adapter")
         .await?;
     let _ = std::fs::remove_dir_all(runtime_dir);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn configured_text_adapter_roundtrips_through_session_bus() -> anyhow::Result<()> {
+    let runtime = configured_command_text_runtime()?;
+    let (_service_connection, service_name) = spawn_runtime_on_unique_name(runtime).await?;
+    let client_connection = zbus::Connection::session().await?;
+    let proxy = Proxy::new(
+        &client_connection,
+        service_name.as_str(),
+        dbus::SERVICE_OBJECT_PATH,
+        dbus::SERVICE_INTERFACE,
+    )
+    .await?;
+    let mut status_signals = proxy.receive_signal(dbus::signal::STATUS_CHANGED).await?;
+    let mut result_signals = proxy
+        .receive_signal(dbus::signal::RECOGNITION_RESULT)
+        .await?;
+
+    proxy
+        .call::<_, _, ()>(dbus::method::START_RECORDING, &())
+        .await?;
+    assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
+
+    let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
+    let payload = RecognitionPayload::from_json_str(&payload_json)?;
+    assert_eq!(payload.commit_text, "bus adapter final");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
+    let result_payload_json = next_string_signal(&mut result_signals).await?;
+    let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
+    assert_eq!(signal_payload.commit_text, "bus adapter final");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
 
     Ok(())
 }
