@@ -10,7 +10,7 @@ This milestone introduces the first real daemon-side D-Bus boundary while keepin
 - `vinput-daemon --dbus` registers the legacy bus/object/interface on the session bus.
 - `crates/vinput-daemon/tests/dbus_integration.rs` uses `zbus::Proxy` under `dbus-run-session` to exercise real bus calls.
 
-The service exposes the legacy method names:
+The service exposes compatibility and diagnostic method names:
 
 - `StartRecording`
 - `StartCommandRecording`
