@@ -55,6 +55,16 @@ pub struct RuntimeState {
     adapter_processes: HashMap<String, StartedAdapterProcess>,
 }
 
+impl Drop for RuntimeState {
+    fn drop(&mut self) {
+        for (adapter_id, mut process) in self.adapter_processes.drain() {
+            let _ = process.child.kill();
+            let _ = process.child.wait();
+            let _ = self.adapter_runtime_paths.remove_pid(&adapter_id);
+        }
+    }
+}
+
 /// Payload and stop-time metadata produced by a completed recording.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StopRecordingReport {
@@ -549,7 +559,31 @@ mod tests {
     use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
     use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
     use vinput_protocol::ServiceStatus;
-    use vinput_text::TextFinisher;
+    use vinput_text::{AdapterRuntimePaths, TextFinisher};
+
+    fn unique_adapter_runtime_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "vinput-runtime-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ))
+    }
+
+    fn config_with_sleep_adapter(adapter_id: &str) -> VinputConfig {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+            id: adapter_id.to_owned(),
+            command: "sleep".to_owned(),
+            args: vec!["30".to_owned()],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        config
+    }
 
     struct ContextRecordingBackend {
         inner: MockAsrBackend,
@@ -724,6 +758,26 @@ mod tests {
         assert_eq!(state.adapters[0].command, "first-helper");
         assert_eq!(state.adapters[1].command, "second-helper");
         assert_eq!(state.adapters[1].args, ["--json"]);
+    }
+
+    #[test]
+    fn dropping_runtime_cleans_up_supervised_adapter() {
+        let runtime_dir = unique_adapter_runtime_dir("drop-cleanup");
+        let pid_path = runtime_dir.join("cmd-adapter.pid");
+        let mut runtime = RuntimeState::new(config_with_sleep_adapter("cmd-adapter"))
+            .unwrap()
+            .with_adapter_runtime_paths(AdapterRuntimePaths::new(runtime_dir.clone()));
+
+        let pid = runtime.start_text_adapter("cmd-adapter").unwrap();
+        assert!(pid_path.exists());
+        let state = runtime.configured_text_adapter_state_for_runtime();
+        assert!(state.adapters[0].is_running);
+        assert_eq!(state.adapters[0].pid, Some(pid));
+
+        drop(runtime);
+
+        assert!(!pid_path.exists());
+        let _ = std::fs::remove_dir_all(runtime_dir);
     }
 
     #[test]
