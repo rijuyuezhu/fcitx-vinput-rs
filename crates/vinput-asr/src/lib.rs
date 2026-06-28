@@ -14,7 +14,7 @@ use std::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use vinput_audio::{PcmBuffer, PcmSpec};
+use vinput_audio::{PcmBuffer, PcmSpec, i16_samples_to_le_bytes};
 use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
 use vinput_protocol::{AsrBackendState, CandidateSource, RecognitionPayload};
 
@@ -442,11 +442,7 @@ pub fn legacy_command_streaming_finish_line() -> String {
 }
 
 fn i16_le_pcm_bytes(samples: &[i16]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(samples.len() * 2);
-    for sample in samples {
-        bytes.extend_from_slice(&sample.to_le_bytes());
-    }
-    bytes
+    i16_samples_to_le_bytes(samples)
 }
 
 fn encode_base64(bytes: &[u8]) -> String {

@@ -63,6 +63,15 @@ const fn default_channels() -> u16 {
     DEFAULT_CHANNELS
 }
 
+/// Encodes signed 16-bit PCM samples as little-endian bytes.
+#[must_use]
+pub fn i16_samples_to_le_bytes(samples: &[i16]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(samples.len() * 2);
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
+}
 impl PcmBuffer {
     /// Creates a mono PCM buffer with the given sample rate.
     pub fn new(sample_rate_hz: u32, samples: impl Into<Vec<i16>>) -> Result<Self, AudioError> {
@@ -520,6 +529,14 @@ mod tests {
         wav.extend_from_slice(&data_len.to_le_bytes());
         wav.extend_from_slice(&data);
         wav
+    }
+
+    #[test]
+    fn encodes_i16_samples_as_little_endian_bytes() {
+        assert_eq!(
+            super::i16_samples_to_le_bytes(&[0x1234, -2]),
+            vec![0x34, 0x12, 0xfe, 0xff]
+        );
     }
 
     #[test]
