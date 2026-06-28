@@ -67,6 +67,8 @@ cargo run -p vinput-daemon -- --once
 
 Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspect ASR diagnostics for a custom config without starting daemon runtime backends.
 
+`data/default-config.json` and `data/sample-registry-index.json` are stable smoke fixtures for explicit config and registry CLI paths.
+
 Run the mock D-Bus service inside an existing session bus with:
 
 ```sh
