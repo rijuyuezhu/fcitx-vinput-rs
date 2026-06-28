@@ -59,6 +59,13 @@ fn run_daemon_with_config(config_path: impl AsRef<OsStr>, args: &[&str], context
 }
 
 fn assert_json_success(output: Output, context: &str) -> serde_json::Value {
+    let stdout = assert_success_stdout(output, context);
+    serde_json::from_str(&stdout).unwrap_or_else(|error| {
+        panic!("{context}: stdout should be JSON: {error}; stdout: {stdout}")
+    })
+}
+
+fn assert_success_stdout(output: Output, context: &str) -> String {
     let Output {
         status,
         stdout,
@@ -70,12 +77,18 @@ fn assert_json_success(output: Output, context: &str) -> serde_json::Value {
         status.code(),
         String::from_utf8_lossy(&stderr)
     );
-    serde_json::from_slice(&stdout).unwrap_or_else(|error| {
-        panic!(
-            "{context}: stdout should be JSON: {error}; stdout: {}",
-            String::from_utf8_lossy(&stdout)
-        )
-    })
+    String::from_utf8(stdout)
+        .unwrap_or_else(|error| panic!("{context}: stdout should be UTF-8: {error}"))
+}
+
+fn assert_failure_stderr(output: Output, context: &str) -> String {
+    let Output { status, stderr, .. } = output;
+    assert!(
+        !status.success(),
+        "{context}: command unexpectedly succeeded"
+    );
+    String::from_utf8(stderr)
+        .unwrap_or_else(|error| panic!("{context}: stderr should be UTF-8: {error}"))
 }
 
 #[test]
@@ -396,8 +409,10 @@ fn once_reports_ambiguous_configured_text_adapters() {
         "run vinput-daemon --once with ambiguous configured backends",
     );
 
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    let stderr = assert_failure_stderr(
+        output,
+        "vinput-daemon --once with ambiguous configured backends",
+    );
     assert!(stderr.contains("ambiguous text adapter selection"));
 }
 
@@ -426,8 +441,10 @@ fn once_reports_missing_configured_text_adapter() {
         "run vinput-daemon --once with missing configured text adapter",
     );
 
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    let stderr = assert_failure_stderr(
+        output,
+        "vinput-daemon --once with missing configured text adapter",
+    );
     assert!(stderr.contains("requires a text adapter"));
 }
 
@@ -461,8 +478,7 @@ fn text_adapters_reports_configured_adapter_summary() {
         "run vinput-daemon text-adapters",
     );
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    let stdout = assert_success_stdout(output, "text adapter summary");
     assert!(!stdout.contains("secret"));
     assert!(!stdout.contains("/tmp/adapter-work"));
     let value: serde_json::Value =
@@ -549,8 +565,7 @@ fn text_adapters_reports_multiple_adapter_ids() {
 fn help_lists_diagnostics_commands() {
     let output = run_daemon(&["--help"], "run vinput-daemon --help");
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).expect("help output should be UTF-8");
+    let stdout = assert_success_stdout(output, "help output");
     assert!(stdout.contains("--config"));
     assert!(stdout.contains("--configured-backends"));
     assert!(stdout.contains("print-config"));
