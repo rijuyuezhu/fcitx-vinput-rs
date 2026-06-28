@@ -206,6 +206,23 @@ fn asr_state_ignores_configured_backend_runtime_init() {
 }
 
 #[test]
+fn text_adapters_accepts_committed_default_fixture() {
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(default_config_path())
+        .arg("text-adapters")
+        .output()
+        .expect("run vinput-daemon text-adapters on default fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("text adapter state should be JSON");
+    assert_eq!(value["adapter_count"], 0);
+    assert_eq!(value["adapter_ids"], serde_json::json!([]));
+    assert!(value["single_adapter_id"].is_null());
+}
+
+#[test]
 fn text_adapters_uses_config_file() {
     let config = TempConfig::write(
         "text-adapters",
