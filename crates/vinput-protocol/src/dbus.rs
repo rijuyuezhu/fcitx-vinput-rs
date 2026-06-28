@@ -85,4 +85,19 @@ mod tests {
         assert_eq!(method::GET_TEXT_ADAPTER_STATE, "GetTextAdapterState");
         assert_eq!(signal::RECOGNITION_RESULT, "RecognitionResult");
     }
+
+    #[test]
+    fn dbus_member_lists_are_unique() {
+        let method_count = SERVICE_METHODS
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        let signal_count = SERVICE_SIGNALS
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+
+        assert_eq!(SERVICE_METHODS.len(), method_count);
+        assert_eq!(SERVICE_SIGNALS.len(), signal_count);
+    }
 }
