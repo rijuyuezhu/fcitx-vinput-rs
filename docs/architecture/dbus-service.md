@@ -17,6 +17,7 @@ The service exposes the legacy method names:
 - `StopRecording`
 - `GetStatus`
 - `GetAsrBackendState`
+- `GetTextAdapterState`
 - `ReloadAsrBackend`
 - `StartAdapter`
 - `StopAdapter`
