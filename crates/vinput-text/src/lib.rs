@@ -5,7 +5,7 @@ use std::{
     fs,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Child, Command, Output, Stdio},
 };
 use thiserror::Error;
 use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
@@ -150,6 +150,88 @@ fn adapter_pid_file_name(adapter_id: &str) -> Result<String, TextError> {
         return Err(TextError::InvalidAdapterId(adapter_id.to_owned()));
     }
     Ok(format!("{adapter_id}.pid"))
+}
+
+/// Command specification for a supervised text adapter process.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterProcessSpec {
+    /// Stable adapter id.
+    pub id: String,
+    /// Executable path or program name.
+    pub command: String,
+    /// Command-line arguments.
+    pub args: Vec<String>,
+    /// Environment variables added to the child process.
+    pub env: std::collections::HashMap<String, String>,
+    /// Optional child working directory.
+    pub working_dir: Option<String>,
+}
+
+impl AdapterProcessSpec {
+    /// Builds a process spec from typed adapter config.
+    #[must_use]
+    pub fn from_config(config: &LlmAdapterConfig) -> Self {
+        Self {
+            id: config.id.clone(),
+            command: config.command.clone(),
+            args: config.args.clone(),
+            env: config.env.clone(),
+            working_dir: config.working_dir.clone(),
+        }
+    }
+}
+
+/// A started adapter child process whose pid file has been written.
+#[derive(Debug)]
+pub struct StartedAdapterProcess {
+    /// Stable adapter id.
+    pub id: String,
+    /// Child process id.
+    pub pid: u32,
+    /// Path to the written pid file.
+    pub pid_path: PathBuf,
+    /// Running child process handle.
+    pub child: Child,
+}
+
+/// Starts a text adapter process and writes its pid file.
+pub fn start_adapter_process(
+    spec: &AdapterProcessSpec,
+    paths: &AdapterRuntimePaths,
+) -> Result<StartedAdapterProcess, TextError> {
+    let mut command = Command::new(&spec.command);
+    command
+        .args(&spec.args)
+        .envs(&spec.env)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(working_dir) = &spec.working_dir {
+        command.current_dir(working_dir);
+    }
+
+    let mut child = command.spawn().map_err(|error| {
+        TextError::AdapterFailed(format!(
+            "failed to spawn text adapter `{}`: {error}",
+            spec.id
+        ))
+    })?;
+    let pid = child.id();
+    let pid_path = match paths.write_pid(&spec.id, pid) {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
+
+    Ok(StartedAdapterProcess {
+        id: spec.id.clone(),
+        pid,
+        pid_path,
+        child,
+    })
 }
 
 /// JSON request passed to command-backed text adapter helpers.
@@ -898,10 +980,11 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        AdapterRuntimePaths, CommandTextAdapter, CommandTextProcessor, CommandTextRequest,
-        CommandTextResponse, CommandTextRunner, LlmTextProcessor, MockTextProcessor,
-        ProcessCommandTextRunner, PromptContext, PromptTemplate, TextError, TextFinisher,
-        TextProcessor, TextRequest, UnsupportedTextAdapter, extract_openai_compatible_candidates,
+        AdapterProcessSpec, AdapterRuntimePaths, CommandTextAdapter, CommandTextProcessor,
+        CommandTextRequest, CommandTextResponse, CommandTextRunner, LlmTextProcessor,
+        MockTextProcessor, ProcessCommandTextRunner, PromptContext, PromptTemplate, TextError,
+        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
+        extract_openai_compatible_candidates, start_adapter_process,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -1129,6 +1212,83 @@ mod tests {
             let error = paths.pid_path(adapter_id).unwrap_err();
             assert_eq!(error, TextError::InvalidAdapterId(adapter_id.to_owned()));
         }
+    }
+
+    #[test]
+    fn adapter_process_spec_copies_typed_config() {
+        let spec = AdapterProcessSpec::from_config(&LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "helper".to_owned(),
+            args: vec!["--serve".to_owned()],
+            env: std::collections::HashMap::from([("MODE".to_owned(), "serve".to_owned())]),
+            working_dir: Some("/tmp/vinput-adapter".to_owned()),
+            extra: std::collections::HashMap::default(),
+        });
+
+        assert_eq!(spec.id, "cmd-adapter");
+        assert_eq!(spec.command, "helper");
+        assert_eq!(spec.args, ["--serve"]);
+        assert_eq!(spec.env.get("MODE").map(String::as_str), Some("serve"));
+        assert_eq!(spec.working_dir.as_deref(), Some("/tmp/vinput-adapter"));
+    }
+
+    #[test]
+    fn start_adapter_process_writes_pid_file_and_returns_child() {
+        let mut runtime_dir = std::env::temp_dir();
+        runtime_dir.push(format!(
+            "vinput-text-process-runtime-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let paths = AdapterRuntimePaths::new(&runtime_dir);
+        let spec = AdapterProcessSpec {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "sleep 30".to_owned()],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+        };
+
+        let mut started = start_adapter_process(&spec, &paths).unwrap();
+        assert_eq!(started.id, "cmd-adapter");
+        assert_eq!(paths.read_pid("cmd-adapter").unwrap(), Some(started.pid));
+        assert_eq!(started.pid_path, runtime_dir.join("cmd-adapter.pid"));
+        started.child.kill().unwrap();
+        let _ = started.child.wait();
+        assert!(paths.remove_pid("cmd-adapter").unwrap());
+        std::fs::remove_dir_all(runtime_dir).unwrap();
+    }
+
+    #[test]
+    fn start_adapter_process_reports_spawn_failure_without_pid_file() {
+        let mut runtime_dir = std::env::temp_dir();
+        runtime_dir.push(format!(
+            "vinput-text-process-runtime-missing-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let paths = AdapterRuntimePaths::new(&runtime_dir);
+        let spec = AdapterProcessSpec {
+            id: "cmd-adapter".to_owned(),
+            command: format!("vinput-missing-adapter-{}", std::process::id()),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+        };
+
+        let error = start_adapter_process(&spec, &paths).unwrap_err();
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message)
+                if message.contains("failed to spawn text adapter `cmd-adapter`")
+        ));
+        assert_eq!(paths.read_pid("cmd-adapter").unwrap(), None);
     }
 
     #[test]
