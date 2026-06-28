@@ -78,6 +78,13 @@ pub struct RecognitionPayload {
 }
 
 impl RecognitionPayload {
+    fn empty() -> Self {
+        Self {
+            commit_text: String::new(),
+            candidates: Vec::new(),
+        }
+    }
+
     /// Creates a raw one-candidate payload.
     #[must_use]
     pub fn raw(text: impl Into<String>) -> Self {
@@ -98,9 +105,37 @@ impl RecognitionPayload {
     }
 
     /// Parses legacy JSON and applies compatibility fallback rules from the C++ implementation.
+    #[allow(clippy::unnecessary_wraps)]
     pub fn from_json_str(input: &str) -> Result<Self, RecognitionProtocolError> {
-        let payload: Self = serde_json::from_str(input)?;
-        Ok(payload.normalized())
+        if input.is_empty() {
+            return Ok(Self::empty());
+        }
+
+        let Ok(root) = serde_json::from_str::<serde_json::Value>(input) else {
+            return Ok(Self::empty());
+        };
+        let Some(root) = root.as_object() else {
+            return Ok(Self::empty());
+        };
+
+        let commit_text = root
+            .get("commit_text")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let candidates = root
+            .get("candidates")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(candidate_from_legacy_json)
+            .collect();
+
+        Ok(Self {
+            commit_text,
+            candidates,
+        }
+        .normalized())
     }
 
     /// Serializes to the JSON string carried by the D-Bus `RecognitionResult` signal.
@@ -135,6 +170,20 @@ impl RecognitionPayload {
             .find(|candidate| candidate.text == self.commit_text)
             .or_else(|| self.candidates.first())
     }
+}
+
+fn candidate_from_legacy_json(value: &serde_json::Value) -> Option<Candidate> {
+    let candidate = value.as_object()?;
+    let text = candidate.get("text")?.as_str()?.to_owned();
+    if text.is_empty() {
+        return None;
+    }
+    let source = candidate
+        .get("source")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|source| CandidateSource::parse_wire(source).ok())
+        .unwrap_or(CandidateSource::Raw);
+    Some(Candidate::new(text, source))
 }
 
 /// Errors while parsing or serializing protocol payloads.
@@ -180,6 +229,59 @@ mod tests {
         assert_eq!(
             payload.candidates,
             vec![Candidate::new("only", CandidateSource::Raw)]
+        );
+    }
+
+    #[test]
+    fn parser_returns_empty_payload_for_legacy_invalid_inputs() {
+        for input in ["", "not json", "[]", "null", r#"{"commit_text":7}"#] {
+            let payload = RecognitionPayload::from_json_str(input).unwrap();
+            assert!(payload.commit_text.is_empty(), "input: {input}");
+            assert!(payload.candidates.is_empty(), "input: {input}");
+        }
+    }
+
+    #[test]
+    fn parser_ignores_invalid_candidate_entries() {
+        let payload = RecognitionPayload::from_json_str(
+            r#"{
+                "commit_text":"",
+                "candidates":[
+                    "bad",
+                    {"text":"","source":"asr"},
+                    {"text":7,"source":"llm"},
+                    {"text":"kept","source":"llm"}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "kept");
+        assert_eq!(
+            payload.candidates,
+            vec![Candidate::new("kept", CandidateSource::Llm)]
+        );
+    }
+
+    #[test]
+    fn parser_defaults_missing_or_unknown_candidate_source_to_raw() {
+        let payload = RecognitionPayload::from_json_str(
+            r#"{
+                "commit_text":"first",
+                "candidates":[
+                    {"text":"first"},
+                    {"text":"second","source":"future"}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            payload.candidates,
+            vec![
+                Candidate::new("first", CandidateSource::Raw),
+                Candidate::new("second", CandidateSource::Raw),
+            ]
         );
     }
     #[test]
