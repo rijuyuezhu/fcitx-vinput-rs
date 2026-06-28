@@ -652,6 +652,9 @@ pub enum TextError {
     /// A configured adapter path exists but is not implemented yet.
     #[error("scene `{0}` requested a text adapter that is not implemented yet")]
     UnsupportedAdapter(String),
+    /// Adapter selection was ambiguous for a scene.
+    #[error("scene `{0}` has ambiguous text adapter selection")]
+    AmbiguousAdapter(String),
     /// Command adapter helper returned an error or invalid response.
     #[error("text adapter failed: {0}")]
     AdapterFailed(String),
