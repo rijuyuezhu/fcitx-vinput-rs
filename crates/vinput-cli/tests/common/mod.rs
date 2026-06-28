@@ -84,3 +84,20 @@ pub fn markdown_note_names(dir: &std::path::Path) -> Vec<String> {
     assert!(!note_files.is_empty(), "markdown notes should exist");
     note_files
 }
+
+#[allow(dead_code)]
+pub fn assert_stdout_success(output: Output, context: &str) -> String {
+    let Output {
+        status,
+        stdout,
+        stderr,
+    } = output;
+    assert!(
+        status.success(),
+        "{context}: command failed with status {:?}, stderr: {}",
+        status.code(),
+        String::from_utf8_lossy(&stderr)
+    );
+    String::from_utf8(stdout)
+        .unwrap_or_else(|error| panic!("{context}: stdout should be UTF-8: {error}"))
+}
