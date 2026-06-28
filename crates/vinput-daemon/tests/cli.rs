@@ -394,6 +394,10 @@ fn text_adapters_reports_multiple_adapter_ids() {
     assert_eq!(value["adapter_count"], 2);
     assert_eq!(value["adapter_ids"], serde_json::json!(["first", "second"]));
     assert!(value["single_adapter_id"].is_null());
+    assert_eq!(value["adapters"][0]["id"], "first");
+    assert_eq!(value["adapters"][0]["command"], "first-helper");
+    assert_eq!(value["adapters"][1]["id"], "second");
+    assert_eq!(value["adapters"][1]["command"], "second-helper");
 }
 
 #[test]
