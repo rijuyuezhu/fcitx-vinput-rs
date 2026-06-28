@@ -1,13 +1,8 @@
 //! Regression tests for the README workspace layout section.
 
-use std::path::PathBuf;
+mod common;
 
-fn workspace_file(path: &str) -> PathBuf {
-    let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    root.push("../..");
-    root.push(path);
-    root
-}
+use common::workspace_file;
 
 #[test]
 fn readme_lists_all_workspace_crates() {

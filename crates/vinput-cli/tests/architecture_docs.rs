@@ -1,13 +1,10 @@
 //! Regression tests for the public architecture documentation index.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
-fn workspace_file(path: &str) -> PathBuf {
-    let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    root.push("../..");
-    root.push(path);
-    root
-}
+use common::workspace_file;
 
 fn architecture_dir() -> PathBuf {
     workspace_file("docs/architecture")

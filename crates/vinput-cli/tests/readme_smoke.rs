@@ -1,13 +1,8 @@
 //! Regression tests that keep README smoke commands aligned with the justfile.
 
-use std::path::PathBuf;
+mod common;
 
-fn workspace_file(path: &str) -> PathBuf {
-    let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    root.push("../..");
-    root.push(path);
-    root
-}
+use common::workspace_file;
 
 fn just_recipe_commands<'a>(justfile: &'a str, recipe: &str) -> Vec<&'a str> {
     let header = format!("{recipe}:");
