@@ -25,6 +25,7 @@ ci: check
 smoke:
     cargo run -q -p vinput-cli -- protocol
     cargo run -q -p vinput-cli -- config
+    cargo run -q -p vinput-cli -- asr-state
     cargo run -q -p vinput-cli -- registry
     cargo run -q -p vinput-cli -- mock-result '你好'
     cargo run -q -p vinput-daemon -- print-config
