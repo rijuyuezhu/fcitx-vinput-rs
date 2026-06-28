@@ -25,4 +25,4 @@ Runtime availability is not implied by the fixture; local `sherpa-onnx` remains 
 
 Config diagnostics parse local JSON only. They do not construct runtime ASR backends, launch helpers, download registry assets, or require the daemon to be running.
 
-`vinput-daemon --config data/default-config.json print-config`, `asr-state`, and `text-adapters` are covered by integration tests to keep daemon diagnostics aligned with the same committed fixture.
+`vinput-daemon --config data/default-config.json print-config`, `asr-state`, `text-adapters`, and `audio-devices` are covered by integration tests to keep daemon diagnostics aligned with the same committed fixture. `audio-devices` reports the parsed capture target without constructing the runtime. In default builds it reports `backend: "unavailable"`; with `pipewire-backend` it may enumerate live PipeWire sources, but still succeeds with `live: false` and an `enumeration_error` when PipeWire client configuration or a server is unavailable.

@@ -22,7 +22,7 @@ WAV decoding supports uncompressed RIFF/WAVE PCM format tag 1 with 16-bit sample
 
 Desktop capture backends should expose `AudioDeviceEnumerator` for UI/CLI device lists. `AudioDeviceInfo` mirrors the legacy PipeWire discovery shape: backend-local `id`, backend object `name`, and human-readable `description`. Enumerators should return only capture sources, preserving backend discovery order. `AudioDeviceInfo::capture_target` maps a discovered source name to the concrete `CaptureTarget::Object` used by recording.
 
-The optional `pipewire-backend` feature starts as a linkage seam: it verifies that the Rust PipeWire bindings and system headers compile, link, and initialize, maps `PipeWire:Interface:Node` globals with `media.class=Audio/Source` into `AudioDeviceInfo`, and provides a `PipeWireDeviceEnumerator` implementation. Live context and registry probes require a usable PipeWire client configuration, so they are guarded by `VINPUT_TEST_PIPEWIRE_CONTEXT` or `VINPUT_TEST_PIPEWIRE_ENUMERATE` instead of running in default CI.
+The optional `pipewire-backend` feature verifies that the Rust PipeWire bindings and system headers compile, link, and initialize, maps `PipeWire:Interface:Node` globals with `media.class=Audio/Source` into `AudioDeviceInfo`, and provides a `PipeWireDeviceEnumerator` implementation. `vinput-cli audio-devices` and `vinput-daemon audio-devices` use this enumerator when they are built with the feature; enumeration failures are reported in JSON as `enumeration_error` with `live: false` instead of making diagnostics fail. Live context and registry probes require a usable PipeWire client configuration, so they are guarded by `VINPUT_TEST_PIPEWIRE_CONTEXT` or `VINPUT_TEST_PIPEWIRE_ENUMERATE` instead of running in default CI.
 
 ## Capture lifecycle
 
@@ -34,7 +34,9 @@ Desktop recorders should implement the stateful `AudioRecorder` contract instead
 4. `stop_and_get_buffer` stops capture and returns the accumulated PCM buffer.
 5. `cancel_recording` stops capture and discards pending audio.
 
-A future PipeWire backend should negotiate signed 16-bit 16 kHz mono PCM first, then materialize `CapturedAudio` with source metadata. The existing `AudioSource` trait remains a one-shot source for deterministic tests and file-input demos. `RecorderAudioSource` is a compatibility adapter for gradually wiring stateful recorders into code that still consumes one-shot sources.
+`RuntimeState` consumes `AudioRecorder` directly: `StartRecording` begins capture and enters `recording`; `StopRecording` collects the final buffer, applies processing, pushes PCM to the active ASR session, then emits stop-time partial/final results. The existing `AudioSource` trait remains a one-shot source for deterministic tests and file-input demos. `SourceAudioRecorder` adapts those one-shot sources into the stateful runtime path, while `RecorderAudioSource` adapts stateful recorders back into legacy one-shot call sites.
+
+`PipeWireAudioRecorder` currently exists behind `pipewire-backend` as an explicit skeleton: it stores the selected `CaptureTarget`, links and initializes the PipeWire client library, and returns `RecordingBackendUnavailable` instead of silently falling back to mock capture. The future live implementation should negotiate signed 16-bit 16 kHz mono PCM first, stream chunks through the callback, and materialize `CapturedAudio` with source metadata on stop.
 
 ## Processing order
 
