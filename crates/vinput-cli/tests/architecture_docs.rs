@@ -62,3 +62,25 @@ fn architecture_index_links_existing_notes() {
         );
     }
 }
+
+#[test]
+fn bootstrap_doc_lists_all_workspace_crates() {
+    let bootstrap = std::fs::read_to_string(architecture_dir().join("bootstrap.md"))
+        .expect("read bootstrap architecture doc");
+    let mut crates = std::fs::read_dir(workspace_file("crates"))
+        .expect("read crates directory")
+        .map(|entry| entry.expect("read crate directory entry").path())
+        .filter(|path| path.is_dir())
+        .filter_map(|path| path.file_name().map(ToOwned::to_owned))
+        .collect::<Vec<_>>();
+    crates.sort();
+
+    assert!(!crates.is_empty(), "workspace crates should exist");
+    for crate_name in crates {
+        let crate_name = crate_name.to_string_lossy();
+        assert!(
+            bootstrap.contains(crate_name.as_ref()),
+            "bootstrap architecture doc should list `{crate_name}`"
+        );
+    }
+}
