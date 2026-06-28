@@ -39,6 +39,8 @@ The daemon exposes `text-adapters` as a CLI diagnostic subcommand and `GetTextAd
 - `adapter_count`: number of configured command text adapters.
 - `adapter_ids`: configured adapter ids in config order.
 - `single_adapter_id`: the only configured adapter id, or `null` when no unique adapter exists.
-- `adapters`: sanitized per-adapter summaries with `id`, `kind`, `command`, `args`, `env_count`, and `has_working_dir`.
+- `adapters`: sanitized per-adapter summaries with `id`, `kind`, `command`, `args`, `env_count`, `has_working_dir`, `is_running`, and `pid`.
+
+`is_running` and `pid` are runtime observations. Static diagnostics such as `vinput-daemon text-adapters` report `is_running: false` and `pid: null`. A live daemon updates those fields from its supervised adapter process table, so `GetTextAdapterState` can show a started adapter as running without exposing environment values or working directory paths.
 
 Diagnostics intentionally do not execute helpers or construct runtime backends. They include command and args for routing visibility, but never include environment values or the configured working directory path. Passing `--configured-backends` does not change `print-config`, `asr-state`, or `text-adapters`; those commands are safe to run even when configured runtime backends are unavailable.
