@@ -30,10 +30,15 @@ fn write_temp_config(contents: &str) -> std::path::PathBuf {
     path
 }
 
-#[test]
-fn registry_validate_accepts_committed_sample_fixture() {
+fn sample_registry_path() -> std::path::PathBuf {
     let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("../../data/sample-registry-index.json");
+    path
+}
+
+#[test]
+fn registry_validate_accepts_committed_sample_fixture() {
+    let path = sample_registry_path();
 
     let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
         .args(["registry", "validate"])
@@ -52,8 +57,7 @@ fn registry_validate_accepts_committed_sample_fixture() {
 
 #[test]
 fn registry_plan_accepts_committed_sample_fixture() {
-    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../data/sample-registry-index.json");
+    let path = sample_registry_path();
 
     let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
         .args(["registry", "plan"])
