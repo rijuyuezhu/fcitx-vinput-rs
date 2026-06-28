@@ -151,15 +151,63 @@ async fn main() -> anyhow::Result<()> {
 
 fn audio_devices_summary(config: &VinputConfig) -> anyhow::Result<serde_json::Value> {
     let capture_target = RuntimeState::configured_capture_target(config)?;
+    let audio_report = enumerate_audio_devices();
     Ok(serde_json::json!({
         "ok": true,
         "capture_device": config.global.capture_device,
         "capture_target": capture_target_json(&capture_target),
-        "backend": "unavailable",
-        "live": false,
-        "devices": [],
-        "enumeration_error": null,
+        "backend": audio_devices_backend_name(),
+        "live": audio_report.live,
+        "devices": audio_report.devices,
+        "enumeration_error": audio_report.enumeration_error,
     }))
+}
+
+struct AudioDevicesReport {
+    devices: Vec<vinput_audio::AudioDeviceInfo>,
+    live: bool,
+    enumeration_error: Option<String>,
+}
+
+#[cfg(feature = "pipewire-backend")]
+fn enumerate_audio_devices() -> AudioDevicesReport {
+    use vinput_audio::AudioDeviceEnumerator as _;
+
+    let mut enumerator = vinput_audio::pipewire_backend::PipeWireDeviceEnumerator;
+    match enumerator
+        .enumerate_audio_sources()
+        .context("enumerate PipeWire audio sources")
+    {
+        Ok(devices) => AudioDevicesReport {
+            devices,
+            live: true,
+            enumeration_error: None,
+        },
+        Err(error) => AudioDevicesReport {
+            devices: Vec::new(),
+            live: false,
+            enumeration_error: Some(format!("{error:#}")),
+        },
+    }
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+fn enumerate_audio_devices() -> AudioDevicesReport {
+    AudioDevicesReport {
+        devices: Vec::new(),
+        live: false,
+        enumeration_error: None,
+    }
+}
+
+#[cfg(feature = "pipewire-backend")]
+fn audio_devices_backend_name() -> &'static str {
+    "pipewire"
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+fn audio_devices_backend_name() -> &'static str {
+    "unavailable"
 }
 
 fn capture_target_json(target: &CaptureTarget) -> serde_json::Value {
