@@ -31,6 +31,26 @@ fn write_temp_config(contents: &str) -> std::path::PathBuf {
 }
 
 #[test]
+fn registry_validate_accepts_committed_sample_fixture() {
+    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../../data/sample-registry-index.json");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "validate"])
+        .arg(&path)
+        .output()
+        .expect("run vinput registry validate on sample fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry summary should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["model_count"], 1);
+    assert_eq!(value["adapter_count"], 1);
+    assert_eq!(value["asset_count"], 1);
+}
+
+#[test]
 fn registry_validate_prints_summary_for_valid_index() {
     let path = write_temp_registry(
         r#"
