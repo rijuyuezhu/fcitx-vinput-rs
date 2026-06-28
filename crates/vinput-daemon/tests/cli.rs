@@ -316,6 +316,42 @@ fn text_adapters_reports_configured_adapter_summary() {
 }
 
 #[test]
+fn text_adapters_reports_multiple_adapter_ids() {
+    let config = TempConfig::write(
+        "text-adapters-multiple",
+        r#"
+        {
+          "version": 1,
+          "llm": {
+            "adapters": [
+              {"id":"first","command":"first-helper"},
+              {"id":"second","command":"second-helper"}
+            ]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&config.path)
+        .arg("text-adapters")
+        .output()
+        .expect("run vinput-daemon text-adapters with multiple adapters");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("text adapter summary should be JSON");
+    assert_eq!(value["adapter_count"], 2);
+    assert_eq!(value["adapter_ids"], serde_json::json!(["first", "second"]));
+    assert!(value["single_adapter_id"].is_null());
+}
+
+#[test]
 fn help_lists_config_option() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")
