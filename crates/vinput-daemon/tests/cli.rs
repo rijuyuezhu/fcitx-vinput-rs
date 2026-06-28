@@ -403,6 +403,7 @@ fn text_adapters_reports_empty_adapter_summary() {
     assert_eq!(value["adapter_count"], 0);
     assert_eq!(value["adapter_ids"], serde_json::json!([]));
     assert!(value["single_adapter_id"].is_null());
+    assert_eq!(value["adapters"], serde_json::json!([]));
 }
 
 #[test]
