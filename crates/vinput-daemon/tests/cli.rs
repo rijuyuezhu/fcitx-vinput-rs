@@ -290,7 +290,13 @@ fn text_adapters_reports_configured_adapter_summary() {
         {
           "version": 1,
           "llm": {
-            "adapters": [{"id":"cmd-adapter","command":"helper","args":["--json"]}]
+            "adapters": [{
+              "id":"cmd-adapter",
+              "command":"helper",
+              "args":["--json"],
+              "env":{"TOKEN":"secret"},
+              "working_dir":"/tmp/adapter-work"
+            }]
           },
           "scenes": {
             "active_scene": "raw",
@@ -308,11 +314,20 @@ fn text_adapters_reports_configured_adapter_summary() {
         .expect("run vinput-daemon text-adapters");
 
     assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    assert!(!stdout.contains("secret"));
+    assert!(!stdout.contains("/tmp/adapter-work"));
     let value: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("text adapter summary should be JSON");
+        serde_json::from_str(&stdout).expect("text adapter summary should be JSON");
     assert_eq!(value["adapter_count"], 1);
     assert_eq!(value["adapter_ids"], serde_json::json!(["cmd-adapter"]));
     assert_eq!(value["single_adapter_id"], "cmd-adapter");
+    assert_eq!(value["adapters"][0]["id"], "cmd-adapter");
+    assert_eq!(value["adapters"][0]["kind"], "command");
+    assert_eq!(value["adapters"][0]["command"], "helper");
+    assert_eq!(value["adapters"][0]["args"], serde_json::json!(["--json"]));
+    assert_eq!(value["adapters"][0]["env_count"], 1);
+    assert_eq!(value["adapters"][0]["has_working_dir"], true);
 }
 
 #[test]

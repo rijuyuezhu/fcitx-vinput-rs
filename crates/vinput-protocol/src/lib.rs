@@ -8,7 +8,9 @@ pub mod asr;
 pub mod dbus;
 pub mod recognition;
 pub mod status;
+pub mod text;
 
 pub use asr::AsrBackendState;
 pub use recognition::{Candidate, CandidateSource, RecognitionPayload, RecognitionProtocolError};
 pub use status::ServiceStatus;
+pub use text::{TextAdapterState, TextAdapterSummary};

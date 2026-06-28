@@ -194,6 +194,14 @@ impl VinputDbusService {
             .map_err(Self::map_json_error)
     }
 
+    /// Return text adapter diagnostic state JSON.
+    #[zbus(name = "GetTextAdapterState")]
+    async fn get_text_adapter_state(&self) -> fdo::Result<String> {
+        let runtime = self.runtime.lock().await;
+        serde_json::to_string(&runtime.configured_text_adapter_state_for_runtime())
+            .map_err(Self::map_json_error)
+    }
+
     /// Reload ASR backend and return the resulting state JSON.
     #[zbus(name = "ReloadAsrBackend")]
     async fn reload_asr_backend(&self) -> fdo::Result<String> {
@@ -265,7 +273,7 @@ mod tests {
     use super::VinputDbusService;
     use crate::RuntimeState;
     use vinput_config::{AsrProviderConfig, AsrProviderKind, LlmAdapterConfig, VinputConfig};
-    use vinput_protocol::{AsrBackendState, RecognitionPayload};
+    use vinput_protocol::{AsrBackendState, RecognitionPayload, TextAdapterState};
 
     fn service() -> VinputDbusService {
         let config = VinputConfig::bundled_default().unwrap();
@@ -455,6 +463,31 @@ mod tests {
             service.stop_adapter("mock-adapter").await,
             "adapter `mock-adapter` stop is not implemented yet"
         );
+    }
+
+    #[tokio::test]
+    async fn dbus_facade_returns_text_adapter_state_json() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.llm.adapters.push(LlmAdapterConfig {
+            id: "mock-adapter".to_owned(),
+            command: "vinput-postprocess".to_owned(),
+            args: vec!["--json".to_owned()],
+            env: std::collections::HashMap::from([("TOKEN".to_owned(), "secret".to_owned())]),
+            working_dir: Some("/tmp/adapter-work".to_owned()),
+            extra: std::collections::HashMap::default(),
+        });
+        let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
+        let state: TextAdapterState =
+            serde_json::from_str(&service.get_text_adapter_state().await.unwrap()).unwrap();
+
+        assert_eq!(state.adapter_count, 1);
+        assert_eq!(state.adapter_ids, ["mock-adapter"]);
+        assert_eq!(state.single_adapter_id.as_deref(), Some("mock-adapter"));
+        assert_eq!(state.adapters[0].kind, "command");
+        assert_eq!(state.adapters[0].command, "vinput-postprocess");
+        assert_eq!(state.adapters[0].args, ["--json"]);
+        assert_eq!(state.adapters[0].env_count, 1);
+        assert!(state.adapters[0].has_working_dir);
     }
 
     #[tokio::test]

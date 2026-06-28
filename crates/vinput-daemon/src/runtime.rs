@@ -10,7 +10,9 @@ use vinput_audio::{
     AudioError, AudioProcessingOptions, AudioSource, CapturedAudio, MockAudioSource, PcmBuffer,
 };
 use vinput_config::VinputConfig;
-use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
+use vinput_protocol::{
+    AsrBackendState, RecognitionPayload, ServiceStatus, TextAdapterState, TextAdapterSummary,
+};
 use vinput_text::{
     AdapterRegistry, CommandTextProcessor, MockTextProcessor, ProcessCommandTextRunner,
     TextProcessor, TextRequest,
@@ -142,12 +144,37 @@ impl RuntimeState {
         AdapterRegistry::from_configs(&self.config.llm.adapters)
     }
 
+    /// Builds sanitized text adapter diagnostics from config without constructing a runtime.
+    #[must_use]
+    pub fn configured_text_adapter_state(config: &VinputConfig) -> TextAdapterState {
+        TextAdapterState::from_adapters(
+            config
+                .llm
+                .adapters
+                .iter()
+                .map(|adapter| TextAdapterSummary {
+                    id: adapter.id.clone(),
+                    kind: "command".to_owned(),
+                    command: adapter.command.clone(),
+                    args: adapter.args.clone(),
+                    env_count: adapter.env.len(),
+                    has_working_dir: adapter.working_dir.is_some(),
+                })
+                .collect(),
+        )
+    }
+
+    /// Builds sanitized text adapter diagnostics from this runtime's current config.
+    #[must_use]
+    pub fn configured_text_adapter_state_for_runtime(&self) -> TextAdapterState {
+        Self::configured_text_adapter_state(&self.config)
+    }
+
     /// Returns the only configured command text adapter id, if exactly one exists.
     #[must_use]
     pub fn single_configured_text_adapter_id(&self) -> Option<String> {
-        self.configured_text_adapters()
-            .single_command_adapter()
-            .map(|adapter| adapter.id().to_owned())
+        self.configured_text_adapter_state_for_runtime()
+            .single_adapter_id
     }
 
     /// Current daemon status.
@@ -546,8 +573,8 @@ mod tests {
             id: "cmd-adapter".to_owned(),
             command: "vinput-postprocess".to_owned(),
             args: vec!["--json".to_owned()],
-            env: std::collections::HashMap::default(),
-            working_dir: None,
+            env: std::collections::HashMap::from([("TOKEN".to_owned(), "secret".to_owned())]),
+            working_dir: Some("/tmp/adapter-work".to_owned()),
             extra: std::collections::HashMap::default(),
         });
         let runtime = RuntimeState::new(config).unwrap();
@@ -566,6 +593,16 @@ mod tests {
             runtime.single_configured_text_adapter_id().as_deref(),
             Some("cmd-adapter")
         );
+
+        let state = runtime.configured_text_adapter_state_for_runtime();
+        assert_eq!(state.adapter_count, 1);
+        assert_eq!(state.adapter_ids, ["cmd-adapter"]);
+        assert_eq!(state.single_adapter_id.as_deref(), Some("cmd-adapter"));
+        assert_eq!(state.adapters[0].kind, "command");
+        assert_eq!(state.adapters[0].command, "vinput-postprocess");
+        assert_eq!(state.adapters[0].args, ["--json"]);
+        assert_eq!(state.adapters[0].env_count, 1);
+        assert!(state.adapters[0].has_working_dir);
     }
 
     #[test]

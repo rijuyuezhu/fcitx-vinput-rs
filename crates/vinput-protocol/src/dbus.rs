@@ -27,6 +27,8 @@ pub mod method {
     pub const GET_STATUS: &str = "GetStatus";
     /// Return a JSON snapshot of the selected/effective ASR backend.
     pub const GET_ASR_BACKEND_STATE: &str = "GetAsrBackendState";
+    /// Return a JSON snapshot of configured text adapters.
+    pub const GET_TEXT_ADAPTER_STATE: &str = "GetTextAdapterState";
     /// Reload the selected ASR backend.
     pub const RELOAD_ASR_BACKEND: &str = "ReloadAsrBackend";
     /// Start a configured LLM adapter process.
@@ -59,6 +61,7 @@ mod tests {
         assert_eq!(SERVICE_OBJECT_PATH, "/org/fcitx/Vinput");
         assert_eq!(SERVICE_INTERFACE, "org.fcitx.Vinput.Service");
         assert_eq!(method::START_RECORDING, "StartRecording");
+        assert_eq!(method::GET_TEXT_ADAPTER_STATE, "GetTextAdapterState");
         assert_eq!(signal::RECOGNITION_RESULT, "RecognitionResult");
     }
 }

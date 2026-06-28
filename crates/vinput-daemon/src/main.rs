@@ -75,20 +75,9 @@ async fn main() -> anyhow::Result<()> {
             );
         }
         Some(Command::TextAdapters) => {
-            let registry = runtime.configured_text_adapters();
-            let adapter_ids: Vec<_> = config
-                .llm
-                .adapters
-                .iter()
-                .map(|adapter| adapter.id.as_str())
-                .collect();
             println!(
                 "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "adapter_count": registry.len(),
-                    "adapter_ids": adapter_ids,
-                    "single_adapter_id": runtime.single_configured_text_adapter_id(),
-                }))?
+                serde_json::to_string_pretty(&runtime.configured_text_adapter_state_for_runtime())?
             );
         }
         None if args.once => {

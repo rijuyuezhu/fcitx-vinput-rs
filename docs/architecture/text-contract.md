@@ -34,10 +34,11 @@ The default daemon constructor still uses mock text processing for prototype com
 
 ## Diagnostics
 
-The daemon exposes `text-adapters` as a CLI diagnostic subcommand. It reads the same `--config` file as the runtime path and prints JSON containing:
+The daemon exposes `text-adapters` as a CLI diagnostic subcommand and `GetTextAdapterState` as a D-Bus diagnostic method. Both read the same runtime config and serialize the shared `TextAdapterState` JSON shape:
 
 - `adapter_count`: number of configured command text adapters.
 - `adapter_ids`: configured adapter ids in config order.
 - `single_adapter_id`: the only configured adapter id, or `null` when no unique adapter exists.
+- `adapters`: sanitized per-adapter summaries with `id`, `kind`, `command`, `args`, `env_count`, and `has_working_dir`.
 
-This diagnostic intentionally does not execute helpers. It is safe to use while checking whether a config can be routed through the configured text backend path.
+Diagnostics intentionally do not execute helpers. They include command and args for routing visibility, but never include environment values or the configured working directory path.
