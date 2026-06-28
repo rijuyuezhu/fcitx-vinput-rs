@@ -8,8 +8,12 @@ struct TempConfig {
 
 impl TempConfig {
     fn write(name: &str, contents: &str) -> Self {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "vinput-daemon-test-{}-{name}.json",
+            "vinput-daemon-test-{}-{unique}-{name}.json",
             std::process::id()
         ));
         fs::write(&path, contents).expect("write temporary daemon config");
