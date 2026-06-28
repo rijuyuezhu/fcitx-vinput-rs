@@ -61,6 +61,8 @@ cargo run -p vinput-daemon -- text-adapters
 cargo run -p vinput-daemon -- --once
 ```
 
+Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspect ASR diagnostics for a custom config without starting daemon runtime backends.
+
 Run the mock D-Bus service inside an existing session bus with:
 
 ```sh
