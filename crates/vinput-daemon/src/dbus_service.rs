@@ -532,8 +532,10 @@ mod tests {
             extra: std::collections::HashMap::default(),
         });
         let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
-        let state: TextAdapterState =
-            serde_json::from_str(&service.get_text_adapter_state().await.unwrap()).unwrap();
+        let state_json = service.get_text_adapter_state().await.unwrap();
+        let state: TextAdapterState = serde_json::from_str(&state_json).unwrap();
+        assert!(!state_json.contains("secret"));
+        assert!(!state_json.contains("/tmp/adapter-work"));
 
         assert_eq!(state.adapter_count, 1);
         assert_eq!(state.adapter_ids, ["mock-adapter"]);
