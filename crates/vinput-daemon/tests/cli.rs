@@ -172,6 +172,44 @@ fn once_can_use_configured_backends() {
 }
 
 #[test]
+fn once_reports_ambiguous_configured_text_adapters() {
+    let config = TempConfig::write(
+        "ambiguous-configured-backends-once",
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "mock",
+            "providers": [{"id":"mock","type":"local","model":"fixture"}]
+          },
+          "llm": {
+            "adapters": [
+              {"id":"first","command":"python3","args":["-c", "import sys; sys.stdin.read(); print('{\"text\":\"first\"}')"]},
+              {"id":"second","command":"python3","args":["-c", "import sys; sys.stdin.read(); print('{\"text\":\"second\"}')"]}
+            ]
+          },
+          "scenes": {
+            "active_scene": "needs-adapter",
+            "definitions": [{"id":"needs-adapter","label":"Needs adapter","prompt":"polish","candidate_count":1}]
+          }
+        }
+        "#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(&config.path)
+        .arg("--configured-backends")
+        .arg("--once")
+        .output()
+        .expect("run vinput-daemon --once with ambiguous configured backends");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    assert!(stderr.contains("ambiguous text adapter selection"));
+}
+
+#[test]
 fn help_lists_config_option() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")
