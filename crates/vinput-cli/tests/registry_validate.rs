@@ -33,6 +33,7 @@ fn write_temp_config(contents: &str) -> std::path::PathBuf {
 fn sample_registry_path() -> std::path::PathBuf {
     let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("../../data/sample-registry-index.json");
+    assert!(path.exists(), "sample registry fixture should exist");
     path
 }
 
