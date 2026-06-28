@@ -11,7 +11,10 @@ use vinput_audio::{
 };
 use vinput_config::VinputConfig;
 use vinput_protocol::{AsrBackendState, RecognitionPayload, ServiceStatus};
-use vinput_text::{AdapterRegistry, MockTextProcessor, TextProcessor, TextRequest};
+use vinput_text::{
+    AdapterRegistry, CommandTextProcessor, MockTextProcessor, ProcessCommandTextRunner,
+    TextProcessor, TextRequest,
+};
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
 const MOCK_SILENCE_THRESHOLD: i16 = 8;
@@ -78,6 +81,19 @@ impl RuntimeState {
             audio_source,
             Box::new(MockTextProcessor::new()),
         )
+    }
+
+    /// Builds an idle runtime with injected ASR/audio backends and configured command text adapters.
+    pub fn with_configured_text(
+        config: VinputConfig,
+        asr_backend: Box<dyn AsrBackend>,
+        audio_source: Box<dyn AudioSource>,
+    ) -> Result<Self, RuntimeError> {
+        let text_processor = Box::new(CommandTextProcessor::from_configs_with_runner(
+            &config.llm.adapters,
+            ProcessCommandTextRunner,
+        ));
+        Self::with_components(config, asr_backend, audio_source, text_processor)
     }
 
     /// Builds an idle runtime from validated config and injected component seams.
@@ -855,6 +871,48 @@ mod tests {
         assert_eq!(context.scene_id, vinput_config::COMMAND_SCENE_ID);
         assert_eq!(context.language.as_deref(), Some("zh"));
         assert_eq!(context.selected_text.as_deref(), Some("selected text"));
+    }
+
+    #[test]
+    fn configured_text_adapter_processes_prompted_scene() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.scenes.active_scene = "needs-adapter".to_owned();
+        config
+            .scenes
+            .definitions
+            .push(vinput_config::SceneDefinition {
+                id: "needs-adapter".to_owned(),
+                label: "Needs adapter".to_owned(),
+                prompt: Some("polish text".to_owned()),
+                provider_id: None,
+                model: None,
+                candidate_count: 1,
+                timeout_ms: None,
+                context_lines: 0,
+            });
+        config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"text":"configured final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+        let audio = super::default_mock_audio_source();
+        let mut runtime =
+            RuntimeState::with_configured_text(config, Box::new(backend), Box::new(audio)).unwrap();
+
+        runtime.start_recording().unwrap();
+        let payload = runtime.stop_recording(None).unwrap();
+
+        assert_eq!(payload.commit_text, "configured final");
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
     }
 
     #[test]
