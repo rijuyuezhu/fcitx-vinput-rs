@@ -32,6 +32,38 @@ impl Drop for TempConfig {
     }
 }
 
+struct TempBytes {
+    path: PathBuf,
+}
+
+impl TempBytes {
+    fn write(name: &str, extension: &str, contents: &[u8]) -> Self {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "vinput-daemon-test-{}-{unique}-{name}.{extension}",
+            std::process::id()
+        ));
+        fs::write(&path, contents).expect("write temporary daemon bytes");
+        Self { path }
+    }
+}
+
+impl Drop for TempBytes {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn pcm16le_bytes(samples: &[i16]) -> Vec<u8> {
+    samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect()
+}
+
 fn default_config_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("../../data/default-config.json");
@@ -379,6 +411,74 @@ fn once_can_use_configured_backends() {
 }
 
 #[test]
+fn once_can_read_pcm_file_into_configured_command_pipeline() {
+    let pcm = TempBytes::write(
+        "configured-command-pcm-once",
+        "pcm",
+        &pcm16le_bytes(&[1_000, -1_000, 2_000, -2_000]),
+    );
+    let config = TempConfig::write(
+        "configured-command-pcm-once",
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "cmd",
+            "normalize_audio": false,
+            "input_gain": 1.0,
+            "providers": [{
+              "id":"cmd",
+              "type":"command",
+              "command":"python3",
+              "args":["-c", "import sys; data=sys.stdin.buffer.read(); print('pcm bytes: %d' % len(data))"]
+            }]
+          },
+          "llm": {
+            "adapters": [{
+              "id":"cmd-adapter",
+              "command":"python3",
+              "args":["-c", "import json,sys; req=json.load(sys.stdin); print(json.dumps({'text':'adapted '+req['raw_text']}))"]
+            }]
+          },
+          "scenes": {
+            "active_scene": "needs-adapter",
+            "definitions": [{"id":"needs-adapter","label":"Needs adapter","prompt":"polish","candidate_count":1}]
+          }
+        }
+        "#,
+    );
+    let pcm_path = pcm.path.to_string_lossy().into_owned();
+
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &[
+                "--configured-backends",
+                "--once",
+                "--pcm16le",
+                pcm_path.as_str(),
+            ],
+            "run vinput-daemon --once with PCM and configured command pipeline",
+        ),
+        "recognition payload",
+    );
+    assert_eq!(value["commit_text"], "adapted pcm bytes: 8");
+}
+
+#[test]
+fn once_rejects_odd_pcm_file() {
+    let pcm = TempBytes::write("odd-pcm", "pcm", &[0]);
+    let pcm_path = pcm.path.to_string_lossy().into_owned();
+
+    let output = run_daemon(
+        &["--once", "--pcm16le", pcm_path.as_str()],
+        "run vinput-daemon --once with odd PCM file",
+    );
+    let stderr = assert_failure_stderr(output, "vinput-daemon --once with odd PCM file");
+    assert!(stderr.contains("odd number of bytes"));
+}
+
+#[test]
 fn once_reports_ambiguous_configured_text_adapters() {
     let config = TempConfig::write(
         "ambiguous-configured-backends-once",
@@ -568,6 +668,9 @@ fn help_lists_diagnostics_commands() {
     let stdout = assert_success_stdout(output, "help output");
     assert!(stdout.contains("--config"));
     assert!(stdout.contains("--configured-backends"));
+    assert!(stdout.contains("--pcm16le"));
+    assert!(stdout.contains("--pcm-sample-rate"));
+    assert!(stdout.contains("--pcm-channels"));
     assert!(stdout.contains("print-config"));
     assert!(stdout.contains("asr-state"));
     assert!(stdout.contains("configured ASR backend diagnostics"));

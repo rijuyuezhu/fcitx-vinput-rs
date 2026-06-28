@@ -1,10 +1,12 @@
 //! vinput daemon entrypoint.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use tracing::info;
+use vinput_asr::{AsrBackendFactory, MockAsrBackend};
+use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
 
@@ -32,6 +34,18 @@ struct Args {
     #[arg(long)]
     config: Option<PathBuf>,
 
+    /// Raw signed 16-bit little-endian PCM file to use for `--once`.
+    #[arg(long, value_name = "PATH")]
+    pcm16le: Option<PathBuf>,
+
+    /// Sample rate of `--pcm16le` input.
+    #[arg(long, default_value_t = vinput_audio::DEFAULT_SAMPLE_RATE_HZ)]
+    pcm_sample_rate: u32,
+
+    /// Channel count of `--pcm16le` input.
+    #[arg(long, default_value_t = vinput_audio::DEFAULT_CHANNELS)]
+    pcm_channels: u16,
+
     /// Utility command.
     #[command(subcommand)]
     command: Option<Command>,
@@ -56,6 +70,9 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let config = load_config(args.config.as_ref())?;
+    if args.pcm16le.is_some() && !args.once {
+        bail!("--pcm16le is only supported together with --once");
+    }
     config.validate().context("validate daemon config")?;
     if let Some(command) = &args.command {
         match command {
@@ -80,12 +97,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut runtime = if args.configured_backends {
-        RuntimeState::with_configured_backends(config.clone())
-    } else {
-        RuntimeState::new(config.clone())
-    }
-    .context("initialize runtime")?;
+    let mut runtime = build_runtime(&args, config).context("initialize runtime")?;
 
     if args.once {
         if let Some(selected_text) = args.selected_text {
@@ -120,6 +132,64 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn build_runtime(args: &Args, config: VinputConfig) -> anyhow::Result<RuntimeState> {
+    let Some(pcm_path) = args.pcm16le.as_deref() else {
+        return if args.configured_backends {
+            RuntimeState::with_configured_backends(config).context("build configured runtime")
+        } else {
+            RuntimeState::new(config).context("build mock runtime")
+        };
+    };
+
+    let audio_source = pcm16le_audio_source(pcm_path, args.pcm_sample_rate, args.pcm_channels)?;
+    if args.configured_backends {
+        let backend =
+            AsrBackendFactory::build_active(&config.asr).context("build configured ASR backend")?;
+        RuntimeState::with_configured_text(config, backend, Box::new(audio_source))
+            .context("build configured runtime with PCM input")
+    } else {
+        let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+        RuntimeState::with_backends(config, Box::new(backend), Box::new(audio_source))
+            .context("build mock runtime with PCM input")
+    }
+}
+
+fn pcm16le_audio_source(
+    path: &Path,
+    sample_rate_hz: u32,
+    channels: u16,
+) -> anyhow::Result<MockAudioSource> {
+    let spec = PcmSpec {
+        sample_rate_hz,
+        channels,
+    };
+    let empty = PcmBuffer::with_spec(spec, Vec::<i16>::new())
+        .with_context(|| format!("validate PCM input spec for `{}`", path.display()))?;
+    let pcm = read_pcm16le(path, spec)?;
+    let source_name = format!("pcm16le:{}", path.display());
+    Ok(MockAudioSource::from_frames(vec![
+        CapturedAudio::named(empty, source_name.clone()),
+        CapturedAudio::named(pcm, source_name),
+    ]))
+}
+
+fn read_pcm16le(path: &Path, spec: PcmSpec) -> anyhow::Result<PcmBuffer> {
+    let bytes =
+        std::fs::read(path).with_context(|| format!("read PCM file `{}`", path.display()))?;
+    if bytes.len() % 2 != 0 {
+        bail!(
+            "PCM file `{}` contains an odd number of bytes",
+            path.display()
+        );
+    }
+    let samples = bytes
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    PcmBuffer::with_spec(spec, samples)
+        .with_context(|| format!("decode PCM file `{}`", path.display()))
 }
 
 fn load_config(path: Option<&PathBuf>) -> anyhow::Result<VinputConfig> {
