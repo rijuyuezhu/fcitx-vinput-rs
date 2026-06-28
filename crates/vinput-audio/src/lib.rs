@@ -365,6 +365,63 @@ impl CaptureTarget {
     }
 }
 
+/// Desktop audio source discovered by a capture backend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AudioDeviceInfo {
+    /// Backend-local device id, such as a `PipeWire` node id.
+    pub id: u32,
+    /// Stable backend object name used as a capture target.
+    pub name: String,
+    /// Human-readable device description.
+    pub description: String,
+}
+
+impl AudioDeviceInfo {
+    /// Creates audio device metadata.
+    #[must_use]
+    pub fn new(id: u32, name: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            description: description.into(),
+        }
+    }
+
+    /// Returns this device as a concrete capture target.
+    #[must_use]
+    pub fn capture_target(&self) -> CaptureTarget {
+        CaptureTarget::Object(self.name.clone())
+    }
+}
+
+/// Device enumeration contract for desktop capture backends.
+pub trait AudioDeviceEnumerator: Send {
+    /// List available audio sources in backend discovery order.
+    fn enumerate_audio_sources(&mut self) -> Result<Vec<AudioDeviceInfo>, AudioError>;
+}
+
+/// Deterministic device enumerator for tests and CLI/UI wiring.
+#[derive(Debug, Clone, Default)]
+pub struct MockAudioDeviceEnumerator {
+    devices: Vec<AudioDeviceInfo>,
+}
+
+impl MockAudioDeviceEnumerator {
+    /// Creates a mock enumerator from a static device list.
+    #[must_use]
+    pub fn new(devices: impl Into<Vec<AudioDeviceInfo>>) -> Self {
+        Self {
+            devices: devices.into(),
+        }
+    }
+}
+
+impl AudioDeviceEnumerator for MockAudioDeviceEnumerator {
+    fn enumerate_audio_sources(&mut self) -> Result<Vec<AudioDeviceInfo>, AudioError> {
+        Ok(self.devices.clone())
+    }
+}
+
 /// Callback used by streaming capture backends to forward PCM chunks.
 pub type AudioChunkCallback = Box<dyn FnMut(&PcmBuffer) + Send>;
 
@@ -539,6 +596,9 @@ pub enum AudioError {
     /// Recorder was asked to stop while idle.
     #[error("recorder is not recording")]
     RecorderNotRecording,
+    /// Audio device enumeration failed.
+    #[error("audio device enumeration failed: {0}")]
+    DeviceEnumerationFailed(String),
 }
 
 fn decode_wav_pcm16le(bytes: &[u8]) -> Result<PcmBuffer, AudioError> {
@@ -657,8 +717,9 @@ fn scale_sample(sample: i16, gain: f32) -> i16 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioError, AudioRecorder, CaptureTarget, CapturedAudio, DEFAULT_CHANNELS,
-        DEFAULT_SAMPLE_RATE_HZ, MockAudioRecorder, PcmBuffer, PcmSpec,
+        AudioDeviceEnumerator, AudioDeviceInfo, AudioError, AudioRecorder, CaptureTarget,
+        CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ, MockAudioDeviceEnumerator,
+        MockAudioRecorder, PcmBuffer, PcmSpec,
     };
 
     fn wav_pcm16le_bytes(sample_rate_hz: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
@@ -980,6 +1041,36 @@ mod tests {
             Some("node")
         );
         assert_eq!(CaptureTarget::Default.target_object(), None);
+    }
+
+    #[test]
+    fn audio_device_info_maps_to_capture_target() {
+        let device = AudioDeviceInfo::new(42, "alsa_input.usb-mic", "USB Microphone");
+
+        assert_eq!(device.id, 42);
+        assert_eq!(device.name, "alsa_input.usb-mic");
+        assert_eq!(device.description, "USB Microphone");
+        assert_eq!(
+            device.capture_target(),
+            CaptureTarget::Object("alsa_input.usb-mic".to_owned())
+        );
+    }
+
+    #[test]
+    fn mock_audio_device_enumerator_preserves_backend_order() {
+        let devices = vec![
+            AudioDeviceInfo::new(7, "first", "First source"),
+            AudioDeviceInfo::new(8, "second", "Second source"),
+        ];
+        let mut enumerator = MockAudioDeviceEnumerator::new(devices.clone());
+
+        assert_eq!(enumerator.enumerate_audio_sources().unwrap(), devices);
+        assert_eq!(
+            MockAudioDeviceEnumerator::default()
+                .enumerate_audio_sources()
+                .unwrap(),
+            Vec::new()
+        );
     }
 
     #[test]
