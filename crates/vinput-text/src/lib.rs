@@ -63,6 +63,19 @@ impl<'a> PromptContext<'a> {
     }
 }
 
+/// Returns the default text adapter runtime directory.
+///
+/// On Linux desktop sessions this should be rooted under `XDG_RUNTIME_DIR`.
+/// Tests can pass an explicit value to keep the path deterministic; production
+/// callers can use [`AdapterRuntimePaths::for_current_user`].
+#[must_use]
+pub fn default_adapter_runtime_dir(xdg_runtime_dir: Option<&Path>) -> PathBuf {
+    let base = xdg_runtime_dir
+        .filter(|path| !path.as_os_str().is_empty())
+        .map_or_else(std::env::temp_dir, Path::to_path_buf);
+    base.join("vinput").join("adapters")
+}
+
 /// Filesystem layout helper for supervised text adapter runtime state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdapterRuntimePaths {
@@ -76,6 +89,13 @@ impl AdapterRuntimePaths {
         Self {
             runtime_dir: runtime_dir.into(),
         }
+    }
+
+    /// Creates runtime paths for the current user session.
+    #[must_use]
+    pub fn for_current_user() -> Self {
+        let xdg_runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
+        Self::new(default_adapter_runtime_dir(xdg_runtime_dir.as_deref()))
     }
 
     /// Returns the runtime directory.
@@ -1022,8 +1042,8 @@ mod tests {
         CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
         LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
-        UnsupportedTextAdapter, extract_openai_compatible_candidates, start_adapter_process,
-        stop_adapter_process,
+        UnsupportedTextAdapter, default_adapter_runtime_dir, extract_openai_compatible_candidates,
+        start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -1183,6 +1203,26 @@ mod tests {
 
         let rendered = PromptTemplate::new("x={x}").render_request(&request);
         assert_eq!(rendered, "x={x}");
+    }
+
+    #[test]
+    fn default_adapter_runtime_dir_prefers_xdg_runtime_dir() {
+        assert_eq!(
+            default_adapter_runtime_dir(Some(std::path::Path::new("/run/user/1000"))),
+            std::path::PathBuf::from("/run/user/1000/vinput/adapters")
+        );
+    }
+
+    #[test]
+    fn default_adapter_runtime_dir_falls_back_to_temp_dir() {
+        assert_eq!(
+            default_adapter_runtime_dir(None),
+            std::env::temp_dir().join("vinput").join("adapters")
+        );
+        assert_eq!(
+            default_adapter_runtime_dir(Some(std::path::Path::new(""))),
+            std::env::temp_dir().join("vinput").join("adapters")
+        );
     }
 
     #[test]
