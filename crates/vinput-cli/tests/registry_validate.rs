@@ -51,6 +51,26 @@ fn registry_validate_accepts_committed_sample_fixture() {
 }
 
 #[test]
+fn registry_plan_accepts_committed_sample_fixture() {
+    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../../data/sample-registry-index.json");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .args(["registry", "plan"])
+        .arg(&path)
+        .arg("--summary-only")
+        .output()
+        .expect("run vinput registry plan on sample fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("registry plan summary should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["asset_count"], 1);
+    assert_eq!(value["unknown_size_count"], 1);
+}
+
+#[test]
 fn registry_validate_prints_summary_for_valid_index() {
     let path = write_temp_registry(
         r#"
