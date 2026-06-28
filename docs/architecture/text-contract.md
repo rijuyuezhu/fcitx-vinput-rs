@@ -13,6 +13,7 @@ StopRecording passes the final ASR payload into `TextProcessor::finish`. Raw or 
 - `TextProcessor`: synchronous runtime seam used by the daemon.
 - `TextAdapter`: post-processing seam for command, prompt, provider, timeout, context, or candidate handling.
 - `CommandTextAdapter`: configured command adapter that delegates execution to a runner.
+- `CommandTextProcessor`: selects configured command adapters for post-processing scenes.
 - `ProcessCommandTextRunner`: process-backed runner using stdin/stdout JSON.
 
 ## Command adapter process contract
@@ -30,3 +31,13 @@ The command text adapter contract mirrors the command ASR helper style: one JSON
 The default daemon constructor still uses mock text processing for prototype compatibility. To exercise configured backends explicitly, run the daemon with `--configured-backends`. That path builds ASR from `asr.active_provider` and text post-processing from `llm.adapters[]`.
 
 `CommandTextProcessor` only dispatches a post-processing scene when exactly one command adapter is configured. With no adapters it returns `AdapterRequired`; with multiple adapters it returns `AmbiguousAdapter` instead of guessing. Runtime code can use `RuntimeState::with_configured_backends` for configured ASR plus configured command text adapters, or `RuntimeState::with_configured_text` when ASR/audio seams are injected in tests.
+
+## Diagnostics
+
+The daemon exposes `text-adapters` as a CLI diagnostic subcommand. It reads the same `--config` file as the runtime path and prints JSON containing:
+
+- `adapter_count`: number of configured command text adapters.
+- `adapter_ids`: configured adapter ids in config order.
+- `single_adapter_id`: the only configured adapter id, or `null` when no unique adapter exists.
+
+This diagnostic intentionally does not execute helpers. It is safe to use while checking whether a config can be routed through the configured text backend path.
