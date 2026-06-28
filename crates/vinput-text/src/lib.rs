@@ -213,6 +213,42 @@ impl PromptTemplate {
     }
 }
 
+/// Extracts candidate strings from the legacy OpenAI-compatible chat response shape.
+///
+/// The legacy post-processor asks providers to return a chat-completions response
+/// whose first choice message content is itself a JSON object containing a
+/// `candidates` string array. Invalid or unexpected shapes return an empty list.
+#[must_use]
+pub fn extract_openai_compatible_candidates(response_body: &str) -> Vec<String> {
+    let Ok(response) = serde_json::from_str::<serde_json::Value>(response_body) else {
+        return Vec::new();
+    };
+    let Some(content) = response
+        .get("choices")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(serde_json::Value::as_str)
+    else {
+        return Vec::new();
+    };
+    let Ok(content) = serde_json::from_str::<serde_json::Value>(content) else {
+        return Vec::new();
+    };
+
+    content
+        .get("candidates")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
 /// Synchronous text post-processing seam used by daemon runtime and tests.
 pub trait TextProcessor: Send {
     /// Finishes raw recognition text into a payload suitable for the frontend.
@@ -765,7 +801,7 @@ mod tests {
         CommandTextAdapter, CommandTextProcessor, CommandTextRequest, CommandTextResponse,
         CommandTextRunner, LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner,
         PromptContext, PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
-        UnsupportedTextAdapter,
+        UnsupportedTextAdapter, extract_openai_compatible_candidates,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -977,6 +1013,43 @@ mod tests {
         assert!(request.selected_text.is_none());
         let value = serde_json::to_value(&request).unwrap();
         assert!(value["selected_text"].is_null());
+    }
+
+    #[test]
+    fn openai_compatible_candidate_parser_extracts_first_choice_content_json() {
+        let response = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::json!({
+                        "candidates": [" polished ", "", 7, "second"]
+                    }).to_string()
+                }
+            }]
+        });
+
+        assert_eq!(
+            extract_openai_compatible_candidates(&response.to_string()),
+            vec!["polished".to_owned(), "second".to_owned()]
+        );
+    }
+
+    #[test]
+    fn openai_compatible_candidate_parser_returns_empty_for_invalid_shapes() {
+        for response in [
+            "not json".to_owned(),
+            serde_json::json!({}).to_string(),
+            serde_json::json!({"choices": []}).to_string(),
+            serde_json::json!({"choices": [{"message": {"content": "not json"}}]}).to_string(),
+            serde_json::json!({
+                "choices": [{"message": {"content": serde_json::json!({"candidates": "no"}).to_string()}}]
+            })
+            .to_string(),
+        ] {
+            assert!(
+                extract_openai_compatible_candidates(&response).is_empty(),
+                "response should not yield candidates: {response}"
+            );
+        }
     }
 
     #[test]
