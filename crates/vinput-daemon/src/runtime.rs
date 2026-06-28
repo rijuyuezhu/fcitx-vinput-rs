@@ -633,7 +633,10 @@ mod tests {
         AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, MockAsrBackend,
         RecognitionContext, RecognitionSession,
     };
-    use vinput_audio::{CaptureTarget, CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
+    use vinput_audio::{
+        AudioChunkCallback, AudioError, AudioRecorder, CaptureTarget, CapturedAudio,
+        MockAudioSource, PcmBuffer, PcmSpec,
+    };
     use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
     use vinput_protocol::ServiceStatus;
     use vinput_text::{AdapterRuntimePaths, TextFinisher};
@@ -687,6 +690,60 @@ mod tests {
         ) -> Result<Box<dyn RecognitionSession>, AsrError> {
             *self.captured.lock().expect("context lock poisoned") = Some(context.clone());
             self.inner.create_session(context)
+        }
+    }
+
+    struct EventRecordingRecorder {
+        events: Arc<Mutex<Vec<&'static str>>>,
+        captured: CapturedAudio,
+        recording: bool,
+    }
+
+    impl EventRecordingRecorder {
+        fn new(events: Arc<Mutex<Vec<&'static str>>>, captured: CapturedAudio) -> Self {
+            Self {
+                events,
+                captured,
+                recording: false,
+            }
+        }
+    }
+
+    impl AudioRecorder for EventRecordingRecorder {
+        fn begin_recording(&mut self, _target: CaptureTarget) -> Result<(), AudioError> {
+            self.events
+                .lock()
+                .expect("events lock poisoned")
+                .push("begin");
+            self.recording = true;
+            Ok(())
+        }
+
+        fn set_chunk_callback(&mut self, _callback: Option<AudioChunkCallback>) {}
+
+        fn stop_and_get_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
+            if !self.recording {
+                return Err(AudioError::RecorderNotRecording);
+            }
+            self.events
+                .lock()
+                .expect("events lock poisoned")
+                .push("stop");
+            self.recording = false;
+            Ok(self.captured.clone())
+        }
+
+        fn cancel_recording(&mut self) -> Result<(), AudioError> {
+            self.events
+                .lock()
+                .expect("events lock poisoned")
+                .push("cancel");
+            self.recording = false;
+            Ok(())
+        }
+
+        fn is_recording(&self) -> bool {
+            self.recording
         }
     }
 
@@ -1216,6 +1273,31 @@ mod tests {
         runtime.start_recording().unwrap();
         let payload = runtime.stop_recording(None).unwrap();
         assert_eq!(payload.commit_text, "custom final");
+    }
+
+    #[test]
+    fn injected_audio_recorder_uses_start_stop_lifecycle() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let backend = MockAsrBackend::streaming("listening", "custom final");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let recorder = EventRecordingRecorder::new(
+            Arc::clone(&events),
+            CapturedAudio::anonymous(PcmBuffer::at_default_rate(vec![0, 96, -96, 0])),
+        );
+        let mut runtime =
+            RuntimeState::with_audio_recorder(config, Box::new(backend), Box::new(recorder))
+                .unwrap();
+
+        runtime.start_recording().unwrap();
+        assert_eq!(*events.lock().expect("events lock poisoned"), vec!["begin"]);
+        let report = runtime.stop_recording_report(None).unwrap();
+
+        assert_eq!(report.partial_text.as_deref(), Some("listening"));
+        assert_eq!(report.payload.commit_text, "custom final");
+        assert_eq!(
+            *events.lock().expect("events lock poisoned"),
+            vec!["begin", "stop"]
+        );
     }
 
     #[test]
