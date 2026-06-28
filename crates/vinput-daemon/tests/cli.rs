@@ -93,6 +93,20 @@ fn print_config_accepts_committed_default_fixture() {
 }
 
 #[test]
+fn print_config_with_default_fixture_ignores_configured_backend_runtime_init() {
+    let value = assert_json_success(
+        run_daemon_with_config(
+            default_config_path(),
+            &["--configured-backends", "print-config"],
+            "run vinput-daemon print-config with configured default fixture",
+        ),
+        "config",
+    );
+    assert_eq!(value["version"], 1);
+    assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
+}
+
+#[test]
 fn asr_state_accepts_committed_default_fixture() {
     let value = assert_json_success(
         run_daemon_with_config(
@@ -104,6 +118,20 @@ fn asr_state_accepts_committed_default_fixture() {
     );
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["target_model_id"], "");
+    assert_eq!(value["has_effective_backend"], false);
+}
+
+#[test]
+fn asr_state_with_default_fixture_ignores_configured_backend_runtime_init() {
+    let value = assert_json_success(
+        run_daemon_with_config(
+            default_config_path(),
+            &["--configured-backends", "asr-state"],
+            "run vinput-daemon asr-state with configured default fixture",
+        ),
+        "ASR state",
+    );
+    assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["has_effective_backend"], false);
 }
 
@@ -254,6 +282,20 @@ fn text_adapters_accepts_committed_default_fixture() {
     assert_eq!(value["adapter_count"], 0);
     assert_eq!(value["adapter_ids"], serde_json::json!([]));
     assert!(value["single_adapter_id"].is_null());
+}
+
+#[test]
+fn text_adapters_with_default_fixture_ignores_configured_backend_runtime_init() {
+    let value = assert_json_success(
+        run_daemon_with_config(
+            default_config_path(),
+            &["--configured-backends", "text-adapters"],
+            "run vinput-daemon text-adapters with configured default fixture",
+        ),
+        "text adapter diagnostics",
+    );
+    assert_eq!(value["adapter_count"], 0);
+    assert_eq!(value["adapter_ids"], serde_json::json!([]));
 }
 
 #[test]
