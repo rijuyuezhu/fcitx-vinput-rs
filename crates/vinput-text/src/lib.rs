@@ -173,8 +173,10 @@ impl PromptTemplate {
     ///
     /// Supported placeholders are `{raw_text}`, `{selected_text}`, `{scene_id}`,
     /// `{scene_prompt}`, `{provider_id}`, `{model}`, `{candidate_count}`,
-    /// `{context_lines}`, and `{timeout_ms}`. Unknown placeholders are kept as
-    /// literal text for forward compatibility.
+    /// `{context_lines}`, and `{timeout_ms}`. Legacy prompt placeholders
+    /// `{{asr}}`, `{{selected}}`, and `{{context}}` are also accepted; context
+    /// expands to an empty string until recent-input cache wiring lands.
+    /// Unknown placeholders are kept as literal text for forward compatibility.
     #[must_use]
     pub fn new(template: impl Into<String>) -> Self {
         Self {
@@ -190,6 +192,9 @@ impl PromptTemplate {
             .map(|timeout_ms| timeout_ms.to_string())
             .unwrap_or_default();
         self.template
+            .replace("{{asr}}", context.raw_text)
+            .replace("{{selected}}", context.selected_text)
+            .replace("{{context}}", "")
             .replace("{raw_text}", context.raw_text)
             .replace("{selected_text}", context.selected_text)
             .replace("{scene_id}", context.scene_id)
@@ -870,6 +875,29 @@ mod tests {
         assert_eq!(
             rendered,
             "scene=rewrite; prompt=polish; raw=raw; selected=selected; provider=p; model=m; candidates=1; context=3; timeout=2500"
+        );
+    }
+
+    #[test]
+    fn prompt_template_supports_legacy_double_brace_placeholders() {
+        let command = SceneDefinition {
+            prompt: Some("apply command".to_owned()),
+            ..scene("__command__", 1)
+        };
+        let request = TextRequest {
+            raw_text: "make it shorter",
+            scene: &command,
+            selected_text: Some("This is the selected text."),
+        };
+
+        let rendered = PromptTemplate::new(
+            "prompt={scene_prompt}; asr={{asr}}; selected={{selected}}; context={{context}}; unknown={{future}}",
+        )
+        .render_request(&request);
+
+        assert_eq!(
+            rendered,
+            "prompt=apply command; asr=make it shorter; selected=This is the selected text.; context=; unknown={{future}}"
         );
     }
 
