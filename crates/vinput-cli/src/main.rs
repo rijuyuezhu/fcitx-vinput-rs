@@ -180,24 +180,8 @@ fn print_protocol() -> anyhow::Result<()> {
         "service_interface": dbus::SERVICE_INTERFACE,
         "frontend_notifier_object_path": dbus::FRONTEND_NOTIFIER_OBJECT_PATH,
         "frontend_notifier_interface": dbus::FRONTEND_NOTIFIER_INTERFACE,
-        "methods": [
-            dbus::method::START_RECORDING,
-            dbus::method::START_COMMAND_RECORDING,
-            dbus::method::STOP_RECORDING,
-            dbus::method::GET_STATUS,
-            dbus::method::GET_ASR_BACKEND_STATE,
-            dbus::method::GET_TEXT_ADAPTER_STATE,
-            dbus::method::RELOAD_ASR_BACKEND,
-            dbus::method::START_ADAPTER,
-            dbus::method::STOP_ADAPTER,
-            dbus::method::NOTIFY,
-        ],
-        "signals": [
-            dbus::signal::RECOGNITION_RESULT,
-            dbus::signal::RECOGNITION_PARTIAL,
-            dbus::signal::STATUS_CHANGED,
-            dbus::signal::DAEMON_NOTIFICATION,
-        ]
+        "methods": dbus::SERVICE_METHODS,
+        "signals": dbus::SERVICE_SIGNALS,
     });
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())

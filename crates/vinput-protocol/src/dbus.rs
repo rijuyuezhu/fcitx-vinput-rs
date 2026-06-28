@@ -51,6 +51,27 @@ pub mod signal {
     pub const DAEMON_NOTIFICATION: &str = "DaemonNotification";
 }
 
+/// Method names exported on [`SERVICE_INTERFACE`] in protocol order.
+pub const SERVICE_METHODS: &[&str] = &[
+    method::START_RECORDING,
+    method::START_COMMAND_RECORDING,
+    method::STOP_RECORDING,
+    method::GET_STATUS,
+    method::GET_ASR_BACKEND_STATE,
+    method::GET_TEXT_ADAPTER_STATE,
+    method::RELOAD_ASR_BACKEND,
+    method::START_ADAPTER,
+    method::STOP_ADAPTER,
+    method::NOTIFY,
+];
+
+/// Signal names emitted on [`SERVICE_INTERFACE`] in protocol order.
+pub const SERVICE_SIGNALS: &[&str] = &[
+    signal::RECOGNITION_RESULT,
+    signal::RECOGNITION_PARTIAL,
+    signal::STATUS_CHANGED,
+    signal::DAEMON_NOTIFICATION,
+];
 #[cfg(test)]
 mod tests {
     use super::*;
