@@ -747,6 +747,30 @@ mod tests {
         }
     }
 
+    struct BeginFailureRecorder;
+
+    impl AudioRecorder for BeginFailureRecorder {
+        fn begin_recording(&mut self, _target: CaptureTarget) -> Result<(), AudioError> {
+            Err(AudioError::RecordingBackendUnavailable(
+                "test recorder unavailable".to_owned(),
+            ))
+        }
+
+        fn set_chunk_callback(&mut self, _callback: Option<AudioChunkCallback>) {}
+
+        fn stop_and_get_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
+            Err(AudioError::RecorderNotRecording)
+        }
+
+        fn cancel_recording(&mut self) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        fn is_recording(&self) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn duplicate_start_is_rejected_while_recording() {
         let config = VinputConfig::bundled_default().unwrap();
@@ -1246,6 +1270,32 @@ mod tests {
             panic!("default backend should be unsupported in current prototype");
         };
         assert!(matches!(error, super::RuntimeError::Asr(_)));
+    }
+
+    #[test]
+    fn recorder_begin_failure_leaves_runtime_idle() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let backend = MockAsrBackend::streaming("listening", "custom final");
+        let mut runtime = RuntimeState::with_audio_recorder(
+            config,
+            Box::new(backend),
+            Box::new(BeginFailureRecorder),
+        )
+        .unwrap();
+
+        let error = runtime.start_recording().unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::RuntimeError::Audio(AudioError::RecordingBackendUnavailable(message))
+                if message == "test recorder unavailable"
+        ));
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
+        assert!(matches!(
+            runtime.stop_recording(None).unwrap_err(),
+            super::RuntimeError::NotRecording(ServiceStatus::Idle)
+        ));
     }
 
     #[test]
