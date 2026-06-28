@@ -58,6 +58,12 @@ pub struct TextAdapterSummary {
     /// Number of configured environment entries without exposing values.
     #[serde(default)]
     pub env_count: usize,
+    /// Whether the daemon currently supervises this adapter as running.
+    #[serde(default)]
+    pub is_running: bool,
+    /// Supervised process id when the adapter is running.
+    #[serde(default)]
+    pub pid: Option<u32>,
     /// Whether a custom working directory is configured without exposing its path.
     #[serde(default)]
     pub has_working_dir: bool,
@@ -75,6 +81,8 @@ mod tests {
             command: "helper".to_owned(),
             args: vec!["--json".to_owned()],
             env_count: 2,
+            is_running: true,
+            pid: Some(1234),
             has_working_dir: true,
         }]);
 
@@ -83,6 +91,8 @@ mod tests {
         assert_eq!(state.single_adapter_id.as_deref(), Some("cmd"));
         assert_eq!(state.adapters[0].command, "helper");
         assert_eq!(state.adapters[0].env_count, 2);
+        assert!(state.adapters[0].is_running);
+        assert_eq!(state.adapters[0].pid, Some(1234));
         let ambiguous = TextAdapterState::from_adapters(vec![
             TextAdapterSummary {
                 id: "first".to_owned(),

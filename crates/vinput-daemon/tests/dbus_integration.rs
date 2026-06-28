@@ -79,7 +79,7 @@ fn configured_command_text_runtime() -> anyhow::Result<RuntimeState> {
             "providers": [{"id":"cmd","type":"command","command":"sh","args":["-c","cat >/dev/null; printf raw-bus"]}]
           },
           "llm": {
-            "adapters": [{"id":"cmd-adapter","command":"sh","args":["-c","cat >/dev/null; printf '{\\\"text\\\":\\\"bus adapter final\\\"}'"]}]
+            "adapters": [{"id":"cmd-adapter","command":"python3","args":["-c", "import sys; sys.stdin.read(); print('{\\\"text\\\":\\\"bus adapter final\\\"}')"]}]
           },
           "scenes": {
             "active_scene": "needs-adapter",
@@ -513,6 +513,13 @@ async fn configured_adapter_supervision_roundtrips_through_session_bus() -> anyh
         .call::<_, _, ()>(dbus::method::START_ADAPTER, &"cmd-adapter")
         .await?;
     assert!(pid_path.exists(), "adapter start should write pid file");
+    let text_adapter_state_json: String = proxy
+        .call(dbus::method::GET_TEXT_ADAPTER_STATE, &())
+        .await?;
+    let text_adapter_state: TextAdapterState = serde_json::from_str(&text_adapter_state_json)?;
+    assert!(text_adapter_state.adapters[0].is_running);
+    assert!(text_adapter_state.adapters[0].pid.is_some());
+
     let duplicate_start: zbus::Result<()> = proxy
         .call(dbus::method::START_ADAPTER, &"cmd-adapter")
         .await;
@@ -526,6 +533,12 @@ async fn configured_adapter_supervision_roundtrips_through_session_bus() -> anyh
         .call::<_, _, ()>(dbus::method::STOP_ADAPTER, &"cmd-adapter")
         .await?;
     assert!(!pid_path.exists(), "adapter stop should remove pid file");
+    let text_adapter_state_json: String = proxy
+        .call(dbus::method::GET_TEXT_ADAPTER_STATE, &())
+        .await?;
+    let text_adapter_state: TextAdapterState = serde_json::from_str(&text_adapter_state_json)?;
+    assert!(!text_adapter_state.adapters[0].is_running);
+    assert_eq!(text_adapter_state.adapters[0].pid, None);
     proxy
         .call::<_, _, ()>(dbus::method::STOP_ADAPTER, &"cmd-adapter")
         .await?;

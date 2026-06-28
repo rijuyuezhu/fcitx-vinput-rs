@@ -12,7 +12,7 @@ use vinput_asr::{
 use vinput_audio::{
     AudioError, AudioProcessingOptions, AudioSource, CapturedAudio, MockAudioSource, PcmBuffer,
 };
-use vinput_config::VinputConfig;
+use vinput_config::{LlmAdapterConfig, VinputConfig};
 use vinput_protocol::{
     AsrBackendState, RecognitionPayload, ServiceStatus, TextAdapterState, TextAdapterSummary,
 };
@@ -25,6 +25,19 @@ use vinput_text::{
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
 const MOCK_SILENCE_THRESHOLD: i16 = 8;
 const DEFAULT_MOCK_AUDIO_FRAMES: usize = 4;
+
+fn text_adapter_summary(adapter: &LlmAdapterConfig, pid: Option<u32>) -> TextAdapterSummary {
+    TextAdapterSummary {
+        id: adapter.id.clone(),
+        kind: "command".to_owned(),
+        command: adapter.command.clone(),
+        args: adapter.args.clone(),
+        env_count: adapter.env.len(),
+        is_running: pid.is_some(),
+        pid,
+        has_working_dir: adapter.working_dir.is_some(),
+    }
+}
 
 /// In-memory runtime state for the first daemon milestone.
 pub struct RuntimeState {
@@ -167,14 +180,7 @@ impl RuntimeState {
                 .llm
                 .adapters
                 .iter()
-                .map(|adapter| TextAdapterSummary {
-                    id: adapter.id.clone(),
-                    kind: "command".to_owned(),
-                    command: adapter.command.clone(),
-                    args: adapter.args.clone(),
-                    env_count: adapter.env.len(),
-                    has_working_dir: adapter.working_dir.is_some(),
-                })
+                .map(|adapter| text_adapter_summary(adapter, None))
                 .collect(),
         )
     }
@@ -182,7 +188,20 @@ impl RuntimeState {
     /// Builds sanitized text adapter diagnostics from this runtime's current config.
     #[must_use]
     pub fn configured_text_adapter_state_for_runtime(&self) -> TextAdapterState {
-        Self::configured_text_adapter_state(&self.config)
+        TextAdapterState::from_adapters(
+            self.config
+                .llm
+                .adapters
+                .iter()
+                .map(|adapter| {
+                    let pid = self
+                        .adapter_processes
+                        .get(&adapter.id)
+                        .map(|process| process.pid);
+                    text_adapter_summary(adapter, pid)
+                })
+                .collect(),
+        )
     }
 
     /// Returns the only configured command text adapter id, if exactly one exists.
@@ -673,6 +692,8 @@ mod tests {
         assert_eq!(state.adapters[0].command, "vinput-postprocess");
         assert_eq!(state.adapters[0].args, ["--json"]);
         assert_eq!(state.adapters[0].env_count, 1);
+        assert!(!state.adapters[0].is_running);
+        assert_eq!(state.adapters[0].pid, None);
         assert!(state.adapters[0].has_working_dir);
     }
 
