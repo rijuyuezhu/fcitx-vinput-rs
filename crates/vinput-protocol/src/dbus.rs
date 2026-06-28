@@ -1,5 +1,8 @@
 //! D-Bus names that must remain compatible with the C++ fcitx5-vinput addon.
 
+/// Well-known bus name owned by Fcitx5.
+pub const FCITX_BUS_NAME: &str = "org.fcitx.Fcitx5";
+
 /// Well-known bus name owned by the Rust daemon.
 pub const SERVICE_BUS_NAME: &str = "org.fcitx.Vinput";
 
@@ -35,8 +38,14 @@ pub mod method {
     pub const START_ADAPTER: &str = "StartAdapter";
     /// Stop a configured LLM adapter process.
     pub const STOP_ADAPTER: &str = "StopAdapter";
-    /// Send a frontend notification.
+    /// Frontend notifier method name on [`super::FRONTEND_NOTIFIER_INTERFACE`].
     pub const NOTIFY: &str = "Notify";
+}
+
+/// D-Bus signatures that are part of the legacy ABI.
+pub mod signature {
+    /// Legacy error-info tuple: `code`, `subject`, `detail`, `raw_message`.
+    pub const ERROR_INFO: &str = "ssss";
 }
 
 /// Signal names on [`SERVICE_INTERFACE`].
@@ -47,7 +56,7 @@ pub mod signal {
     pub const RECOGNITION_PARTIAL: &str = "RecognitionPartial";
     /// Daemon status transition. The first argument is a status string.
     pub const STATUS_CHANGED: &str = "StatusChanged";
-    /// Daemon-originated notification payload.
+    /// Daemon-originated notification payload with [`super::signature::ERROR_INFO`].
     pub const DAEMON_NOTIFICATION: &str = "DaemonNotification";
 }
 
@@ -62,7 +71,6 @@ pub const SERVICE_METHODS: &[&str] = &[
     method::RELOAD_ASR_BACKEND,
     method::START_ADAPTER,
     method::STOP_ADAPTER,
-    method::NOTIFY,
 ];
 
 /// Signal names emitted on [`SERVICE_INTERFACE`] in protocol order.
@@ -78,12 +86,22 @@ mod tests {
 
     #[test]
     fn dbus_names_match_the_legacy_contract() {
+        assert_eq!(FCITX_BUS_NAME, "org.fcitx.Fcitx5");
         assert_eq!(SERVICE_BUS_NAME, "org.fcitx.Vinput");
         assert_eq!(SERVICE_OBJECT_PATH, "/org/fcitx/Vinput");
         assert_eq!(SERVICE_INTERFACE, "org.fcitx.Vinput.Service");
+        assert_eq!(FRONTEND_NOTIFIER_OBJECT_PATH, "/org/fcitx/Fcitx5/Vinput");
+        assert_eq!(FRONTEND_NOTIFIER_INTERFACE, "org.fcitx.Fcitx5.Vinput1");
         assert_eq!(method::START_RECORDING, "StartRecording");
         assert_eq!(method::GET_TEXT_ADAPTER_STATE, "GetTextAdapterState");
+        assert_eq!(method::NOTIFY, "Notify");
+        assert_eq!(signature::ERROR_INFO, "ssss");
         assert_eq!(signal::RECOGNITION_RESULT, "RecognitionResult");
+    }
+
+    #[test]
+    fn service_methods_do_not_include_frontend_notifier_methods() {
+        assert!(!SERVICE_METHODS.contains(&method::NOTIFY));
     }
 
     #[test]

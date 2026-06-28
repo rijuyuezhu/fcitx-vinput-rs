@@ -270,20 +270,6 @@ impl VinputDbusService {
         Ok(())
     }
 
-    /// Frontend notification compatibility placeholder.
-    #[zbus(name = "Notify")]
-    async fn notify(
-        &self,
-        summary: &str,
-        body: &str,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> fdo::Result<String> {
-        Self::daemon_notification(&emitter, summary, body)
-            .await
-            .map_err(|error| Self::map_signal_error(&error))?;
-        Ok(format!("{summary}: {body}"))
-    }
-
     /// Signal emitted when a final recognition result is ready.
     #[zbus(signal, name = "RecognitionResult")]
     async fn recognition_result(
@@ -309,8 +295,10 @@ impl VinputDbusService {
     #[zbus(signal, name = "DaemonNotification")]
     async fn daemon_notification(
         signal_emitter: &zbus::object_server::SignalEmitter<'_>,
-        summary: &str,
-        body: &str,
+        code: &str,
+        subject: &str,
+        detail: &str,
+        raw_message: &str,
     ) -> zbus::Result<()>;
 }
 

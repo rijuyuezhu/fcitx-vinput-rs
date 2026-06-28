@@ -112,16 +112,6 @@ fn single_string_body(message: &Message) -> anyhow::Result<String> {
     Ok(body.0)
 }
 
-async fn next_pair_signal(
-    stream: &mut zbus::proxy::SignalStream<'_>,
-) -> anyhow::Result<(String, String)> {
-    let message = timeout(Duration::from_secs(2), stream.next())
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("signal stream ended"))?;
-    let body: (String, String) = message.body().deserialize()?;
-    Ok(body)
-}
-
 fn interface_block<'a>(xml: &'a str, interface: &str) -> anyhow::Result<&'a str> {
     let needle = format!(r#"<interface name="{interface}">"#);
     let start = xml
@@ -189,6 +179,14 @@ fn assert_method_signature(
     Ok(())
 }
 
+fn assert_member_missing(interface_xml: &str, kind: &str, name: &str) {
+    let needle = format!(r#"<{kind} name="{name}">"#);
+    assert!(
+        !interface_xml.contains(&needle),
+        "{kind} {name} should not be exported on the daemon service interface"
+    );
+}
+
 fn assert_signal_signature(interface_xml: &str, name: &str, signature: &str) -> anyhow::Result<()> {
     let signal_xml = member_block(interface_xml, "signal", name)?;
     assert_eq!(
@@ -254,7 +252,12 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     assert_signal_signature(interface_xml, dbus::signal::RECOGNITION_RESULT, "s")?;
     assert_signal_signature(interface_xml, dbus::signal::RECOGNITION_PARTIAL, "s")?;
     assert_signal_signature(interface_xml, dbus::signal::STATUS_CHANGED, "s")?;
-    assert_signal_signature(interface_xml, dbus::signal::DAEMON_NOTIFICATION, "ss")?;
+    assert_signal_signature(
+        interface_xml,
+        dbus::signal::DAEMON_NOTIFICATION,
+        dbus::signature::ERROR_INFO,
+    )?;
+    assert_member_missing(interface_xml, "method", dbus::method::NOTIFY);
 
     let mut status_signals = proxy.receive_signal(dbus::signal::STATUS_CHANGED).await?;
     let mut partial_signals = proxy
@@ -263,10 +266,6 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let mut result_signals = proxy
         .receive_signal(dbus::signal::RECOGNITION_RESULT)
         .await?;
-    let mut notification_signals = proxy
-        .receive_signal(dbus::signal::DAEMON_NOTIFICATION)
-        .await?;
-
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
 
@@ -350,22 +349,6 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         "mock command result for: selected text"
     );
     assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
-
-    let notification: String = proxy
-        .call(dbus::method::NOTIFY, &("summary", "body"))
-        .await?;
-    assert_eq!(notification, "summary: body");
-    assert_eq!(
-        next_pair_signal(&mut notification_signals).await?,
-        ("summary".to_owned(), "body".to_owned())
-    );
-
-    let empty_notification: String = proxy.call(dbus::method::NOTIFY, &("", "")).await?;
-    assert_eq!(empty_notification, ": ");
-    assert_eq!(
-        next_pair_signal(&mut notification_signals).await?,
-        (String::new(), String::new())
-    );
 
     let state: (
         String,

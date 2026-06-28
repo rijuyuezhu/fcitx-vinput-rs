@@ -21,14 +21,15 @@ The service exposes compatibility and diagnostic method names:
 - `ReloadAsrBackend`
 - `StartAdapter`
 - `StopAdapter`
-- `Notify`
+
+`GetTextAdapterState` is a Rust diagnostic extension. The legacy frontend notifier method is separate: `Notify` lives on `org.fcitx.Fcitx5.Vinput1` at `/org/fcitx/Fcitx5/Vinput` and accepts the legacy error-info tuple `(code, subject, detail, raw_message)`.
 
 It also declares the legacy signal names:
 
 - `RecognitionResult`
 - `RecognitionPartial`
 - `StatusChanged`
-- `DaemonNotification`
+- `DaemonNotification` with the legacy `ssss` error-info payload: code, subject, detail, raw_message.
 
 ## Current test coverage
 
