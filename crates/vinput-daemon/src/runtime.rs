@@ -1070,7 +1070,7 @@ mod tests {
         let message = error.to_string();
 
         assert!(matches!(error, super::RuntimeError::Finish(_)));
-        assert!(message.contains("text adapter/postprocess backend"));
+        assert!(message.contains("text adapter backend"));
         assert_eq!(runtime.status(), ServiceStatus::Idle);
         assert!(runtime.partial_text().is_none());
     }

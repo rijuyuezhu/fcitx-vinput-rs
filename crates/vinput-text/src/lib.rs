@@ -714,7 +714,7 @@ impl TextProcessor for MockTextProcessor {
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TextError {
     /// A non-raw scene with candidates needs adapter support that is not ported yet.
-    #[error("scene `{0}` requires a text adapter/postprocess backend")]
+    #[error("scene `{0}` requires a text adapter backend")]
     AdapterRequired(String),
     /// A configured adapter path exists but is not implemented yet.
     #[error("scene `{0}` requested a text adapter that is not implemented yet")]
