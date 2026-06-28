@@ -46,6 +46,8 @@ dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --te
 
 That test starts the Rust service, builds a `zbus::Proxy`, calls legacy methods by their exact wire names, and parses the returned recognition payload JSON.
 
+`vinput-cli protocol` serializes method and signal names from `vinput-protocol::dbus::SERVICE_METHODS` and `SERVICE_SIGNALS`, so the smoke CLI and service tests read the same member list.
+
 ## Compatibility rule
 
 The C++ frontend should not know whether the backend is C++ or Rust. Any service method rename, object path change, status string change, or recognition payload shape change must be caught by `vinput-protocol` tests before it reaches D-Bus integration.
