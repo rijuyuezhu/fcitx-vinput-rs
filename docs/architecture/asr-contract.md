@@ -96,7 +96,7 @@ The deprecated `failure` response key is accepted as an alias for `error` while 
 
 ## Diagnostics
 
-The `asr-state` CLI diagnostic serializes `AsrBackendState` from config only. It does not construct, reload, or probe the runtime backend, so it remains usable with `--configured-backends` even when the selected runtime backend is unavailable.
+Both `vinput-cli asr-state` and `vinput-daemon asr-state` serialize `AsrBackendState` from config only. They do not construct, reload, or probe the runtime backend. The daemon diagnostic remains usable with `--configured-backends` even when the selected runtime backend is unavailable.
 
 ## Next ASR steps
 
