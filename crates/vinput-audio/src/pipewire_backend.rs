@@ -7,7 +7,10 @@
 
 use std::{cell::Cell, cell::RefCell, rc::Rc};
 
-use crate::{AudioDeviceEnumerator, AudioDeviceInfo, AudioError};
+use crate::{
+    AudioChunkCallback, AudioDeviceEnumerator, AudioDeviceInfo, AudioError, AudioRecorder,
+    CaptureTarget, CapturedAudio,
+};
 
 const MEDIA_CLASS_AUDIO_SOURCE: &str = "Audio/Source";
 const PW_KEY_MEDIA_CLASS: &str = "media.class";
@@ -62,6 +65,57 @@ pub struct PipeWireDeviceEnumerator;
 impl AudioDeviceEnumerator for PipeWireDeviceEnumerator {
     fn enumerate_audio_sources(&mut self) -> Result<Vec<AudioDeviceInfo>, AudioError> {
         enumerate_audio_sources()
+    }
+}
+
+/// Feature-gated `PipeWire` recorder skeleton.
+pub struct PipeWireAudioRecorder {
+    target: CaptureTarget,
+}
+
+impl PipeWireAudioRecorder {
+    /// Creates a recorder placeholder for future live `PipeWire` capture.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            target: CaptureTarget::default(),
+        }
+    }
+
+    /// Returns the last target passed to `begin_recording`.
+    #[must_use]
+    pub const fn target(&self) -> &CaptureTarget {
+        &self.target
+    }
+}
+
+impl Default for PipeWireAudioRecorder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AudioRecorder for PipeWireAudioRecorder {
+    fn begin_recording(&mut self, target: CaptureTarget) -> Result<(), AudioError> {
+        probe_client_linkage();
+        self.target = target;
+        Err(AudioError::RecordingBackendUnavailable(
+            "PipeWire recorder stream is not implemented yet".to_owned(),
+        ))
+    }
+
+    fn set_chunk_callback(&mut self, _callback: Option<AudioChunkCallback>) {}
+
+    fn stop_and_get_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
+        Err(AudioError::RecorderNotRecording)
+    }
+
+    fn cancel_recording(&mut self) -> Result<(), AudioError> {
+        Ok(())
+    }
+
+    fn is_recording(&self) -> bool {
+        false
     }
 }
 
@@ -178,6 +232,34 @@ mod tests {
     #[test]
     fn pipewire_probe_initializes_client_library() {
         super::probe_client_linkage();
+    }
+
+    #[test]
+    fn pipewire_recorder_reports_unavailable_without_live_stream() {
+        let mut recorder = super::PipeWireAudioRecorder::new();
+
+        super::AudioRecorder::set_chunk_callback(&mut recorder, None);
+        let error = super::AudioRecorder::begin_recording(
+            &mut recorder,
+            super::CaptureTarget::Object("alsa_input.usb-mic".to_owned()),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::AudioError::RecordingBackendUnavailable(message)
+                if message.contains("PipeWire recorder stream")
+        ));
+        assert_eq!(
+            recorder.target(),
+            &super::CaptureTarget::Object("alsa_input.usb-mic".to_owned())
+        );
+        assert!(!super::AudioRecorder::is_recording(&recorder));
+        assert_eq!(
+            super::AudioRecorder::stop_and_get_buffer(&mut recorder).unwrap_err(),
+            super::AudioError::RecorderNotRecording
+        );
+        super::AudioRecorder::cancel_recording(&mut recorder).unwrap();
     }
 
     #[test]

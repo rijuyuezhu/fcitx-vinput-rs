@@ -707,6 +707,9 @@ pub enum AudioError {
     /// Recorder was asked to stop while idle.
     #[error("recorder is not recording")]
     RecorderNotRecording,
+    /// Audio recording backend is linked but not usable yet.
+    #[error("audio recording backend is unavailable: {0}")]
+    RecordingBackendUnavailable(String),
     /// Audio device enumeration failed.
     #[error("audio device enumeration failed: {0}")]
     DeviceEnumerationFailed(String),
