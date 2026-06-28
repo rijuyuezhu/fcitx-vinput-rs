@@ -3,10 +3,35 @@
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use vinput_protocol::{ServiceStatus, dbus};
+use vinput_protocol::{AsrBackendState, ServiceStatus, dbus};
 use zbus::{Connection, fdo, object_server::SignalEmitter};
 
 use crate::{RuntimeError, RuntimeState};
+
+/// Legacy `GetAsrBackendState` D-Bus output tuple.
+type AsrBackendStateTuple = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    bool,
+    bool,
+    Vec<String>,
+);
+
+fn asr_backend_state_tuple(state: AsrBackendState) -> AsrBackendStateTuple {
+    (
+        state.target_provider_id,
+        state.target_model_id,
+        state.effective_provider_id,
+        state.effective_model_id,
+        state.last_error,
+        state.reload_in_progress,
+        state.has_effective_backend,
+        state.remote_endpoints,
+    )
+}
 
 /// Thread-safe D-Bus facade over the daemon runtime.
 #[derive(Clone)]
@@ -121,7 +146,7 @@ impl VinputDbusService {
     async fn start_recording(
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> fdo::Result<String> {
+    ) -> fdo::Result<()> {
         let (status, partial_text) = self.start_recording_state().await?;
         Self::status_changed(&emitter, &status)
             .await
@@ -131,7 +156,7 @@ impl VinputDbusService {
                 .await
                 .map_err(|error| Self::map_signal_error(&error))?;
         }
-        Ok(status)
+        Ok(())
     }
 
     /// Start command-mode speech recognition with selected text context.
@@ -140,7 +165,7 @@ impl VinputDbusService {
         &self,
         selected_text: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> fdo::Result<String> {
+    ) -> fdo::Result<()> {
         let (status, partial_text) = self.start_command_recording_state(selected_text).await?;
         Self::status_changed(&emitter, &status)
             .await
@@ -150,7 +175,7 @@ impl VinputDbusService {
                 .await
                 .map_err(|error| Self::map_signal_error(&error))?;
         }
-        Ok(status)
+        Ok(())
     }
 
     /// Stop current recording and return the legacy recognition JSON payload.
@@ -186,12 +211,34 @@ impl VinputDbusService {
         runtime.status().to_string()
     }
 
-    /// Return ASR backend diagnostic state JSON.
-    #[zbus(name = "GetAsrBackendState")]
-    async fn get_asr_backend_state(&self) -> fdo::Result<String> {
+    /// Return ASR backend diagnostic state using the legacy tuple signature.
+    #[zbus(
+        name = "GetAsrBackendState",
+        out_args(
+            "target_provider_id",
+            "target_model_id",
+            "effective_provider_id",
+            "effective_model_id",
+            "last_error",
+            "reload_in_progress",
+            "has_effective_backend",
+            "remote_endpoints"
+        )
+    )]
+    async fn get_asr_backend_state(
+        &self,
+    ) -> (
+        String,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+        Vec<String>,
+    ) {
         let runtime = self.runtime.lock().await;
-        serde_json::to_string(&runtime.configured_asr_state_for_runtime())
-            .map_err(Self::map_json_error)
+        asr_backend_state_tuple(runtime.configured_asr_state_for_runtime())
     }
 
     /// Return text adapter diagnostic state JSON.
@@ -202,26 +249,30 @@ impl VinputDbusService {
             .map_err(Self::map_json_error)
     }
 
-    /// Reload ASR backend and return the resulting state JSON.
+    /// Reload ASR backend using the legacy void method signature.
     #[zbus(name = "ReloadAsrBackend")]
-    async fn reload_asr_backend(&self) -> fdo::Result<String> {
+    async fn reload_asr_backend(&self) -> fdo::Result<()> {
         let mut runtime = self.runtime.lock().await;
-        let state = runtime
+        runtime
             .reload_asr_backend()
             .map_err(|error| Self::map_runtime_error(&error))?;
-        serde_json::to_string(&state).map_err(Self::map_json_error)
+        Ok(())
     }
 
     /// Start a configured adapter. Stubbed until adapter supervision is ported.
     #[zbus(name = "StartAdapter")]
-    async fn start_adapter(&self, adapter_id: &str) -> String {
-        self.adapter_placeholder(adapter_id, "start").await
+    async fn start_adapter(&self, adapter_id: &str) -> fdo::Result<()> {
+        Err(fdo::Error::Failed(
+            self.adapter_placeholder(adapter_id, "start").await,
+        ))
     }
 
     /// Stop a configured adapter. Stubbed until adapter supervision is ported.
     #[zbus(name = "StopAdapter")]
-    async fn stop_adapter(&self, adapter_id: &str) -> String {
-        self.adapter_placeholder(adapter_id, "stop").await
+    async fn stop_adapter(&self, adapter_id: &str) -> fdo::Result<()> {
+        Err(fdo::Error::Failed(
+            self.adapter_placeholder(adapter_id, "stop").await,
+        ))
     }
 
     /// Frontend notification compatibility placeholder.
@@ -273,7 +324,7 @@ mod tests {
     use super::VinputDbusService;
     use crate::RuntimeState;
     use vinput_config::{AsrProviderConfig, AsrProviderKind, LlmAdapterConfig, VinputConfig};
-    use vinput_protocol::{AsrBackendState, RecognitionPayload, TextAdapterState};
+    use vinput_protocol::{RecognitionPayload, TextAdapterState};
 
     fn service() -> VinputDbusService {
         let config = VinputConfig::bundled_default().unwrap();
@@ -454,12 +505,11 @@ mod tests {
         });
         let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
 
-        let state: AsrBackendState =
-            serde_json::from_str(&service.get_asr_backend_state().await.unwrap()).unwrap();
-        assert_eq!(state.target_provider_id, "remote");
-        assert_eq!(state.target_model_id, "cloud");
-        assert!(!state.has_effective_backend);
-        assert_eq!(state.remote_endpoints, ["https://asr.example.test"]);
+        let state = service.get_asr_backend_state().await;
+        assert_eq!(state.0, "remote");
+        assert_eq!(state.1, "cloud");
+        assert!(!state.6);
+        assert_eq!(state.7, ["https://asr.example.test"]);
     }
 
     #[tokio::test]
@@ -479,25 +529,34 @@ mod tests {
         });
         let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
 
-        let state: AsrBackendState =
-            serde_json::from_str(&service.get_asr_backend_state().await.unwrap()).unwrap();
-        assert!(state.has_effective_backend);
-        assert_eq!(state.target_provider_id, "cmd");
-        assert_eq!(state.target_model_id, "cmd-model");
-        assert_eq!(state.effective_provider_id, "cmd");
-        assert_eq!(state.effective_model_id, "cmd-model");
+        let state = service.get_asr_backend_state().await;
+        assert!(state.6);
+        assert_eq!(state.0, "cmd");
+        assert_eq!(state.1, "cmd-model");
+        assert_eq!(state.2, "cmd");
+        assert_eq!(state.3, "cmd-model");
     }
 
     #[tokio::test]
     async fn dbus_facade_reports_adapter_placeholders() {
         let service = service();
-        assert_eq!(
-            service.start_adapter("mock-adapter").await,
-            "adapter `mock-adapter` is not configured"
+        let start_error = service
+            .start_adapter("mock-adapter")
+            .await
+            .expect_err("unconfigured adapter start should fail");
+        assert!(
+            start_error
+                .to_string()
+                .contains("adapter `mock-adapter` is not configured")
         );
-        assert_eq!(
-            service.stop_adapter("mock-adapter").await,
-            "adapter `mock-adapter` is not configured"
+        let stop_error = service
+            .stop_adapter("mock-adapter")
+            .await
+            .expect_err("unconfigured adapter stop should fail");
+        assert!(
+            stop_error
+                .to_string()
+                .contains("adapter `mock-adapter` is not configured")
         );
 
         let mut config = VinputConfig::bundled_default().unwrap();
@@ -510,13 +569,23 @@ mod tests {
             extra: std::collections::HashMap::default(),
         });
         let service = VinputDbusService::new(RuntimeState::new(config).unwrap());
-        assert_eq!(
-            service.start_adapter("mock-adapter").await,
-            "adapter `mock-adapter` start is not implemented yet"
+        let start_error = service
+            .start_adapter("mock-adapter")
+            .await
+            .expect_err("configured adapter start should fail until supervision lands");
+        assert!(
+            start_error
+                .to_string()
+                .contains("adapter `mock-adapter` start is not implemented yet")
         );
-        assert_eq!(
-            service.stop_adapter("mock-adapter").await,
-            "adapter `mock-adapter` stop is not implemented yet"
+        let stop_error = service
+            .stop_adapter("mock-adapter")
+            .await
+            .expect_err("configured adapter stop should fail until supervision lands");
+        assert!(
+            stop_error
+                .to_string()
+                .contains("adapter `mock-adapter` stop is not implemented yet")
         );
     }
 
@@ -548,12 +617,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dbus_facade_returns_asr_state_json() {
+    async fn dbus_facade_returns_asr_state_tuple() {
         let service = service();
-        let state: AsrBackendState =
-            serde_json::from_str(&service.get_asr_backend_state().await.unwrap()).unwrap();
-        assert!(!state.has_effective_backend);
-        assert_eq!(state.target_provider_id, "sherpa-onnx");
-        assert!(!state.last_error.is_empty());
+        let state = service.get_asr_backend_state().await;
+        assert!(!state.6);
+        assert_eq!(state.0, "sherpa-onnx");
+        assert!(!state.4.is_empty());
     }
 }

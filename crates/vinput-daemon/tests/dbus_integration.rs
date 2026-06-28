@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 use tokio::time::timeout;
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
-use vinput_protocol::{AsrBackendState, RecognitionPayload, TextAdapterState, dbus};
+use vinput_protocol::{RecognitionPayload, TextAdapterState, dbus};
 use zbus::{Message, Proxy};
 
 async fn spawn_service() -> anyhow::Result<zbus::Connection> {
@@ -41,6 +41,83 @@ async fn next_pair_signal(
     Ok(body)
 }
 
+fn interface_block<'a>(xml: &'a str, interface: &str) -> anyhow::Result<&'a str> {
+    let needle = format!(r#"<interface name="{interface}">"#);
+    let start = xml
+        .find(&needle)
+        .ok_or_else(|| anyhow::anyhow!("interface {interface} missing from introspection XML"))?;
+    let body_start = start + needle.len();
+    let end = xml[body_start..]
+        .find("</interface>")
+        .ok_or_else(|| anyhow::anyhow!("interface {interface} is not closed"))?;
+    Ok(&xml[body_start..body_start + end])
+}
+
+fn member_block<'a>(interface_xml: &'a str, kind: &str, name: &str) -> anyhow::Result<&'a str> {
+    let needle = format!(r#"<{kind} name="{name}">"#);
+    let start = interface_xml
+        .find(&needle)
+        .ok_or_else(|| anyhow::anyhow!("{kind} {name} missing from introspection XML"))?;
+    let body_start = start + needle.len();
+    let end_tag = format!("</{kind}>");
+    let end = interface_xml[body_start..]
+        .find(&end_tag)
+        .ok_or_else(|| anyhow::anyhow!("{kind} {name} is not closed"))?;
+    Ok(&interface_xml[body_start..body_start + end])
+}
+
+fn arg_signature(member_xml: &str, direction: Option<&str>) -> String {
+    let direction_attr = direction.map(|direction| format!(r#"direction="{direction}""#));
+    let mut signature = String::new();
+    for line in member_xml.lines() {
+        if !line.contains("<arg ") {
+            continue;
+        }
+        if let Some(direction_attr) = &direction_attr
+            && !line.contains(direction_attr)
+        {
+            continue;
+        }
+        if let Some(type_start) = line.find(r#"type=""#) {
+            let value_start = type_start + r#"type=""#.len();
+            if let Some(value_end) = line[value_start..].find('"') {
+                signature.push_str(&line[value_start..value_start + value_end]);
+            }
+        }
+    }
+    signature
+}
+
+fn assert_method_signature(
+    interface_xml: &str,
+    name: &str,
+    input_signature: &str,
+    output_signature: &str,
+) -> anyhow::Result<()> {
+    let method_xml = member_block(interface_xml, "method", name)?;
+    assert_eq!(
+        arg_signature(method_xml, Some("in")),
+        input_signature,
+        "unexpected input signature for method {name}; XML: {method_xml}"
+    );
+    assert_eq!(
+        arg_signature(method_xml, Some("out")),
+        output_signature,
+        "unexpected output signature for method {name}; XML: {method_xml}"
+    );
+    Ok(())
+}
+
+fn assert_signal_signature(interface_xml: &str, name: &str, signature: &str) -> anyhow::Result<()> {
+    let signal_xml = member_block(interface_xml, "signal", name)?;
+    assert_eq!(
+        arg_signature(signal_xml, None),
+        signature,
+        "unexpected signature for signal {name}; XML: {signal_xml}"
+    );
+    Ok(())
+}
+
 async fn expect_no_string_signal(stream: &mut zbus::proxy::SignalStream<'_>) -> anyhow::Result<()> {
     match timeout(Duration::from_millis(150), stream.next()).await {
         Err(_) => Ok(()),
@@ -65,6 +142,38 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         dbus::SERVICE_INTERFACE,
     )
     .await?;
+
+    let introspection_proxy = Proxy::new(
+        &client_connection,
+        dbus::SERVICE_BUS_NAME,
+        dbus::SERVICE_OBJECT_PATH,
+        "org.freedesktop.DBus.Introspectable",
+    )
+    .await?;
+    let xml: String = introspection_proxy.call("Introspect", &()).await?;
+    let interface_xml = interface_block(&xml, dbus::SERVICE_INTERFACE)?;
+    assert_method_signature(interface_xml, dbus::method::START_RECORDING, "", "")?;
+    assert_method_signature(
+        interface_xml,
+        dbus::method::START_COMMAND_RECORDING,
+        "s",
+        "",
+    )?;
+    assert_method_signature(interface_xml, dbus::method::STOP_RECORDING, "s", "s")?;
+    assert_method_signature(interface_xml, dbus::method::GET_STATUS, "", "s")?;
+    assert_method_signature(
+        interface_xml,
+        dbus::method::GET_ASR_BACKEND_STATE,
+        "",
+        "sssssbbas",
+    )?;
+    assert_method_signature(interface_xml, dbus::method::RELOAD_ASR_BACKEND, "", "")?;
+    assert_method_signature(interface_xml, dbus::method::START_ADAPTER, "s", "")?;
+    assert_method_signature(interface_xml, dbus::method::STOP_ADAPTER, "s", "")?;
+    assert_signal_signature(interface_xml, dbus::signal::RECOGNITION_RESULT, "s")?;
+    assert_signal_signature(interface_xml, dbus::signal::RECOGNITION_PARTIAL, "s")?;
+    assert_signal_signature(interface_xml, dbus::signal::STATUS_CHANGED, "s")?;
+    assert_signal_signature(interface_xml, dbus::signal::DAEMON_NOTIFICATION, "ss")?;
 
     let mut status_signals = proxy.receive_signal(dbus::signal::STATUS_CHANGED).await?;
     let mut partial_signals = proxy
@@ -93,7 +202,10 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
 
-    let status: String = proxy.call(dbus::method::START_RECORDING, &()).await?;
+    proxy
+        .call::<_, _, ()>(dbus::method::START_RECORDING, &())
+        .await?;
+    let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "recording");
     assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
     assert_eq!(
@@ -101,8 +213,7 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         "mock partial"
     );
 
-    let duplicate_start: zbus::Result<String> =
-        proxy.call(dbus::method::START_RECORDING, &()).await;
+    let duplicate_start: zbus::Result<()> = proxy.call(dbus::method::START_RECORDING, &()).await;
     let duplicate_start_error = duplicate_start.expect_err("duplicate start should fail");
     assert!(
         duplicate_start_error
@@ -111,7 +222,7 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         "unexpected duplicate start error: {duplicate_start_error}"
     );
 
-    let command_while_recording: zbus::Result<String> = proxy
+    let command_while_recording: zbus::Result<()> = proxy
         .call(dbus::method::START_COMMAND_RECORDING, &"ignored selection")
         .await;
     let command_while_recording_error =
@@ -133,9 +244,10 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     assert_eq!(signal_payload.commit_text, "mock recognition result");
     assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
 
-    let status: String = proxy
-        .call(dbus::method::START_COMMAND_RECORDING, &"selected text")
+    proxy
+        .call::<_, _, ()>(dbus::method::START_COMMAND_RECORDING, &"selected text")
         .await?;
+    let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "recording");
     assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
     assert_eq!(
@@ -174,11 +286,19 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         (String::new(), String::new())
     );
 
-    let state_json: String = proxy.call(dbus::method::GET_ASR_BACKEND_STATE, &()).await?;
-    let state: AsrBackendState = serde_json::from_str(&state_json)?;
-    assert!(!state.has_effective_backend);
-    assert_eq!(state.target_provider_id, "sherpa-onnx");
-    assert!(!state.last_error.is_empty());
+    let state: (
+        String,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+        Vec<String>,
+    ) = proxy.call(dbus::method::GET_ASR_BACKEND_STATE, &()).await?;
+    assert!(!state.6);
+    assert_eq!(state.0, "sherpa-onnx");
+    assert!(!state.4.is_empty());
 
     let text_adapter_state_json: String = proxy
         .call(dbus::method::GET_TEXT_ADAPTER_STATE, &())
@@ -189,23 +309,42 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     assert!(text_adapter_state.adapters.is_empty());
     assert!(text_adapter_state.single_adapter_id.is_none());
 
-    let reloaded_json: String = proxy.call(dbus::method::RELOAD_ASR_BACKEND, &()).await?;
-    let reloaded: AsrBackendState = serde_json::from_str(&reloaded_json)?;
-    assert!(reloaded.has_effective_backend);
-    assert_eq!(reloaded.effective_provider_id, "mock");
-
-    let adapter_start: String = proxy
+    proxy
+        .call::<_, _, ()>(dbus::method::RELOAD_ASR_BACKEND, &())
+        .await?;
+    let adapter_start: zbus::Result<()> = proxy
         .call(dbus::method::START_ADAPTER, &"mock-adapter")
-        .await?;
-    assert_eq!(adapter_start, "adapter `mock-adapter` is not configured");
-    let adapter_stop: String = proxy
+        .await;
+    let adapter_start_error = adapter_start.expect_err("unconfigured adapter start should fail");
+    assert!(
+        adapter_start_error
+            .to_string()
+            .contains("adapter `mock-adapter` is not configured")
+    );
+    let adapter_stop: zbus::Result<()> = proxy
         .call(dbus::method::STOP_ADAPTER, &"mock-adapter")
-        .await?;
-    assert_eq!(adapter_stop, "adapter `mock-adapter` is not configured");
-    let empty_adapter_start: String = proxy.call(dbus::method::START_ADAPTER, &"").await?;
-    assert_eq!(empty_adapter_start, "adapter `` is not configured");
-    let empty_adapter_stop: String = proxy.call(dbus::method::STOP_ADAPTER, &"").await?;
-    assert_eq!(empty_adapter_stop, "adapter `` is not configured");
+        .await;
+    let adapter_stop_error = adapter_stop.expect_err("unconfigured adapter stop should fail");
+    assert!(
+        adapter_stop_error
+            .to_string()
+            .contains("adapter `mock-adapter` is not configured")
+    );
+    let empty_adapter_start: zbus::Result<()> = proxy.call(dbus::method::START_ADAPTER, &"").await;
+    let empty_adapter_start_error =
+        empty_adapter_start.expect_err("empty adapter start should fail");
+    assert!(
+        empty_adapter_start_error
+            .to_string()
+            .contains("adapter `` is not configured")
+    );
+    let empty_adapter_stop: zbus::Result<()> = proxy.call(dbus::method::STOP_ADAPTER, &"").await;
+    let empty_adapter_stop_error = empty_adapter_stop.expect_err("empty adapter stop should fail");
+    assert!(
+        empty_adapter_stop_error
+            .to_string()
+            .contains("adapter `` is not configured")
+    );
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
