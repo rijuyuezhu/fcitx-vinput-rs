@@ -221,6 +221,20 @@ impl RuntimeState {
             .single_adapter_id
     }
 
+    /// Returns the supervised process id for a currently managed text adapter.
+    #[must_use]
+    pub fn text_adapter_pid(&self, adapter_id: &str) -> Option<u32> {
+        self.adapter_processes
+            .get(adapter_id)
+            .map(|process| process.pid)
+    }
+
+    /// Returns whether a text adapter is currently supervised by this runtime.
+    #[must_use]
+    pub fn is_text_adapter_running(&self, adapter_id: &str) -> bool {
+        self.text_adapter_pid(adapter_id).is_some()
+    }
+
     /// Starts a configured command text adapter process.
     pub fn start_text_adapter(&mut self, adapter_id: &str) -> Result<u32, RuntimeError> {
         if self.adapter_processes.contains_key(adapter_id) {
@@ -768,6 +782,8 @@ mod tests {
             .unwrap()
             .with_adapter_runtime_paths(AdapterRuntimePaths::new(runtime_dir.clone()));
 
+        assert!(!runtime.is_text_adapter_running("cmd-adapter"));
+        assert_eq!(runtime.text_adapter_pid("cmd-adapter"), None);
         let pid = runtime.start_text_adapter("cmd-adapter").unwrap();
         assert!(pid_path.exists());
         let state = runtime.configured_text_adapter_state_for_runtime();
