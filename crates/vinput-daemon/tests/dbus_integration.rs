@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 use tokio::time::timeout;
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
-use vinput_protocol::{AsrBackendState, RecognitionPayload, dbus};
+use vinput_protocol::{AsrBackendState, RecognitionPayload, TextAdapterState, dbus};
 use zbus::{Message, Proxy};
 
 async fn spawn_service() -> anyhow::Result<zbus::Connection> {
@@ -53,6 +53,7 @@ async fn expect_no_string_signal(stream: &mut zbus::proxy::SignalStream<'_>) -> 
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[tokio::test]
 async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<()> {
     let _service_connection = spawn_service().await?;
@@ -178,6 +179,15 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     assert!(!state.has_effective_backend);
     assert_eq!(state.target_provider_id, "sherpa-onnx");
     assert!(!state.last_error.is_empty());
+
+    let text_adapter_state_json: String = proxy
+        .call(dbus::method::GET_TEXT_ADAPTER_STATE, &())
+        .await?;
+    let text_adapter_state: TextAdapterState = serde_json::from_str(&text_adapter_state_json)?;
+    assert_eq!(text_adapter_state.adapter_count, 0);
+    assert!(text_adapter_state.adapter_ids.is_empty());
+    assert!(text_adapter_state.adapters.is_empty());
+    assert!(text_adapter_state.single_adapter_id.is_none());
 
     let reloaded_json: String = proxy.call(dbus::method::RELOAD_ASR_BACKEND, &()).await?;
     let reloaded: AsrBackendState = serde_json::from_str(&reloaded_json)?;
