@@ -56,6 +56,12 @@ impl RuntimeState {
         Self::with_asr_backend(config, backend)
     }
 
+    /// Builds an idle runtime from config-selected ASR and command text adapters.
+    pub fn with_configured_backends(config: VinputConfig) -> Result<Self, RuntimeError> {
+        let backend = AsrBackendFactory::build_active(&config.asr).map_err(RuntimeError::Asr)?;
+        Self::with_configured_text(config, backend, Box::new(default_mock_audio_source()))
+    }
+
     /// Builds an idle runtime from validated config and an injected ASR backend.
     pub fn with_asr_backend(
         config: VinputConfig,
@@ -913,6 +919,57 @@ mod tests {
 
         assert_eq!(payload.commit_text, "configured final");
         assert_eq!(runtime.status(), ServiceStatus::Idle);
+    }
+
+    #[test]
+    fn configured_backends_process_prompted_scene_with_mock_asr() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "mock".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "mock".to_owned(),
+            kind: AsrProviderKind::Local,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        config.scenes.active_scene = "needs-adapter".to_owned();
+        config
+            .scenes
+            .definitions
+            .push(vinput_config::SceneDefinition {
+                id: "needs-adapter".to_owned(),
+                label: "Needs adapter".to_owned(),
+                prompt: Some("polish text".to_owned()),
+                provider_id: None,
+                model: None,
+                candidate_count: 1,
+                timeout_ms: None,
+                context_lines: 0,
+            });
+        config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+            id: "cmd-adapter".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"text":"configured backend final"}'"#
+                    .to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            working_dir: None,
+            extra: std::collections::HashMap::default(),
+        });
+        let mut runtime = RuntimeState::with_configured_backends(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let payload = runtime.stop_recording(None).unwrap();
+
+        assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
+        assert_eq!(payload.commit_text, "configured backend final");
     }
 
     #[test]
