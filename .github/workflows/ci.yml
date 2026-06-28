@@ -12,10 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - name: Ensure D-Bus test tools
-        run: sudo apt-get update && sudo apt-get install -y dbus
+      - name: Ensure native test tools
+        run: sudo apt-get update && sudo apt-get install -y dbus libpipewire-0.3-dev libspa-0.2-dev libclang-dev clang pkg-config
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace --all-targets
       - run: dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
+      - run: cargo test -p vinput-audio --features=pipewire-backend
+      - run: cargo clippy -p vinput-audio --all-targets --features=pipewire-backend -- -D warnings
