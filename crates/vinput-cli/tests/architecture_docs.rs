@@ -4,7 +4,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::workspace_file;
+use common::{workspace_crate_names, workspace_file};
 
 fn architecture_dir() -> PathBuf {
     workspace_file("docs/architecture")
@@ -67,19 +67,9 @@ fn architecture_index_links_existing_notes() {
 fn bootstrap_doc_lists_all_workspace_crates() {
     let bootstrap = std::fs::read_to_string(architecture_dir().join("bootstrap.md"))
         .expect("read bootstrap architecture doc");
-    let mut crates = std::fs::read_dir(workspace_file("crates"))
-        .expect("read crates directory")
-        .map(|entry| entry.expect("read crate directory entry").path())
-        .filter(|path| path.is_dir())
-        .filter_map(|path| path.file_name().map(ToOwned::to_owned))
-        .collect::<Vec<_>>();
-    crates.sort();
-
-    assert!(!crates.is_empty(), "workspace crates should exist");
-    for crate_name in crates {
-        let crate_name = crate_name.to_string_lossy();
+    for crate_name in workspace_crate_names() {
         assert!(
-            bootstrap.contains(crate_name.as_ref()),
+            bootstrap.contains(&crate_name),
             "bootstrap architecture doc should list `{crate_name}`"
         );
     }
