@@ -98,7 +98,7 @@ impl PcmBuffer {
 
     /// Decodes raw signed 16-bit little-endian PCM bytes with explicit layout metadata.
     pub fn from_pcm16le_bytes(spec: PcmSpec, bytes: &[u8]) -> Result<Self, AudioError> {
-        if bytes.len() % 2 != 0 {
+        if !bytes.len().is_multiple_of(2) {
             return Err(AudioError::OddPcmByteCount(bytes.len()));
         }
         let samples = bytes
