@@ -10,6 +10,7 @@ use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
 use vinput_protocol::{RecognitionPayload, TextAdapterState, dbus};
+use vinput_text::AdapterRuntimePaths;
 use zbus::{Message, Proxy};
 
 async fn spawn_service() -> anyhow::Result<zbus::Connection> {
@@ -429,6 +430,73 @@ async fn configured_command_backend_roundtrips_through_session_bus() -> anyhow::
     let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
     assert_eq!(signal_payload.commit_text.trim(), "8");
     assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
+
+    Ok(())
+}
+
+fn unique_adapter_runtime_dir(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "vinput-dbus-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos()
+    ))
+}
+
+#[tokio::test]
+async fn configured_adapter_supervision_roundtrips_through_session_bus() -> anyhow::Result<()> {
+    let runtime_dir = unique_adapter_runtime_dir("adapter-supervision");
+    let pid_path = runtime_dir.join("cmd-adapter.pid");
+    let config: VinputConfig = serde_json::from_str(
+        r#"
+        {
+          "version": 1,
+          "llm": {
+            "adapters": [{"id":"cmd-adapter","command":"sleep","args":["30"]}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    )?;
+    config.validate()?;
+    let runtime = RuntimeState::new(config)?
+        .with_adapter_runtime_paths(AdapterRuntimePaths::new(runtime_dir.clone()));
+    let (_service_connection, service_name) = spawn_runtime_on_unique_name(runtime).await?;
+    let client_connection = zbus::Connection::session().await?;
+    let proxy = Proxy::new(
+        &client_connection,
+        service_name.as_str(),
+        dbus::SERVICE_OBJECT_PATH,
+        dbus::SERVICE_INTERFACE,
+    )
+    .await?;
+
+    proxy
+        .call::<_, _, ()>(dbus::method::START_ADAPTER, &"cmd-adapter")
+        .await?;
+    assert!(pid_path.exists(), "adapter start should write pid file");
+    let duplicate_start: zbus::Result<()> = proxy
+        .call(dbus::method::START_ADAPTER, &"cmd-adapter")
+        .await;
+    let duplicate_error = duplicate_start.expect_err("duplicate adapter start should fail");
+    assert!(
+        duplicate_error.to_string().contains("already running"),
+        "unexpected duplicate adapter start error: {duplicate_error}"
+    );
+
+    proxy
+        .call::<_, _, ()>(dbus::method::STOP_ADAPTER, &"cmd-adapter")
+        .await?;
+    assert!(!pid_path.exists(), "adapter stop should remove pid file");
+    proxy
+        .call::<_, _, ()>(dbus::method::STOP_ADAPTER, &"cmd-adapter")
+        .await?;
+    let _ = std::fs::remove_dir_all(runtime_dir);
 
     Ok(())
 }
