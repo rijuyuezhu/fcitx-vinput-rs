@@ -6,11 +6,14 @@ The first milestones are intentionally small: preserve the public daemon/fronten
 
 ## Current layout
 
-- `crates/vinput-protocol`: D-Bus names, status strings, ASR state, and recognition result JSON.
-- `crates/vinput-config`: typed model for the legacy `data/default-config.json` plus initial validation.
-- `crates/vinput-asr`: ASR backend/session traits, recognition events, payload conversion, and deterministic mock backend.
-- `crates/vinput-daemon`: mock daemon runtime, library modules, and `zbus` service facade for the legacy daemon ABI.
-- `crates/vinput-cli`: bootstrap CLI named `vinput` for protocol/config/payload inspection.
+- `crates/vinput-protocol`: D-Bus names, status strings, ASR state, text adapter state, and recognition result JSON.
+- `crates/vinput-config`: typed config model for the legacy `data/default-config.json` plus validation.
+- `crates/vinput-audio`: pure PCM buffers, capture traits, and deterministic audio transforms.
+- `crates/vinput-asr`: ASR backend/session traits, recognition events, command backend seam, and deterministic mock backend.
+- `crates/vinput-text`: scene post-processing, prompt rendering, text adapter traits, and command adapter seam.
+- `crates/vinput-registry`: registry metadata parsing, validation, and dry-run asset/install planning.
+- `crates/vinput-daemon`: mock/configured daemon runtime, diagnostics, and `zbus` service facade for the legacy daemon ABI.
+- `crates/vinput-cli`: bootstrap CLI named `vinput` for protocol/config/registry/payload inspection.
 - `data/default-config.json`: copied from the original project as the compatibility baseline.
 - `docs/architecture/README.md`: architecture notes index and contract map.
 - `docs/legacy/`: tracked original-source annotations.
