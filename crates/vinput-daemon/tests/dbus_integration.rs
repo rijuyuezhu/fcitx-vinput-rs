@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 use vinput_asr::AsrBackendFactory;
 use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
 use vinput_config::VinputConfig;
@@ -542,6 +542,63 @@ async fn configured_adapter_supervision_roundtrips_through_session_bus() -> anyh
     proxy
         .call::<_, _, ()>(dbus::method::STOP_ADAPTER, &"cmd-adapter")
         .await?;
+    let _ = std::fs::remove_dir_all(runtime_dir);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn exited_adapter_is_reaped_from_dbus_diagnostics() -> anyhow::Result<()> {
+    let runtime_dir = unique_adapter_runtime_dir("adapter-reap");
+    let pid_path = runtime_dir.join("cmd-adapter.pid");
+    let config: VinputConfig = serde_json::from_str(
+        r#"
+        {
+          "version": 1,
+          "llm": {
+            "adapters": [{"id":"cmd-adapter","command":"true"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    )?;
+    config.validate()?;
+    let runtime = RuntimeState::new(config)?
+        .with_adapter_runtime_paths(AdapterRuntimePaths::new(runtime_dir.clone()));
+    let (_service_connection, service_name) = spawn_runtime_on_unique_name(runtime).await?;
+    let client_connection = zbus::Connection::session().await?;
+    let proxy = Proxy::new(
+        &client_connection,
+        service_name.as_str(),
+        dbus::SERVICE_OBJECT_PATH,
+        dbus::SERVICE_INTERFACE,
+    )
+    .await?;
+
+    proxy
+        .call::<_, _, ()>(dbus::method::START_ADAPTER, &"cmd-adapter")
+        .await?;
+    assert!(pid_path.exists(), "adapter start should write pid file");
+
+    let mut text_adapter_state = None;
+    for _ in 0..20 {
+        let state_json: String = proxy
+            .call(dbus::method::GET_TEXT_ADAPTER_STATE, &())
+            .await?;
+        let state: TextAdapterState = serde_json::from_str(&state_json)?;
+        if !state.adapters[0].is_running {
+            text_adapter_state = Some(state);
+            break;
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    let text_adapter_state = text_adapter_state
+        .ok_or_else(|| anyhow::anyhow!("adapter should be reaped from D-Bus diagnostics"))?;
+    assert_eq!(text_adapter_state.adapters[0].pid, None);
+    assert!(!pid_path.exists(), "adapter reap should remove pid file");
     let _ = std::fs::remove_dir_all(runtime_dir);
 
     Ok(())
