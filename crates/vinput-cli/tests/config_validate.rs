@@ -956,6 +956,25 @@ fn config_validate_fails_for_unknown_scene_provider() {
 }
 
 #[test]
+fn asr_state_accepts_committed_default_fixture() {
+    let path = default_config_path();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput"))
+        .arg("asr-state")
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .expect("run vinput asr-state on default fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("ASR state should be JSON");
+    assert_eq!(value["target_provider_id"], "sherpa-onnx");
+    assert_eq!(value["target_model_id"], "");
+    assert_eq!(value["has_effective_backend"], false);
+}
+
+#[test]
 fn asr_state_reports_mock_provider_ready() {
     let path = write_temp_config(
         r#"
