@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use tokio::time::timeout;
+use vinput_asr::AsrBackendFactory;
+use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
 use vinput_protocol::{RecognitionPayload, TextAdapterState, dbus};
@@ -17,6 +19,51 @@ async fn spawn_service() -> anyhow::Result<zbus::Connection> {
         .serve_on_session_bus()
         .await?;
     Ok(connection)
+}
+
+async fn spawn_runtime_on_unique_name(
+    runtime: RuntimeState,
+) -> anyhow::Result<(zbus::Connection, String)> {
+    let connection = zbus::Connection::session().await?;
+    let unique_name = connection
+        .unique_name()
+        .ok_or_else(|| anyhow::anyhow!("session connection should have a unique name"))?
+        .to_string();
+    connection
+        .object_server()
+        .at(dbus::SERVICE_OBJECT_PATH, VinputDbusService::new(runtime))
+        .await?;
+    Ok((connection, unique_name))
+}
+
+fn configured_command_runtime() -> anyhow::Result<RuntimeState> {
+    let config: VinputConfig = serde_json::from_str(
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "cmd",
+            "normalize_audio": false,
+            "input_gain": 1.0,
+            "providers": [{"id":"cmd","type":"command","command":"wc","args":["-c"]}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    )?;
+    config.validate()?;
+    let backend = AsrBackendFactory::build_active(&config.asr)?;
+    let audio_source = MockAudioSource::from_frames(vec![
+        CapturedAudio::named(PcmBuffer::at_default_rate(Vec::<i16>::new()), "warm-up"),
+        CapturedAudio::named(
+            PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
+            "dbus-e2e",
+        ),
+    ]);
+    RuntimeState::with_configured_text(config, backend, Box::new(audio_source)).map_err(Into::into)
 }
 
 async fn next_string_signal(stream: &mut zbus::proxy::SignalStream<'_>) -> anyhow::Result<String> {
@@ -348,6 +395,40 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn configured_command_backend_roundtrips_through_session_bus() -> anyhow::Result<()> {
+    let runtime = configured_command_runtime()?;
+    let (_service_connection, service_name) = spawn_runtime_on_unique_name(runtime).await?;
+    let client_connection = zbus::Connection::session().await?;
+    let proxy = Proxy::new(
+        &client_connection,
+        service_name.as_str(),
+        dbus::SERVICE_OBJECT_PATH,
+        dbus::SERVICE_INTERFACE,
+    )
+    .await?;
+    let mut status_signals = proxy.receive_signal(dbus::signal::STATUS_CHANGED).await?;
+    let mut result_signals = proxy
+        .receive_signal(dbus::signal::RECOGNITION_RESULT)
+        .await?;
+
+    proxy
+        .call::<_, _, ()>(dbus::method::START_RECORDING, &())
+        .await?;
+    assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
+
+    let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
+    let payload = RecognitionPayload::from_json_str(&payload_json)?;
+    assert_eq!(payload.commit_text.trim(), "8");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
+    let result_payload_json = next_string_signal(&mut result_signals).await?;
+    let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
+    assert_eq!(signal_payload.commit_text.trim(), "8");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
 
     Ok(())
 }
