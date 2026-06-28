@@ -519,6 +519,51 @@ impl AudioRecorder for MockAudioRecorder {
     }
 }
 
+/// Compatibility adapter that exposes a stateful recorder as a one-shot source.
+pub struct RecorderAudioSource<R> {
+    recorder: R,
+    target: CaptureTarget,
+}
+
+impl<R> RecorderAudioSource<R> {
+    /// Creates a compatibility source for the given recorder and target.
+    #[must_use]
+    pub fn new(recorder: R, target: CaptureTarget) -> Self {
+        Self { recorder, target }
+    }
+
+    /// Returns the wrapped recorder.
+    #[must_use]
+    pub const fn recorder(&self) -> &R {
+        &self.recorder
+    }
+
+    /// Returns the wrapped recorder mutably.
+    #[must_use]
+    pub const fn recorder_mut(&mut self) -> &mut R {
+        &mut self.recorder
+    }
+
+    /// Consumes the adapter and returns the wrapped recorder.
+    #[must_use]
+    pub fn into_recorder(self) -> R {
+        self.recorder
+    }
+}
+
+impl<R: AudioRecorder> AudioSource for RecorderAudioSource<R> {
+    fn read_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
+        self.recorder.begin_recording(self.target.clone())?;
+        match self.recorder.stop_and_get_buffer() {
+            Ok(captured) => Ok(captured),
+            Err(error) => {
+                let _ = self.recorder.cancel_recording();
+                Err(error)
+            }
+        }
+    }
+}
+
 /// Audio source abstraction used before a concrete desktop backend is wired in.
 pub trait AudioSource: Send {
     /// Read one PCM buffer.
@@ -717,9 +762,10 @@ fn scale_sample(sample: i16, gain: f32) -> i16 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioDeviceEnumerator, AudioDeviceInfo, AudioError, AudioRecorder, CaptureTarget,
-        CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ, MockAudioDeviceEnumerator,
-        MockAudioRecorder, PcmBuffer, PcmSpec,
+        AudioDeviceEnumerator, AudioDeviceInfo, AudioError, AudioRecorder, AudioSource,
+        CaptureTarget, CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ,
+        MockAudioDeviceEnumerator, MockAudioRecorder, MockAudioSource, PcmBuffer, PcmSpec,
+        RecorderAudioSource,
     };
 
     fn wav_pcm16le_bytes(sample_rate_hz: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
@@ -1125,9 +1171,36 @@ mod tests {
     }
 
     #[test]
-    fn mock_audio_source_returns_frames_in_order() {
-        use super::{AudioSource, CapturedAudio, MockAudioSource};
+    fn recorder_audio_source_bridges_stateful_recorder() {
+        let captured = CapturedAudio::named(PcmBuffer::at_default_rate(vec![9, -9]), "fixture");
+        let recorder = MockAudioRecorder::once(captured.clone());
+        let mut source = RecorderAudioSource::new(
+            recorder,
+            CaptureTarget::Object("alsa_input.usb-mic".to_owned()),
+        );
 
+        assert_eq!(source.read_buffer().unwrap(), captured);
+        assert_eq!(
+            source.recorder().target(),
+            &CaptureTarget::Object("alsa_input.usb-mic".to_owned())
+        );
+        assert!(!source.recorder().is_recording());
+    }
+
+    #[test]
+    fn recorder_audio_source_cancels_after_stop_error() {
+        let recorder = MockAudioRecorder::from_recordings(Vec::new());
+        let mut source = RecorderAudioSource::new(recorder, CaptureTarget::Default);
+
+        assert_eq!(
+            source.read_buffer().unwrap_err(),
+            AudioError::SourceExhausted
+        );
+        assert!(!source.recorder().is_recording());
+    }
+
+    #[test]
+    fn mock_audio_source_returns_frames_in_order() {
         let first = CapturedAudio::named(PcmBuffer::at_default_rate(vec![1]), "first");
         let second = CapturedAudio::named(PcmBuffer::at_default_rate(vec![2]), "second");
         let mut source = MockAudioSource::from_frames(vec![first.clone(), second.clone()]);

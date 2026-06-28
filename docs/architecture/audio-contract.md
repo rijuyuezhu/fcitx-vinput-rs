@@ -32,7 +32,7 @@ Desktop recorders should implement the stateful `AudioRecorder` contract instead
 4. `stop_and_get_buffer` stops capture and returns the accumulated PCM buffer.
 5. `cancel_recording` stops capture and discards pending audio.
 
-A future PipeWire backend should negotiate signed 16-bit 16 kHz mono PCM first, then materialize `CapturedAudio` with source metadata. The existing `AudioSource` trait remains a one-shot source for deterministic tests and file-input demos.
+A future PipeWire backend should negotiate signed 16-bit 16 kHz mono PCM first, then materialize `CapturedAudio` with source metadata. The existing `AudioSource` trait remains a one-shot source for deterministic tests and file-input demos. `RecorderAudioSource` is a compatibility adapter for gradually wiring stateful recorders into code that still consumes one-shot sources.
 
 ## Processing order
 
