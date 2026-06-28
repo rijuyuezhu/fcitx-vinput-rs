@@ -26,3 +26,10 @@ These commands parse local JSON only. They do not download assets or touch insta
 ## Fixture
 
 `data/sample-registry-index.json` is the stable smoke fixture for registry validation and planning. Integration tests also consume it directly so changes to registry parsing, planning, or fixture format fail before smoke output drifts.
+
+The committed sample intentionally fixes these contract ids:
+
+- model `sherpa-zh-small` with provider `sherpa-onnx` and asset `models/sherpa-zh-small.tar.zst`.
+- adapter `mock-adapter` with kind `command` and no bundled assets yet.
+
+Treat these as smoke-test fixtures rather than a real downloadable registry catalog.
