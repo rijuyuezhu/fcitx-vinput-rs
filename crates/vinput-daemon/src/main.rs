@@ -38,6 +38,10 @@ struct Args {
     #[arg(long, value_name = "PATH")]
     pcm16le: Option<PathBuf>,
 
+    /// Uncompressed RIFF/WAVE signed 16-bit PCM file to use for `--once`.
+    #[arg(long, value_name = "PATH")]
+    wav: Option<PathBuf>,
+
     /// Sample rate of `--pcm16le` input.
     #[arg(long, default_value_t = vinput_audio::DEFAULT_SAMPLE_RATE_HZ)]
     pcm_sample_rate: u32,
@@ -70,8 +74,11 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let config = load_config(args.config.as_ref())?;
-    if args.pcm16le.is_some() && !args.once {
-        bail!("--pcm16le is only supported together with --once");
+    if args.pcm16le.is_some() && args.wav.is_some() {
+        bail!("--pcm16le and --wav cannot be used together");
+    }
+    if (args.pcm16le.is_some() || args.wav.is_some()) && !args.once {
+        bail!("--pcm16le and --wav are only supported together with --once");
     }
     config.validate().context("validate daemon config")?;
     if let Some(command) = &args.command {
@@ -135,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn build_runtime(args: &Args, config: VinputConfig) -> anyhow::Result<RuntimeState> {
-    let Some(pcm_path) = args.pcm16le.as_deref() else {
+    let Some(audio_source) = input_audio_source(args)? else {
         return if args.configured_backends {
             RuntimeState::with_configured_backends(config).context("build configured runtime")
         } else {
@@ -143,17 +150,23 @@ fn build_runtime(args: &Args, config: VinputConfig) -> anyhow::Result<RuntimeSta
         };
     };
 
-    let audio_source = pcm16le_audio_source(pcm_path, args.pcm_sample_rate, args.pcm_channels)?;
     if args.configured_backends {
         let backend =
             AsrBackendFactory::build_active(&config.asr).context("build configured ASR backend")?;
         RuntimeState::with_configured_text(config, backend, Box::new(audio_source))
-            .context("build configured runtime with PCM input")
+            .context("build configured runtime with file input")
     } else {
         let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
         RuntimeState::with_backends(config, Box::new(backend), Box::new(audio_source))
-            .context("build mock runtime with PCM input")
+            .context("build mock runtime with file input")
     }
+}
+
+fn input_audio_source(args: &Args) -> anyhow::Result<Option<MockAudioSource>> {
+    if let Some(path) = args.pcm16le.as_deref() {
+        return pcm16le_audio_source(path, args.pcm_sample_rate, args.pcm_channels).map(Some);
+    }
+    args.wav.as_deref().map(wav_audio_source).transpose()
 }
 
 fn pcm16le_audio_source(
@@ -165,10 +178,21 @@ fn pcm16le_audio_source(
         sample_rate_hz,
         channels,
     };
-    let empty = PcmBuffer::with_spec(spec, Vec::<i16>::new())
-        .with_context(|| format!("validate PCM input spec for `{}`", path.display()))?;
     let pcm = read_pcm16le(path, spec)?;
-    let source_name = format!("pcm16le:{}", path.display());
+    file_audio_source(format!("pcm16le:{}", path.display()), pcm)
+}
+
+fn wav_audio_source(path: &Path) -> anyhow::Result<MockAudioSource> {
+    let bytes =
+        std::fs::read(path).with_context(|| format!("read WAV file `{}`", path.display()))?;
+    let pcm = PcmBuffer::from_wav_pcm16le_bytes(&bytes)
+        .with_context(|| format!("decode WAV file `{}`", path.display()))?;
+    file_audio_source(format!("wav:{}", path.display()), pcm)
+}
+
+fn file_audio_source(source_name: String, pcm: PcmBuffer) -> anyhow::Result<MockAudioSource> {
+    let empty = PcmBuffer::with_spec(pcm.spec(), Vec::<i16>::new())
+        .context("build empty warm-up audio frame")?;
     Ok(MockAudioSource::from_frames(vec![
         CapturedAudio::named(empty, source_name.clone()),
         CapturedAudio::named(pcm, source_name),

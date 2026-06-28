@@ -64,6 +64,29 @@ fn pcm16le_bytes(samples: &[i16]) -> Vec<u8> {
         .collect()
 }
 
+fn wav_pcm16le_bytes(sample_rate_hz: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
+    let data = pcm16le_bytes(samples);
+    let data_len = u32::try_from(data.len()).expect("test data should fit in u32");
+    let byte_rate = sample_rate_hz * u32::from(channels) * 2;
+    let block_align = channels * 2;
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&channels.to_le_bytes());
+    wav.extend_from_slice(&sample_rate_hz.to_le_bytes());
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.extend_from_slice(&data);
+    wav
+}
+
 fn default_config_path() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("../../data/default-config.json");
@@ -466,6 +489,49 @@ fn once_can_read_pcm_file_into_configured_command_pipeline() {
 }
 
 #[test]
+fn once_can_read_wav_file_into_configured_command_asr() {
+    let wav = TempBytes::write(
+        "configured-command-wav-once",
+        "wav",
+        &wav_pcm16le_bytes(16_000, 1, &[1_000, -1_000, 2_000, -2_000]),
+    );
+    let config = TempConfig::write(
+        "configured-command-wav-once",
+        r#"
+        {
+          "version": 1,
+          "asr": {
+            "active_provider": "cmd",
+            "normalize_audio": false,
+            "input_gain": 1.0,
+            "providers": [{"id":"cmd","type":"command","command":"wc","args":["-c"]}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+    let wav_path = wav.path.to_string_lossy().into_owned();
+
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &[
+                "--configured-backends",
+                "--once",
+                "--wav",
+                wav_path.as_str(),
+            ],
+            "run vinput-daemon --once with WAV and configured command ASR",
+        ),
+        "recognition payload",
+    );
+    assert_eq!(value["commit_text"], "8");
+}
+
+#[test]
 fn once_rejects_odd_pcm_file() {
     let pcm = TempBytes::write("odd-pcm", "pcm", &[0]);
     let pcm_path = pcm.path.to_string_lossy().into_owned();
@@ -669,6 +735,7 @@ fn help_lists_diagnostics_commands() {
     assert!(stdout.contains("--config"));
     assert!(stdout.contains("--configured-backends"));
     assert!(stdout.contains("--pcm16le"));
+    assert!(stdout.contains("--wav"));
     assert!(stdout.contains("--pcm-sample-rate"));
     assert!(stdout.contains("--pcm-channels"));
     assert!(stdout.contains("print-config"));

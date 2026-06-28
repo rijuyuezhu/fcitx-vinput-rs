@@ -82,6 +82,10 @@ impl PcmBuffer {
         Ok(Self { spec, samples })
     }
 
+    /// Decodes an uncompressed RIFF/WAVE signed 16-bit PCM buffer.
+    pub fn from_wav_pcm16le_bytes(bytes: &[u8]) -> Result<Self, AudioError> {
+        decode_wav_pcm16le(bytes)
+    }
     /// Creates a 16 kHz mono PCM buffer.
     pub fn at_default_rate(samples: impl Into<Vec<i16>>) -> Self {
         Self {
@@ -365,9 +369,90 @@ pub enum AudioError {
         /// Configured channel count.
         channels: u16,
     },
+    /// RIFF/WAVE input was not uncompressed signed 16-bit PCM.
+    #[error("invalid WAV file: {0}")]
+    InvalidWav(String),
     /// Empty mock buffer list.
     #[error("no more buffers")]
     SourceExhausted,
+}
+
+fn decode_wav_pcm16le(bytes: &[u8]) -> Result<PcmBuffer, AudioError> {
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err(invalid_wav("missing RIFF/WAVE header"));
+    }
+
+    let mut format: Option<PcmSpec> = None;
+    let mut data: Option<&[u8]> = None;
+    let mut offset = 12;
+    while offset + 8 <= bytes.len() {
+        let chunk_id = &bytes[offset..offset + 4];
+        let chunk_len = read_le_u32(&bytes[offset + 4..offset + 8])? as usize;
+        let chunk_start = offset + 8;
+        let chunk_end = chunk_start
+            .checked_add(chunk_len)
+            .ok_or_else(|| invalid_wav("chunk size overflow"))?;
+        if chunk_end > bytes.len() {
+            return Err(invalid_wav("chunk extends past end of file"));
+        }
+        let chunk = &bytes[chunk_start..chunk_end];
+        match chunk_id {
+            b"fmt " => format = Some(parse_wav_fmt(chunk)?),
+            b"data" => data = Some(chunk),
+            _ => {}
+        }
+        offset = chunk_end + (chunk_len % 2);
+    }
+
+    let spec = format.ok_or_else(|| invalid_wav("missing fmt chunk"))?;
+    let data = data.ok_or_else(|| invalid_wav("missing data chunk"))?;
+    if data.len() % 2 != 0 {
+        return Err(invalid_wav("data chunk has an odd byte count"));
+    }
+    let samples = data
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    PcmBuffer::with_spec(spec, samples)
+}
+
+fn parse_wav_fmt(chunk: &[u8]) -> Result<PcmSpec, AudioError> {
+    if chunk.len() < 16 {
+        return Err(invalid_wav("fmt chunk is too short"));
+    }
+    let format_tag = read_le_u16(&chunk[0..2])?;
+    let channels = read_le_u16(&chunk[2..4])?;
+    let sample_rate_hz = read_le_u32(&chunk[4..8])?;
+    let bits_per_sample = read_le_u16(&chunk[14..16])?;
+    if format_tag != 1 {
+        return Err(invalid_wav("only PCM format tag 1 is supported"));
+    }
+    if bits_per_sample != 16 {
+        return Err(invalid_wav("only 16-bit samples are supported"));
+    }
+    PcmSpec {
+        sample_rate_hz,
+        channels,
+    }
+    .validate()
+}
+
+fn read_le_u16(bytes: &[u8]) -> Result<u16, AudioError> {
+    let raw: [u8; 2] = bytes
+        .try_into()
+        .map_err(|_| invalid_wav("expected 2-byte little-endian integer"))?;
+    Ok(u16::from_le_bytes(raw))
+}
+
+fn read_le_u32(bytes: &[u8]) -> Result<u32, AudioError> {
+    let raw: [u8; 4] = bytes
+        .try_into()
+        .map_err(|_| invalid_wav("expected 4-byte little-endian integer"))?;
+    Ok(u32::from_le_bytes(raw))
+}
+
+fn invalid_wav(message: impl Into<String>) -> AudioError {
+    AudioError::InvalidWav(message.into())
 }
 
 fn scale_sample(sample: i16, gain: f32) -> i16 {
@@ -393,6 +478,32 @@ mod tests {
     use super::{
         AudioError, CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ, PcmBuffer, PcmSpec,
     };
+
+    fn wav_pcm16le_bytes(sample_rate_hz: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
+        let mut data = Vec::new();
+        for sample in samples {
+            data.extend_from_slice(&sample.to_le_bytes());
+        }
+        let data_len = u32::try_from(data.len()).expect("test data should fit in u32");
+        let byte_rate = sample_rate_hz * u32::from(channels) * 2;
+        let block_align = channels * 2;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16_u32.to_le_bytes());
+        wav.extend_from_slice(&1_u16.to_le_bytes());
+        wav.extend_from_slice(&channels.to_le_bytes());
+        wav.extend_from_slice(&sample_rate_hz.to_le_bytes());
+        wav.extend_from_slice(&byte_rate.to_le_bytes());
+        wav.extend_from_slice(&block_align.to_le_bytes());
+        wav.extend_from_slice(&16_u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_len.to_le_bytes());
+        wav.extend_from_slice(&data);
+        wav
+    }
 
     #[test]
     fn rejects_zero_sample_rate() {
@@ -481,6 +592,33 @@ mod tests {
         assert_eq!(pcm.spec(), spec);
         assert_eq!(pcm.sample_rate_hz(), 48_000);
         assert_eq!(pcm.channels(), 2);
+    }
+
+    #[test]
+    fn wav_pcm16le_parser_preserves_metadata_and_samples() {
+        let bytes = wav_pcm16le_bytes(48_000, 2, &[1_000, -1_000, 2_000, -2_000]);
+        let pcm = PcmBuffer::from_wav_pcm16le_bytes(&bytes).unwrap();
+
+        assert_eq!(pcm.sample_rate_hz(), 48_000);
+        assert_eq!(pcm.channels(), 2);
+        assert_eq!(pcm.samples(), &[1_000, -1_000, 2_000, -2_000]);
+    }
+
+    #[test]
+    fn wav_pcm16le_parser_rejects_unsupported_format() {
+        let mut bytes = wav_pcm16le_bytes(16_000, 1, &[1]);
+        bytes[20..22].copy_from_slice(&3_u16.to_le_bytes());
+        assert_eq!(
+            PcmBuffer::from_wav_pcm16le_bytes(&bytes).unwrap_err(),
+            AudioError::InvalidWav("only PCM format tag 1 is supported".to_owned())
+        );
+
+        let mut bytes = wav_pcm16le_bytes(16_000, 1, &[1]);
+        bytes[34..36].copy_from_slice(&24_u16.to_le_bytes());
+        assert_eq!(
+            PcmBuffer::from_wav_pcm16le_bytes(&bytes).unwrap_err(),
+            AudioError::InvalidWav("only 16-bit samples are supported".to_owned())
+        );
     }
 
     #[test]
