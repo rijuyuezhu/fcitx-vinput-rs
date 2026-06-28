@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     io::Write,
+    path::{Path, PathBuf},
     process::{Command, Output, Stdio},
 };
 use thiserror::Error;
@@ -59,6 +60,45 @@ impl<'a> PromptContext<'a> {
             timeout_ms: request.scene.timeout_ms,
         }
     }
+}
+
+/// Filesystem layout helper for supervised text adapter runtime state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterRuntimePaths {
+    runtime_dir: PathBuf,
+}
+
+impl AdapterRuntimePaths {
+    /// Creates runtime paths rooted at `runtime_dir`.
+    #[must_use]
+    pub fn new(runtime_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            runtime_dir: runtime_dir.into(),
+        }
+    }
+
+    /// Returns the runtime directory.
+    #[must_use]
+    pub fn runtime_dir(&self) -> &Path {
+        &self.runtime_dir
+    }
+
+    /// Builds a path for an adapter pid file using a safe adapter id.
+    pub fn pid_path(&self, adapter_id: &str) -> Result<PathBuf, TextError> {
+        Ok(self.runtime_dir.join(adapter_pid_file_name(adapter_id)?))
+    }
+}
+
+fn adapter_pid_file_name(adapter_id: &str) -> Result<String, TextError> {
+    if adapter_id.is_empty()
+        || adapter_id == "."
+        || adapter_id == ".."
+        || adapter_id.contains('/')
+        || adapter_id.contains('\\')
+    {
+        return Err(TextError::InvalidAdapterId(adapter_id.to_owned()));
+    }
+    Ok(format!("{adapter_id}.pid"))
 }
 
 /// JSON request passed to command-backed text adapter helpers.
@@ -763,6 +803,9 @@ pub enum TextError {
     /// Adapter selection was ambiguous for a scene.
     #[error("scene `{0}` has ambiguous text adapter selection")]
     AmbiguousAdapter(String),
+    /// Command adapter id is unsafe for runtime paths.
+    #[error("invalid text adapter id for runtime path: {0}")]
+    InvalidAdapterId(String),
     /// Command adapter helper returned an error or invalid response.
     #[error("text adapter failed: {0}")]
     AdapterFailed(String),
@@ -798,10 +841,10 @@ fn command_placeholder_text(request: &TextRequest<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandTextAdapter, CommandTextProcessor, CommandTextRequest, CommandTextResponse,
-        CommandTextRunner, LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner,
-        PromptContext, PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
-        UnsupportedTextAdapter, extract_openai_compatible_candidates,
+        AdapterRuntimePaths, CommandTextAdapter, CommandTextProcessor, CommandTextRequest,
+        CommandTextResponse, CommandTextRunner, LlmTextProcessor, MockTextProcessor,
+        ProcessCommandTextRunner, PromptContext, PromptTemplate, TextError, TextFinisher,
+        TextProcessor, TextRequest, UnsupportedTextAdapter, extract_openai_compatible_candidates,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -961,6 +1004,30 @@ mod tests {
 
         let rendered = PromptTemplate::new("x={x}").render_request(&request);
         assert_eq!(rendered, "x={x}");
+    }
+
+    #[test]
+    fn adapter_runtime_paths_build_safe_pid_paths() {
+        let paths = AdapterRuntimePaths::new("/tmp/vinput-runtime");
+
+        assert_eq!(
+            paths.pid_path("adapter.demo").unwrap(),
+            std::path::PathBuf::from("/tmp/vinput-runtime/adapter.demo.pid")
+        );
+        assert_eq!(
+            paths.runtime_dir(),
+            std::path::Path::new("/tmp/vinput-runtime")
+        );
+    }
+
+    #[test]
+    fn adapter_runtime_paths_reject_unsafe_adapter_ids() {
+        let paths = AdapterRuntimePaths::new("/tmp/vinput-runtime");
+
+        for adapter_id in ["", ".", "..", "../escape", "nested/id", r"nested\id"] {
+            let error = paths.pid_path(adapter_id).unwrap_err();
+            assert_eq!(error, TextError::InvalidAdapterId(adapter_id.to_owned()));
+        }
     }
 
     #[test]
