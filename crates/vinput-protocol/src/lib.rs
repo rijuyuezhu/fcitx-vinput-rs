@@ -10,7 +10,7 @@ pub mod recognition;
 pub mod status;
 pub mod text;
 
-pub use asr::AsrBackendState;
+pub use asr::{AsrBackendState, RequestedAsrBackendStatus};
 pub use recognition::{Candidate, CandidateSource, RecognitionPayload, RecognitionProtocolError};
 pub use status::ServiceStatus;
 pub use text::{TextAdapterState, TextAdapterSummary};

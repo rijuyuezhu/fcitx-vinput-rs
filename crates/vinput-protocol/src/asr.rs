@@ -3,6 +3,24 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Legacy classification for a requested ASR backend selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestedAsrBackendStatus {
+    /// The requested provider/model does not match the target or effective backend.
+    Unknown,
+    /// The config target was saved but no reload result is visible yet.
+    ConfigSaved,
+    /// A reload is in progress for the requested provider/model.
+    ReloadInProgress,
+    /// The requested provider/model is the effective backend.
+    Applied,
+    /// Reload failed for the target, but a previous effective backend remains usable.
+    FailedStillUsingPrevious,
+    /// Reload failed and no effective backend is usable.
+    FailedNoUsableBackend,
+}
+
 /// Snapshot returned by the legacy `GetAsrBackendState` method.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 pub struct AsrBackendState {
@@ -63,11 +81,56 @@ impl AsrBackendState {
             ..Self::default()
         }
     }
+
+    /// Returns whether a requested provider/model matches the target or effective backend.
+    #[must_use]
+    pub fn matches_requested_backend(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+        effective: bool,
+    ) -> bool {
+        let (state_provider, state_model) = if effective {
+            (&self.effective_provider_id, &self.effective_model_id)
+        } else {
+            (&self.target_provider_id, &self.target_model_id)
+        };
+        state_provider == provider_id && state_model == model_id
+    }
+
+    /// Classifies a requested provider/model using the legacy C++ precedence rules.
+    #[must_use]
+    pub fn classify_requested_backend(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+    ) -> RequestedAsrBackendStatus {
+        let target_matches = self.matches_requested_backend(provider_id, model_id, false);
+        let effective_matches = self.matches_requested_backend(provider_id, model_id, true);
+
+        if self.reload_in_progress && target_matches {
+            return RequestedAsrBackendStatus::ReloadInProgress;
+        }
+        if !self.last_error.is_empty() && target_matches && !effective_matches {
+            return if self.has_effective_backend {
+                RequestedAsrBackendStatus::FailedStillUsingPrevious
+            } else {
+                RequestedAsrBackendStatus::FailedNoUsableBackend
+            };
+        }
+        if effective_matches {
+            return RequestedAsrBackendStatus::Applied;
+        }
+        if target_matches {
+            return RequestedAsrBackendStatus::ConfigSaved;
+        }
+        RequestedAsrBackendStatus::Unknown
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::AsrBackendState;
+    use super::{AsrBackendState, RequestedAsrBackendStatus};
 
     #[test]
     fn missing_fields_default_for_legacy_tolerance() {
@@ -123,6 +186,69 @@ mod tests {
         assert!(state.effective_provider_id.is_empty());
         assert!(state.effective_model_id.is_empty());
         assert!(state.remote_endpoints.is_empty());
+    }
+
+    #[test]
+    fn requested_backend_classification_matches_legacy_precedence() {
+        let mut state = AsrBackendState {
+            target_provider_id: "new".to_owned(),
+            target_model_id: "new-model".to_owned(),
+            effective_provider_id: "old".to_owned(),
+            effective_model_id: "old-model".to_owned(),
+            has_effective_backend: true,
+            reload_in_progress: true,
+            ..AsrBackendState::default()
+        };
+        assert_eq!(
+            state.classify_requested_backend("new", "new-model"),
+            RequestedAsrBackendStatus::ReloadInProgress
+        );
+
+        state.reload_in_progress = false;
+        state.last_error = "load failed".to_owned();
+        assert_eq!(
+            state.classify_requested_backend("new", "new-model"),
+            RequestedAsrBackendStatus::FailedStillUsingPrevious
+        );
+
+        state.has_effective_backend = false;
+        assert_eq!(
+            state.classify_requested_backend("new", "new-model"),
+            RequestedAsrBackendStatus::FailedNoUsableBackend
+        );
+
+        state.last_error.clear();
+        assert_eq!(
+            state.classify_requested_backend("new", "new-model"),
+            RequestedAsrBackendStatus::ConfigSaved
+        );
+
+        state.effective_provider_id = "new".to_owned();
+        state.effective_model_id = "new-model".to_owned();
+        assert_eq!(
+            state.classify_requested_backend("new", "new-model"),
+            RequestedAsrBackendStatus::Applied
+        );
+        assert_eq!(
+            state.classify_requested_backend("missing", "model"),
+            RequestedAsrBackendStatus::Unknown
+        );
+    }
+
+    #[test]
+    fn requested_backend_match_can_target_effective_or_saved_config() {
+        let state = AsrBackendState {
+            target_provider_id: "target".to_owned(),
+            target_model_id: "target-model".to_owned(),
+            effective_provider_id: "effective".to_owned(),
+            effective_model_id: "effective-model".to_owned(),
+            ..AsrBackendState::default()
+        };
+
+        assert!(state.matches_requested_backend("target", "target-model", false));
+        assert!(!state.matches_requested_backend("target", "target-model", true));
+        assert!(state.matches_requested_backend("effective", "effective-model", true));
+        assert!(!state.matches_requested_backend("effective", "effective-model", false));
     }
 
     #[test]
