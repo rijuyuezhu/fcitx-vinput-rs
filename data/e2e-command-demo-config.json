@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "asr": {
+    "active_provider": "demo-command-asr",
+    "normalize_audio": false,
+    "input_gain": 1.0,
+    "providers": [
+      {
+        "id": "demo-command-asr",
+        "type": "command",
+        "command": "python3",
+        "args": [
+          "-c",
+          "import sys; data=sys.stdin.buffer.read(); print('demo heard %d bytes' % len(data))"
+        ]
+      }
+    ]
+  },
+  "llm": {
+    "adapters": [
+      {
+        "id": "demo-text-adapter",
+        "command": "python3",
+        "args": [
+          "-c",
+          "import json,sys; req=json.load(sys.stdin); print(json.dumps({'text':'demo final: '+req['raw_text']}))"
+        ]
+      }
+    ]
+  },
+  "scenes": {
+    "active_scene": "demo-postprocess",
+    "definitions": [
+      {
+        "id": "demo-postprocess",
+        "label": "Demo postprocess",
+        "prompt": "Postprocess the ASR result for the demo.",
+        "candidate_count": 1
+      }
+    ]
+  }
+}
