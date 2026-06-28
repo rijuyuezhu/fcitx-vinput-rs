@@ -95,6 +95,19 @@ impl PcmBuffer {
     pub fn from_wav_pcm16le_bytes(bytes: &[u8]) -> Result<Self, AudioError> {
         decode_wav_pcm16le(bytes)
     }
+
+    /// Decodes raw signed 16-bit little-endian PCM bytes with explicit layout metadata.
+    pub fn from_pcm16le_bytes(spec: PcmSpec, bytes: &[u8]) -> Result<Self, AudioError> {
+        if bytes.len() % 2 != 0 {
+            return Err(AudioError::OddPcmByteCount(bytes.len()));
+        }
+        let samples = bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        Self::with_spec(spec, samples)
+    }
+
     /// Creates a 16 kHz mono PCM buffer.
     pub fn at_default_rate(samples: impl Into<Vec<i16>>) -> Self {
         Self {
@@ -378,6 +391,9 @@ pub enum AudioError {
         /// Configured channel count.
         channels: u16,
     },
+    /// Raw PCM input must contain complete little-endian i16 samples.
+    #[error("PCM input contains an odd number of bytes: {0}")]
+    OddPcmByteCount(usize),
     /// RIFF/WAVE input was not uncompressed signed 16-bit PCM.
     #[error("invalid WAV file: {0}")]
     InvalidWav(String),
@@ -536,6 +552,29 @@ mod tests {
         assert_eq!(
             super::i16_samples_to_le_bytes(&[0x1234, -2]),
             vec![0x34, 0x12, 0xfe, 0xff]
+        );
+    }
+
+    #[test]
+    fn decodes_raw_pcm16le_bytes_with_explicit_spec() {
+        let pcm = PcmBuffer::from_pcm16le_bytes(
+            PcmSpec {
+                sample_rate_hz: 8_000,
+                channels: 2,
+            },
+            &[0x34, 0x12, 0xfe, 0xff],
+        )
+        .unwrap();
+        assert_eq!(pcm.sample_rate_hz(), 8_000);
+        assert_eq!(pcm.channels(), 2);
+        assert_eq!(pcm.samples(), &[0x1234, -2]);
+    }
+
+    #[test]
+    fn raw_pcm16le_rejects_odd_byte_count() {
+        assert_eq!(
+            PcmBuffer::from_pcm16le_bytes(PcmSpec::default(), &[0]).unwrap_err(),
+            AudioError::OddPcmByteCount(1)
         );
     }
 

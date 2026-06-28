@@ -202,17 +202,7 @@ fn file_audio_source(source_name: String, pcm: PcmBuffer) -> anyhow::Result<Mock
 fn read_pcm16le(path: &Path, spec: PcmSpec) -> anyhow::Result<PcmBuffer> {
     let bytes =
         std::fs::read(path).with_context(|| format!("read PCM file `{}`", path.display()))?;
-    if bytes.len() % 2 != 0 {
-        bail!(
-            "PCM file `{}` contains an odd number of bytes",
-            path.display()
-        );
-    }
-    let samples = bytes
-        .chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect::<Vec<_>>();
-    PcmBuffer::with_spec(spec, samples)
+    PcmBuffer::from_pcm16le_bytes(spec, &bytes)
         .with_context(|| format!("decode PCM file `{}`", path.display()))
 }
 
