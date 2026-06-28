@@ -447,7 +447,7 @@ fn text_adapters_reports_multiple_adapter_ids() {
 }
 
 #[test]
-fn help_lists_config_option() {
+fn help_lists_diagnostics_commands() {
     let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
         .arg("--help")
         .output()
