@@ -27,6 +27,29 @@ impl Drop for TempConfig {
     }
 }
 
+fn default_config_path() -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../../data/default-config.json");
+    assert!(path.exists(), "default config fixture should exist");
+    path
+}
+
+#[test]
+fn print_config_accepts_committed_default_fixture() {
+    let output = Command::new(env!("CARGO_BIN_EXE_vinput-daemon"))
+        .arg("--config")
+        .arg(default_config_path())
+        .arg("print-config")
+        .output()
+        .expect("run vinput-daemon print-config on default fixture");
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("print-config output should be JSON");
+    assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
+    assert_eq!(value["scenes"]["active_scene"], "__raw__");
+}
+
 #[test]
 fn asr_state_uses_config_file() {
     let config = TempConfig::write(
