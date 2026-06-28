@@ -22,7 +22,7 @@ WAV decoding supports uncompressed RIFF/WAVE PCM format tag 1 with 16-bit sample
 
 Desktop capture backends should expose `AudioDeviceEnumerator` for UI/CLI device lists. `AudioDeviceInfo` mirrors the legacy PipeWire discovery shape: backend-local `id`, backend object `name`, and human-readable `description`. Enumerators should return only capture sources, preserving backend discovery order. `AudioDeviceInfo::capture_target` maps a discovered source name to the concrete `CaptureTarget::Object` used by recording.
 
-The optional `pipewire-backend` feature starts as a linkage seam: it verifies that the Rust PipeWire bindings and system headers compile, link, and initialize. Creating a client context requires a usable PipeWire client configuration, so that probe is guarded by `VINPUT_TEST_PIPEWIRE_CONTEXT` instead of running in default CI.
+The optional `pipewire-backend` feature starts as a linkage seam: it verifies that the Rust PipeWire bindings and system headers compile, link, and initialize, and it maps `PipeWire:Interface:Node` globals with `media.class=Audio/Source` into `AudioDeviceInfo`. Creating a client context requires a usable PipeWire client configuration, so that probe is guarded by `VINPUT_TEST_PIPEWIRE_CONTEXT` instead of running in default CI.
 
 ## Capture lifecycle
 
