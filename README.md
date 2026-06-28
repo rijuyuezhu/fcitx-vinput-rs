@@ -52,6 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
 cargo run -p vinput-cli -- protocol
 cargo run -p vinput-cli -- config
+cargo run -p vinput-cli -- config validate data/default-config.json --summary-only
 cargo run -p vinput-cli -- asr-state
 cargo run -p vinput-cli -- asr-state --config data/default-config.json
 cargo run -p vinput-cli -- registry

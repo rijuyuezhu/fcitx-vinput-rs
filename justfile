@@ -25,6 +25,7 @@ ci: check
 smoke:
     cargo run -q -p vinput-cli -- protocol
     cargo run -q -p vinput-cli -- config
+    cargo run -q -p vinput-cli -- config validate data/default-config.json --summary-only
     cargo run -q -p vinput-cli -- asr-state
     cargo run -q -p vinput-cli -- asr-state --config data/default-config.json
     cargo run -q -p vinput-cli -- registry
