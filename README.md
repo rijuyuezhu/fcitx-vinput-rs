@@ -12,7 +12,7 @@ The first milestones are intentionally small: preserve the public daemon/fronten
 - `crates/vinput-daemon`: mock daemon runtime, library modules, and `zbus` service facade for the legacy daemon ABI.
 - `crates/vinput-cli`: bootstrap CLI named `vinput` for protocol/config/payload inspection.
 - `data/default-config.json`: copied from the original project as the compatibility baseline.
-- `docs/architecture/`: tracked architecture notes.
+- `docs/architecture/README.md`: architecture notes index and contract map.
 - `docs/legacy/`: tracked original-source annotations.
 
 Local planning notes under `docs/plan/` are intentionally ignored by that directory's local `.gitignore`.
