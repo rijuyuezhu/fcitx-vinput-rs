@@ -13,6 +13,14 @@ cargo run -q -p vinput-cli -- asr-state --config data/default-config.json
 
 Integration tests consume the same committed fixture directly, so changes to config parsing or defaults must keep the CLI summary and ASR diagnostics contracts stable.
 
+The committed baseline intentionally fixes these compatibility fields:
+
+- ASR provider `sherpa-onnx` as the active local provider placeholder.
+- active scene `__raw__`, with `__command__` kept as the command-mode prompt fixture.
+- empty `llm.providers` and `llm.adapters`, so text-adapter diagnostics report no configured adapters.
+
+Runtime availability is not implied by the fixture; local `sherpa-onnx` remains a placeholder until the concrete backend is implemented.
+
 ## Diagnostics behavior
 
 Config diagnostics parse local JSON only. They do not construct runtime ASR backends, launch helpers, download registry assets, or require the daemon to be running.
