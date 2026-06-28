@@ -5,7 +5,9 @@
 //! `AudioRecorder` and `AudioDeviceEnumerator` contracts once the `PipeWire`
 //! event-loop ownership model is fixed.
 
-use crate::{AudioDeviceInfo, AudioError};
+use std::{cell::Cell, cell::RefCell, rc::Rc};
+
+use crate::{AudioDeviceEnumerator, AudioDeviceInfo, AudioError};
 
 const MEDIA_CLASS_AUDIO_SOURCE: &str = "Audio/Source";
 const PW_KEY_MEDIA_CLASS: &str = "media.class";
@@ -51,6 +53,56 @@ where
     let name = props.get(PW_KEY_NODE_NAME).unwrap_or_default();
     let description = props.get(PW_KEY_NODE_DESCRIPTION).unwrap_or_default();
     Some(AudioDeviceInfo::new(global.id, name, description))
+}
+
+/// Feature-gated `PipeWire` device enumerator.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PipeWireDeviceEnumerator;
+
+impl AudioDeviceEnumerator for PipeWireDeviceEnumerator {
+    fn enumerate_audio_sources(&mut self) -> Result<Vec<AudioDeviceInfo>, AudioError> {
+        enumerate_audio_sources()
+    }
+}
+
+/// Enumerate available `PipeWire` audio sources.
+pub fn enumerate_audio_sources() -> Result<Vec<AudioDeviceInfo>, AudioError> {
+    probe_client_linkage();
+
+    let mainloop = pipewire::main_loop::MainLoopRc::new(None).map_err(pipewire_error)?;
+    let context = pipewire::context::ContextRc::new(&mainloop, None).map_err(pipewire_error)?;
+    let core = context.connect_rc(None).map_err(pipewire_error)?;
+    let registry = core.get_registry_rc().map_err(pipewire_error)?;
+
+    let devices = Rc::new(RefCell::new(Vec::new()));
+    let devices_for_registry = Rc::clone(&devices);
+    let _registry_listener = registry
+        .add_listener_local()
+        .global(move |global| {
+            if let Some(device) = audio_device_from_global(global) {
+                devices_for_registry.borrow_mut().push(device);
+            }
+        })
+        .register();
+
+    let pending_sync = Rc::new(Cell::new(None));
+    let pending_sync_for_core = Rc::clone(&pending_sync);
+    let mainloop_for_core = mainloop.clone();
+    let _core_listener = core
+        .add_listener_local()
+        .done(move |id, seq| {
+            if id == pipewire::core::PW_ID_CORE && pending_sync_for_core.get() == Some(seq.seq()) {
+                mainloop_for_core.quit();
+            }
+        })
+        .register();
+
+    let sync = core.sync(0).map_err(pipewire_error)?;
+    pending_sync.set(Some(sync.seq()));
+    mainloop.run();
+
+    let result = devices.borrow().clone();
+    Ok(result)
 }
 
 fn pipewire_error(error: impl std::fmt::Display) -> AudioError {
@@ -126,6 +178,16 @@ mod tests {
     #[test]
     fn pipewire_probe_initializes_client_library() {
         super::probe_client_linkage();
+    }
+
+    #[test]
+    fn pipewire_enumerator_lists_sources_when_enabled() {
+        if std::env::var_os("VINPUT_TEST_PIPEWIRE_ENUMERATE").is_none() {
+            return;
+        }
+        let mut enumerator = super::PipeWireDeviceEnumerator;
+        let _devices =
+            super::AudioDeviceEnumerator::enumerate_audio_sources(&mut enumerator).unwrap();
     }
 
     #[test]
