@@ -2,6 +2,8 @@
 
 use std::{fs, process::Command};
 
+use vinput_registry::RegistryIndex;
+
 fn write_temp_registry(contents: &str) -> std::path::PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!(
@@ -35,6 +37,30 @@ fn sample_registry_path() -> std::path::PathBuf {
     path.push("../../data/sample-registry-index.json");
     assert!(path.exists(), "sample registry fixture should exist");
     path
+}
+
+#[test]
+fn registry_sample_fixture_preserves_contract_ids() {
+    let path = sample_registry_path();
+    let contents = fs::read_to_string(&path).expect("read sample registry fixture");
+    let index = RegistryIndex::from_json_str(&contents).expect("sample registry should be valid");
+
+    assert_eq!(index.version, 1);
+    assert_eq!(index.models.len(), 1);
+    assert_eq!(index.adapters.len(), 1);
+
+    let model = index.model("sherpa-zh-small").expect("sample model id");
+    assert_eq!(model.provider, "sherpa-onnx");
+    assert_eq!(model.assets.len(), 1);
+    assert_eq!(model.assets[0].path, "models/sherpa-zh-small.tar.zst");
+    assert_eq!(
+        model.assets[0].sha256.as_deref(),
+        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    );
+
+    let adapter = index.adapter("mock-adapter").expect("sample adapter id");
+    assert_eq!(adapter.kind, "command");
+    assert!(adapter.assets.is_empty());
 }
 
 #[test]
