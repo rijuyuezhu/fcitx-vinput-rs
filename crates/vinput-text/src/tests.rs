@@ -3,13 +3,13 @@ use super::{
     CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
     LlmTextProcessor, MockTextProcessor, OpenAiCompatibleChatRequest,
     OpenAiCompatibleChatTransport, OpenAiCompatibleTextAdapter, OpenAiCompatibleTextProcessor,
-    ProcessCommandTextRunner, PromptContext, PromptTemplate, RecentInputContextEntry, TextAdapter,
-    TextError, TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
-    append_recent_input_context_buffer, append_recent_input_context_entry,
-    build_openai_compatible_chat_request, build_openai_compatible_chat_request_from_context_cache,
-    build_openai_compatible_chat_url, build_openai_compatible_headers,
-    build_recent_input_context_prefix, command_mode_payload, default_adapter_runtime_dir,
-    default_context_cache_path, extract_openai_compatible_candidates,
+    ProcessCommandTextRunner, PromptContext, PromptTemplate, RecentInputContextEntry,
+    ReqwestOpenAiCompatibleChatTransport, TextAdapter, TextError, TextFinisher, TextProcessor,
+    TextRequest, UnsupportedTextAdapter, append_recent_input_context_buffer,
+    append_recent_input_context_entry, build_openai_compatible_chat_request,
+    build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
+    build_openai_compatible_headers, build_recent_input_context_prefix, command_mode_payload,
+    default_adapter_runtime_dir, default_context_cache_path, extract_openai_compatible_candidates,
     has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
     load_recent_input_context_prefix, merge_openai_compatible_extra_body,
     openai_compatible_candidates_to_payload, openai_compatible_response_to_payload,
@@ -108,6 +108,96 @@ fn provider_with_id(id: &str, base_url: &str) -> LlmProviderConfig {
     }
 }
 
+#[derive(Debug)]
+struct CapturedHttpRequest {
+    head: String,
+    body: String,
+}
+
+fn serve_single_http_response(
+    status: &str,
+    response_body: String,
+) -> (String, std::thread::JoinHandle<CapturedHttpRequest>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let status = status.to_owned();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = Vec::new();
+        let mut chunk = [0_u8; 1024];
+        let header_end = loop {
+            let read = std::io::Read::read(&mut stream, &mut chunk).unwrap();
+            assert_ne!(read, 0, "HTTP client closed before headers were complete");
+            buffer.extend_from_slice(&chunk[..read]);
+            if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+                break position + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&buffer[..header_end]).into_owned();
+        let headers = head
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+            .collect::<std::collections::HashMap<_, _>>();
+        let body = if headers
+            .get("transfer-encoding")
+            .is_some_and(|value| value.eq_ignore_ascii_case("chunked"))
+        {
+            while !buffer[header_end..].windows(5).any(|window| {
+                window
+                    == b"0
+
+"
+            }) {
+                let read = std::io::Read::read(&mut stream, &mut chunk).unwrap();
+                assert_ne!(
+                    read, 0,
+                    "HTTP client closed before chunked body was complete"
+                );
+                buffer.extend_from_slice(&chunk[..read]);
+            }
+            decode_chunked_http_body(&buffer[header_end..])
+        } else {
+            let content_length = headers
+                .get("content-length")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(0);
+            while buffer.len() < header_end + content_length {
+                let read = std::io::Read::read(&mut stream, &mut chunk).unwrap();
+                assert_ne!(read, 0, "HTTP client closed before body was complete");
+                buffer.extend_from_slice(&chunk[..read]);
+            }
+            String::from_utf8_lossy(&buffer[header_end..header_end + content_length]).into_owned()
+        };
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+            response_body.len()
+        );
+        std::io::Write::write_all(&mut stream, response.as_bytes()).unwrap();
+        CapturedHttpRequest { head, body }
+    });
+    (base_url, handle)
+}
+
+fn decode_chunked_http_body(input: &[u8]) -> String {
+    let mut position = 0;
+    let mut decoded = Vec::new();
+    while let Some(line_end) = input[position..]
+        .windows(2)
+        .position(|window| window == b"\r\n")
+    {
+        let line = String::from_utf8_lossy(&input[position..position + line_end]);
+        let chunk_len = usize::from_str_radix(line.trim(), 16).unwrap();
+        position += line_end + 2;
+        if chunk_len == 0 {
+            break;
+        }
+        decoded.extend_from_slice(&input[position..position + chunk_len]);
+        position += chunk_len + 2;
+    }
+    String::from_utf8(decoded).unwrap()
+}
+
 #[test]
 fn raw_scene_returns_raw_text() {
     let raw = scene(RAW_SCENE_ID, 0);
@@ -200,6 +290,69 @@ fn prompt_template_supports_legacy_double_brace_placeholders() {
         rendered,
         "prompt=apply command; asr=make it shorter; selected=This is the selected text.; context=; unknown={{ future }}"
     );
+}
+
+#[test]
+fn reqwest_openai_transport_posts_json_and_returns_body() {
+    let response_body = serde_json::json!({
+        "choices": [{"message": {"content": serde_json::json!({"candidates": ["via http"]}).to_string()}}]
+    })
+    .to_string();
+    let (base_url, handle) = serve_single_http_response("200 OK", response_body);
+    let request = OpenAiCompatibleChatRequest {
+        url: format!("{base_url}/v1/chat/completions"),
+        headers: vec![
+            ("Content-Type".to_owned(), "application/json".to_owned()),
+            ("Authorization".to_owned(), "Bearer secret-token".to_owned()),
+        ],
+        body: serde_json::json!({
+            "model": "model-id",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": false,
+        }),
+        ignored_extra_body_keys: Vec::new(),
+    };
+
+    let body = ReqwestOpenAiCompatibleChatTransport::new()
+        .send(&request, Some(2_000))
+        .unwrap();
+
+    assert_eq!(extract_openai_compatible_candidates(&body), ["via http"]);
+    let captured = handle.join().unwrap();
+    assert!(
+        captured
+            .head
+            .starts_with("POST /v1/chat/completions HTTP/1.1")
+    );
+    let lower_head = captured.head.to_ascii_lowercase();
+    assert!(lower_head.contains("authorization: bearer secret-token"));
+    assert!(lower_head.contains("content-type: application/json"));
+    let posted: serde_json::Value = serde_json::from_str(&captured.body).unwrap();
+    assert_eq!(posted["model"], "model-id");
+    assert_eq!(posted["messages"][0]["content"], "hello");
+}
+
+#[test]
+fn reqwest_openai_transport_reports_http_errors_with_body() {
+    let (base_url, handle) =
+        serve_single_http_response("500 Internal Server Error", "boom".to_owned());
+    let request = OpenAiCompatibleChatRequest {
+        url: format!("{base_url}/chat/completions"),
+        headers: build_openai_compatible_headers(""),
+        body: serde_json::json!({"messages": []}),
+        ignored_extra_body_keys: Vec::new(),
+    };
+
+    let error = ReqwestOpenAiCompatibleChatTransport::new()
+        .send(&request, Some(2_000))
+        .unwrap_err();
+
+    handle.join().unwrap();
+    assert!(matches!(
+        error,
+        TextError::AdapterFailed(message)
+            if message.contains("HTTP 500") && message.contains("boom")
+    ));
 }
 
 #[test]

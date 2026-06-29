@@ -212,8 +212,7 @@ fn redact_openai_compatible_headers(headers: &[(String, String)]) -> Vec<(String
 
 /// Builds the legacy OpenAI-compatible non-streaming request body.
 ///
-/// The caller still owns HTTP transport, timeout, cancellation, and secret
-/// handling. This helper only pins request assembly: prompt-file resolution,
+/// This helper only pins request assembly: prompt-file resolution,
 /// legacy `{{asr}}`/`{{selected}}`/`{{context}}` interpolation, XML fallback,
 /// candidate constraints, JSON-object response format, and protected
 /// `extra_body` handling.
@@ -323,6 +322,71 @@ pub trait OpenAiCompatibleChatTransport: Send + Sync {
         request: &OpenAiCompatibleChatRequest,
         timeout_ms: Option<u64>,
     ) -> Result<String, TextError>;
+}
+
+/// Blocking HTTP transport for OpenAI-compatible chat-completions providers.
+///
+/// The transport sends the already-built request body and headers as-is, applies
+/// the optional per-scene timeout to the request, and returns the raw response
+/// body for the existing candidate parser. HTTP errors are mapped to
+/// `TextError::AdapterFailed` with the status code and response body included.
+#[derive(Debug, Clone)]
+pub struct ReqwestOpenAiCompatibleChatTransport {
+    client: reqwest::blocking::Client,
+}
+
+impl ReqwestOpenAiCompatibleChatTransport {
+    /// Creates a transport with reqwest's default blocking client settings.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+
+    /// Creates a transport with a caller-provided reqwest blocking client.
+    #[must_use]
+    pub const fn with_client(client: reqwest::blocking::Client) -> Self {
+        Self { client }
+    }
+}
+
+impl Default for ReqwestOpenAiCompatibleChatTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OpenAiCompatibleChatTransport for ReqwestOpenAiCompatibleChatTransport {
+    fn send(
+        &self,
+        request: &OpenAiCompatibleChatRequest,
+        timeout_ms: Option<u64>,
+    ) -> Result<String, TextError> {
+        let mut builder = self.client.post(&request.url).json(&request.body);
+        for (name, value) in &request.headers {
+            builder = builder.header(name, value);
+        }
+        if let Some(timeout_ms) = timeout_ms {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let response = builder.send().map_err(|error| {
+            TextError::AdapterFailed(format!("OpenAI-compatible HTTP request failed: {error}"))
+        })?;
+        let status = response.status();
+        let body = response.text().map_err(|error| {
+            TextError::AdapterFailed(format!(
+                "OpenAI-compatible HTTP response body read failed: {error}"
+            ))
+        })?;
+        if !status.is_success() {
+            return Err(TextError::AdapterFailed(format!(
+                "OpenAI-compatible provider returned HTTP {status}: {body}"
+            )));
+        }
+        Ok(body)
+    }
 }
 
 /// Text adapter backed by an OpenAI-compatible chat transport.

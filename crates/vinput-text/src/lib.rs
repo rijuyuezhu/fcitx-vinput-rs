@@ -32,11 +32,11 @@ pub use core::{
 pub use error::TextError;
 pub use openai::{
     OpenAiCompatibleChatRequest, OpenAiCompatibleChatTransport, OpenAiCompatibleTextAdapter,
-    OpenAiCompatibleTextProcessor, build_openai_compatible_chat_request,
-    build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
-    build_openai_compatible_headers, extract_openai_compatible_candidates,
-    merge_openai_compatible_extra_body, openai_compatible_candidates_to_payload,
-    openai_compatible_response_to_payload,
+    OpenAiCompatibleTextProcessor, ReqwestOpenAiCompatibleChatTransport,
+    build_openai_compatible_chat_request, build_openai_compatible_chat_request_from_context_cache,
+    build_openai_compatible_chat_url, build_openai_compatible_headers,
+    extract_openai_compatible_candidates, merge_openai_compatible_extra_body,
+    openai_compatible_candidates_to_payload, openai_compatible_response_to_payload,
 };
 pub use payload::command_mode_payload;
 pub use prompt::{

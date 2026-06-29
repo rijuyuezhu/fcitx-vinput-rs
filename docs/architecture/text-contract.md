@@ -26,7 +26,7 @@ The text crate is split by responsibility so future HTTP transport work can land
 - `core.rs`: `TextRequest`, processor/adapter traits, mock and default finishers;
 - `prompt.rs`: prompt context, file URI loading, interpolation, and XML helpers;
 - `context_cache.rs`: recent-input JSONL path, append, truncate, and raw context prefix helpers;
-- `openai.rs`: OpenAI-compatible request building, provider selection, candidate parsing, and injected transport seams;
+- `openai.rs`: OpenAI-compatible request building, provider selection, candidate parsing, injected transport seams, and the blocking reqwest HTTP transport;
 - `command.rs`: command text adapter request/response protocol and process runner;
 - `adapter_runtime.rs`: supervised adapter process pid-file lifecycle;
 - `payload.rs`: command-mode payload ordering;
@@ -50,7 +50,7 @@ Prompt-file compatibility mirrors the legacy daemon: only literal `file:///absol
 
 The recent-input cache helpers mirror the legacy split: frontend-facing code can buffer committed fragments with legacy CJK/space/flush rules, append JSONL entries, and truncate the cache to the last non-empty lines, while daemon-facing request builders read raw non-empty lines and send the last `scene.context_lines` lines as context. The default cache path follows legacy XDG order: `XDG_CACHE_HOME/vinput/context.jsonl`, then `$HOME/.cache/vinput/context.jsonl`, then relative `vinput/context.jsonl` when no base exists.
 
-`CommandTextProcessor` only dispatches a post-processing scene when exactly one command adapter is configured. With no adapters it returns `AdapterRequired`; with multiple adapters it returns `AmbiguousAdapter` instead of guessing. `OpenAiCompatibleTextProcessor` uses `SceneDefinition::provider_id` when set; without it, exactly one configured provider is required, zero providers return `AdapterRequired`, and multiple providers return `AmbiguousProvider`. Runtime code can use `RuntimeState::with_configured_backends` for configured ASR plus configured command text adapters, or `RuntimeState::with_configured_text` when ASR/audio seams are injected in tests. Concrete OpenAI-compatible HTTP transport is still intentionally separate from the pure request/processor seams.
+`CommandTextProcessor` only dispatches a post-processing scene when exactly one command adapter is configured. With no adapters it returns `AdapterRequired`; with multiple adapters it returns `AmbiguousAdapter` instead of guessing. `OpenAiCompatibleTextProcessor` uses `SceneDefinition::provider_id` when set; without it, exactly one configured provider is required, zero providers return `AdapterRequired`, and multiple providers return `AmbiguousProvider`. Runtime code can use `RuntimeState::with_configured_backends` for configured ASR plus configured command text adapters, or `RuntimeState::with_configured_text` when ASR/audio seams are injected in tests. `ReqwestOpenAiCompatibleChatTransport` is the concrete blocking HTTP transport for the existing pure request/processor seam; tests keep it isolated behind a local HTTP server.
 
 ## Diagnostics
 
