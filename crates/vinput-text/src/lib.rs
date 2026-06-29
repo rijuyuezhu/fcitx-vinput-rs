@@ -79,6 +79,31 @@ pub fn default_adapter_runtime_dir(xdg_runtime_dir: Option<&Path>) -> PathBuf {
     base.join("vinput").join("adapters")
 }
 
+/// Returns the legacy default recent-input context cache path.
+///
+/// Legacy resolves this under `XDG_CACHE_HOME`, then `$HOME/.cache`, and falls
+/// back to a relative `vinput/context.jsonl` path when neither base is set.
+#[must_use]
+pub fn default_context_cache_path(xdg_cache_home: Option<&Path>, home: Option<&Path>) -> PathBuf {
+    let base = xdg_cache_home
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .or_else(|| {
+            home.filter(|path| !path.as_os_str().is_empty())
+                .map(|path| path.join(".cache"))
+        })
+        .unwrap_or_default();
+    base.join("vinput").join("context.jsonl")
+}
+
+/// Returns the default recent-input context cache path for the current process.
+#[must_use]
+pub fn default_context_cache_path_for_current_user() -> PathBuf {
+    let xdg_cache_home = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    default_context_cache_path(xdg_cache_home.as_deref(), home.as_deref())
+}
+
 /// Filesystem layout helper for supervised text adapter runtime state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdapterRuntimePaths {
@@ -1843,9 +1868,9 @@ mod tests {
         append_recent_input_context_entry, build_openai_compatible_chat_request,
         build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
         build_openai_compatible_headers, build_recent_input_context_prefix, command_mode_payload,
-        default_adapter_runtime_dir, extract_openai_compatible_candidates,
-        has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
-        load_recent_input_context_prefix, merge_openai_compatible_extra_body,
+        default_adapter_runtime_dir, default_context_cache_path,
+        extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
+        load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
         openai_compatible_candidates_to_payload, openai_compatible_response_to_payload,
         start_adapter_process, stop_adapter_process, truncate_recent_input_context_cache,
     };
@@ -2875,6 +2900,28 @@ latest
         assert_eq!(
             default_adapter_runtime_dir(Some(std::path::Path::new(""))),
             std::env::temp_dir().join("vinput").join("adapters")
+        );
+    }
+
+    #[test]
+    fn default_context_cache_path_matches_legacy_xdg_order() {
+        assert_eq!(
+            default_context_cache_path(
+                Some(std::path::Path::new("/cache-home")),
+                Some(std::path::Path::new("/home/demo")),
+            ),
+            std::path::PathBuf::from("/cache-home/vinput/context.jsonl")
+        );
+        assert_eq!(
+            default_context_cache_path(None, Some(std::path::Path::new("/home/demo"))),
+            std::path::PathBuf::from("/home/demo/.cache/vinput/context.jsonl")
+        );
+        assert_eq!(
+            default_context_cache_path(
+                Some(std::path::Path::new("")),
+                Some(std::path::Path::new("")),
+            ),
+            std::path::PathBuf::from("vinput/context.jsonl")
         );
     }
 
