@@ -1421,6 +1421,36 @@ mod tests {
     }
 
     #[test]
+    fn configured_streaming_command_asr_reports_stop_partial() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd.streaming".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd.streaming".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r#"cat >/dev/null; printf '%s
+' '{"type":"partial","text":"runtime partial"}' '{"type":"partial","text":"runtime partial"}' '{"type":"final","text":"runtime streaming final"}' '{"type":"closed"}'"#.to_owned(),
+            ],
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let mut runtime = RuntimeState::with_configured_asr(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let report = runtime.stop_recording_report(None).unwrap();
+
+        assert_eq!(report.partial_text.as_deref(), Some("runtime partial"));
+        assert_eq!(report.payload.commit_text, "runtime streaming final");
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
+    }
+
+    #[test]
     fn configured_command_asr_provider_forwards_runtime_pcm_metadata() {
         let mut capture_path = std::env::temp_dir();
         capture_path.push(format!(
