@@ -522,6 +522,159 @@ pub fn load_recent_input_context_prefix(
     Ok(build_recent_input_context_prefix(lines, max_lines))
 }
 
+/// Legacy recent-input context cache entry written by the frontend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecentInputContextEntry {
+    /// Committed text fragment.
+    pub text: String,
+    /// Source of the committed text.
+    pub source: String,
+    /// Unix timestamp in seconds.
+    pub timestamp: u64,
+}
+
+/// Appends a legacy recent-input context cache entry.
+///
+/// Empty text is ignored. The entry is written as a single JSON line so the
+/// daemon-side reader can preserve legacy behavior by sending raw non-empty
+/// cache lines as context.
+pub fn append_recent_input_context_entry(
+    path: impl AsRef<Path>,
+    text: &str,
+    source: &str,
+    timestamp: u64,
+) -> Result<bool, TextError> {
+    if text.is_empty() {
+        return Ok(false);
+    }
+
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            TextError::ContextCacheWrite(format!(
+                "failed to create context cache directory `{}`: {error}",
+                parent.display()
+            ))
+        })?;
+    }
+    let entry = RecentInputContextEntry {
+        text: text.to_owned(),
+        source: if source.is_empty() {
+            "user".to_owned()
+        } else {
+            source.to_owned()
+        },
+        timestamp,
+    };
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| {
+            TextError::ContextCacheWrite(format!(
+                "failed to open context cache `{}` for append: {error}",
+                path.display()
+            ))
+        })?;
+    serde_json::to_writer(&mut file, &entry).map_err(|error| {
+        TextError::ContextCacheWrite(format!(
+            "failed to encode context cache entry for `{}`: {error}",
+            path.display()
+        ))
+    })?;
+    file.write_all(
+        b"
+",
+    )
+    .map_err(|error| {
+        TextError::ContextCacheWrite(format!(
+            "failed to write context cache `{}`: {error}",
+            path.display()
+        ))
+    })?;
+    Ok(true)
+}
+
+/// Truncates a legacy recent-input context cache to the last non-empty lines.
+///
+/// Missing cache files are ignored. This mirrors the frontend maintenance path,
+/// while leaving scheduling policy to the caller.
+pub fn truncate_recent_input_context_cache(
+    path: impl AsRef<Path>,
+    keep_lines: u8,
+) -> Result<(), TextError> {
+    if keep_lines == 0 {
+        return Ok(());
+    }
+
+    let path = path.as_ref();
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(TextError::ContextCacheRead(format!(
+                "failed to open context cache `{}`: {error}",
+                path.display()
+            )));
+        }
+    };
+    let lines = std::io::BufReader::new(file)
+        .lines()
+        .filter_map(|line| match line {
+            Ok(line) if line.is_empty() => None,
+            other => Some(other),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            TextError::ContextCacheRead(format!(
+                "failed to read context cache `{}`: {error}",
+                path.display()
+            ))
+        })?;
+    let keep_lines = usize::from(keep_lines);
+    if lines.len() <= keep_lines {
+        return Ok(());
+    }
+
+    let mut tmp_path = path.as_os_str().to_owned();
+    tmp_path.push(".tmp");
+    let tmp_path = PathBuf::from(tmp_path);
+    {
+        let mut file = fs::File::create(&tmp_path).map_err(|error| {
+            TextError::ContextCacheWrite(format!(
+                "failed to create context cache temp `{}`: {error}",
+                tmp_path.display()
+            ))
+        })?;
+        for line in &lines[lines.len() - keep_lines..] {
+            file.write_all(line.as_bytes()).map_err(|error| {
+                TextError::ContextCacheWrite(format!(
+                    "failed to write context cache temp `{}`: {error}",
+                    tmp_path.display()
+                ))
+            })?;
+            file.write_all(
+                b"
+",
+            )
+            .map_err(|error| {
+                TextError::ContextCacheWrite(format!(
+                    "failed to write context cache temp `{}`: {error}",
+                    tmp_path.display()
+                ))
+            })?;
+        }
+    }
+    fs::rename(&tmp_path, path).map_err(|error| {
+        TextError::ContextCacheWrite(format!(
+            "failed to replace context cache `{}` with `{}`: {error}",
+            path.display(),
+            tmp_path.display()
+        ))
+    })?;
+    Ok(())
+}
+
 fn render_legacy_prompt_placeholders(template: &str, context: &PromptContext<'_>) -> String {
     render_legacy_prompt_placeholders_with_context(template, context, "")
 }
@@ -1646,6 +1799,9 @@ pub enum TextError {
     /// Recent-input context cache read failed.
     #[error("context cache read failed: {0}")]
     ContextCacheRead(String),
+    /// Recent-input context cache write failed.
+    #[error("context cache write failed: {0}")]
+    ContextCacheWrite(String),
 }
 
 fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
@@ -1682,16 +1838,16 @@ mod tests {
         CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
         LlmTextProcessor, MockTextProcessor, OpenAiCompatibleChatRequest,
         OpenAiCompatibleChatTransport, OpenAiCompatibleTextAdapter, OpenAiCompatibleTextProcessor,
-        ProcessCommandTextRunner, PromptContext, PromptTemplate, TextAdapter, TextError,
-        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
-        build_openai_compatible_chat_request,
+        ProcessCommandTextRunner, PromptContext, PromptTemplate, RecentInputContextEntry,
+        TextAdapter, TextError, TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
+        append_recent_input_context_entry, build_openai_compatible_chat_request,
         build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
         build_openai_compatible_headers, build_recent_input_context_prefix, command_mode_payload,
         default_adapter_runtime_dir, extract_openai_compatible_candidates,
         has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
         load_recent_input_context_prefix, merge_openai_compatible_extra_body,
         openai_compatible_candidates_to_payload, openai_compatible_response_to_payload,
-        start_adapter_process, stop_adapter_process,
+        start_adapter_process, stop_adapter_process, truncate_recent_input_context_cache,
     };
     use vinput_config::{
         COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
@@ -2542,6 +2698,61 @@ latest
             load_recent_input_context_prefix(&cache_path, 3).unwrap(),
             ""
         );
+    }
+
+    #[test]
+    fn recent_input_context_cache_appends_legacy_json_lines() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache_path = tempdir.path().join("nested").join("context.jsonl");
+
+        assert!(!append_recent_input_context_entry(&cache_path, "", "user", 1).unwrap());
+        assert!(append_recent_input_context_entry(&cache_path, "hello", "", 123).unwrap());
+        assert!(append_recent_input_context_entry(&cache_path, "world", "asr", 124).unwrap());
+
+        let lines = std::fs::read_to_string(&cache_path).unwrap();
+        let entries = lines
+            .lines()
+            .map(|line| serde_json::from_str::<RecentInputContextEntry>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entries,
+            [
+                RecentInputContextEntry {
+                    text: "hello".to_owned(),
+                    source: "user".to_owned(),
+                    timestamp: 123,
+                },
+                RecentInputContextEntry {
+                    text: "world".to_owned(),
+                    source: "asr".to_owned(),
+                    timestamp: 124,
+                },
+            ]
+        );
+
+        let prefix = load_recent_input_context_prefix(&cache_path, 1).unwrap();
+        assert_eq!(
+            prefix,
+            format!(
+                "Recent input history (use to fix ASR errors):\n{}\n\n",
+                serde_json::to_string(entries.last().unwrap()).unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn recent_input_context_cache_truncates_to_last_non_empty_lines() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache_path = tempdir.path().join("context.jsonl");
+        std::fs::write(&cache_path, "one\n\ntwo\nthree\nfour\n").unwrap();
+
+        truncate_recent_input_context_cache(&cache_path, 2).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&cache_path).unwrap(),
+            "three\nfour\n"
+        );
+        truncate_recent_input_context_cache(tempdir.path().join("missing.jsonl"), 2).unwrap();
     }
 
     #[test]
