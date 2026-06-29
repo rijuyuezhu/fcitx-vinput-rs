@@ -58,6 +58,9 @@ pub struct RuntimeState {
 
 impl Drop for RuntimeState {
     fn drop(&mut self) {
+        if let Some(mut session) = self.active_session.take() {
+            let _ = session.cancel();
+        }
         let _ = self.audio_recorder.cancel_recording();
         for (adapter_id, mut process) in self.adapter_processes.drain() {
             let _ = process.child.kill();
@@ -1722,6 +1725,31 @@ mod tests {
         assert_eq!(
             *events.lock().expect("events lock poisoned"),
             vec!["begin", "stop"]
+        );
+    }
+
+    #[test]
+    fn dropping_recording_runtime_cancels_asr_session() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let cancelled = Arc::new(Mutex::new(false));
+        let backend = CancelTrackingBackend::new(Arc::clone(&cancelled));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let recorder = EventRecordingRecorder::new(
+            Arc::clone(&events),
+            CapturedAudio::anonymous(PcmBuffer::at_default_rate(vec![0, 96, -96, 0])),
+        );
+
+        {
+            let mut runtime =
+                RuntimeState::with_audio_recorder(config, Box::new(backend), Box::new(recorder))
+                    .unwrap();
+            runtime.start_recording().unwrap();
+        }
+
+        assert!(*cancelled.lock().expect("cancel lock poisoned"));
+        assert_eq!(
+            *events.lock().expect("events lock poisoned"),
+            vec!["begin", "cancel"]
         );
     }
 
