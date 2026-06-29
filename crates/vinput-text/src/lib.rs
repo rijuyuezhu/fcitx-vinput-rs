@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
+    fmt, fs,
     io::{BufRead, ErrorKind, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
@@ -810,7 +810,7 @@ pub fn merge_openai_compatible_extra_body(
 }
 
 /// OpenAI-compatible chat-completions request body built from a scene prompt.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct OpenAiCompatibleChatRequest {
     /// Fully resolved chat-completions endpoint URL.
     pub url: String,
@@ -820,6 +820,40 @@ pub struct OpenAiCompatibleChatRequest {
     pub body: serde_json::Value,
     /// Protected `extra_body` keys that were ignored while building the body.
     pub ignored_extra_body_keys: Vec<String>,
+}
+
+impl OpenAiCompatibleChatRequest {
+    /// Returns request headers with secrets redacted for logs or diagnostics.
+    #[must_use]
+    pub fn redacted_headers(&self) -> Vec<(String, String)> {
+        redact_openai_compatible_headers(&self.headers)
+    }
+}
+
+impl fmt::Debug for OpenAiCompatibleChatRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpenAiCompatibleChatRequest")
+            .field("url", &self.url)
+            .field("headers", &self.redacted_headers())
+            .field("body", &self.body)
+            .field("ignored_extra_body_keys", &self.ignored_extra_body_keys)
+            .finish()
+    }
+}
+
+fn redact_openai_compatible_headers(headers: &[(String, String)]) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let value = if name.eq_ignore_ascii_case(OPENAI_COMPATIBLE_AUTHORIZATION_HEADER) {
+                "<redacted>".to_owned()
+            } else {
+                value.clone()
+            };
+            (name.clone(), value)
+        })
+        .collect()
 }
 
 /// Builds the legacy OpenAI-compatible non-streaming request body.
@@ -2404,6 +2438,46 @@ latest
                 ("Content-Type".to_owned(), "application/json".to_owned()),
                 ("Authorization".to_owned(), "Bearer secret-token".to_owned()),
             ]
+        );
+    }
+
+    #[test]
+    fn openai_chat_request_debug_redacts_authorization_header() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish this.".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene("polish", 0)
+        };
+        let mut provider = provider(serde_json::json!({}));
+        provider.api_key = "secret-token".to_owned();
+
+        let built = build_openai_compatible_chat_request(
+            &TextRequest {
+                raw_text: "raw",
+                scene: &prompted,
+                selected_text: None,
+            },
+            &provider,
+            "",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            built.redacted_headers(),
+            [
+                ("Content-Type".to_owned(), "application/json".to_owned()),
+                ("Authorization".to_owned(), "<redacted>".to_owned()),
+            ]
+        );
+        let debug = format!("{built:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("secret-token"));
+        assert!(
+            built
+                .headers
+                .iter()
+                .any(|(_, value)| value.contains("secret-token"))
         );
     }
 
