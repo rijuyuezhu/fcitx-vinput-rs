@@ -240,6 +240,12 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         "",
         "sssssbbas",
     )?;
+    assert_method_signature(
+        interface_xml,
+        dbus::method::GET_TEXT_ADAPTER_STATE,
+        "",
+        "s",
+    )?;
     assert_method_signature(interface_xml, dbus::method::RELOAD_ASR_BACKEND, "", "")?;
     assert_method_signature(interface_xml, dbus::method::START_ADAPTER, "s", "")?;
     assert_method_signature(interface_xml, dbus::method::STOP_ADAPTER, "s", "")?;
