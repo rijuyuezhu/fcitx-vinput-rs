@@ -210,6 +210,21 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_payload_matches_legacy_json_shape() {
+        let payload = RecognitionPayload::cancelled();
+        let json = payload.to_json_string().unwrap();
+
+        assert_eq!(
+            json,
+            r#"{"commit_text":"","candidates":[{"text":"","source":"cancel"}]}"#
+        );
+        assert_eq!(
+            payload.default_candidate().unwrap().source,
+            CandidateSource::Cancel
+        );
+    }
+
+    #[test]
     fn menu_payload_matches_legacy_json_shape() {
         let payload = RecognitionPayload {
             commit_text: "polished".to_owned(),
