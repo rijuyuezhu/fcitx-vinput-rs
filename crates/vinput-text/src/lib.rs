@@ -547,6 +547,38 @@ pub fn extract_openai_compatible_candidates(response_body: &str) -> Vec<String> 
         .collect()
 }
 
+const OPENAI_COMPATIBLE_PROTECTED_EXTRA_BODY_KEYS: &[&str] =
+    &["messages", "stream", "response_format"];
+
+/// Merges provider-specific OpenAI-compatible request fields into a request body.
+///
+/// The legacy daemon lets user config pass through provider-specific top-level
+/// fields, but refuses `messages`, `stream`, and `response_format` because they
+/// are required for the non-streaming JSON-candidates response contract. The
+/// returned list contains ignored protected keys in input iteration order so
+/// callers can log diagnostics without exposing secret values.
+pub fn merge_openai_compatible_extra_body(
+    request: &mut serde_json::Value,
+    extra_body: &serde_json::Value,
+) -> Vec<String> {
+    let Some(request) = request.as_object_mut() else {
+        return Vec::new();
+    };
+    let Some(extra_body) = extra_body.as_object() else {
+        return Vec::new();
+    };
+
+    let mut ignored = Vec::new();
+    for (key, value) in extra_body {
+        if OPENAI_COMPATIBLE_PROTECTED_EXTRA_BODY_KEYS.contains(&key.as_str()) {
+            ignored.push(key.clone());
+            continue;
+        }
+        request.insert(key.clone(), value.clone());
+    }
+    ignored
+}
+
 /// Synchronous text post-processing seam used by daemon runtime and tests.
 pub trait TextProcessor: Send {
     /// Finishes raw recognition text into a payload suitable for the frontend.
@@ -1114,7 +1146,7 @@ mod tests {
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
         UnsupportedTextAdapter, default_adapter_runtime_dir, extract_openai_compatible_candidates,
         has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
-        start_adapter_process, stop_adapter_process,
+        merge_openai_compatible_extra_body, start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
     use vinput_protocol::RecognitionPayload;
@@ -1652,6 +1684,55 @@ mod tests {
                 "response should not yield candidates: {response}"
             );
         }
+    }
+
+    #[test]
+    fn openai_compatible_extra_body_merge_ignores_protected_keys() {
+        let mut request = serde_json::json!({
+            "model": "model-a",
+            "messages": [{"role": "user", "content": "prompt"}],
+            "stream": false,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2
+        });
+        let extra_body = serde_json::json!({
+            "messages": "bad override",
+            "stream": true,
+            "response_format": {"type": "text"},
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "enable_thinking": true
+        });
+
+        let ignored = merge_openai_compatible_extra_body(&mut request, &extra_body);
+
+        assert_eq!(request["messages"][0]["content"], "prompt");
+        assert_eq!(request["stream"], false);
+        assert_eq!(request["response_format"]["type"], "json_object");
+        assert_eq!(request["temperature"], 0.7);
+        assert_eq!(request["top_p"], 0.9);
+        assert_eq!(request["enable_thinking"], true);
+        assert_eq!(ignored.len(), 3);
+        assert!(ignored.iter().any(|key| key == "messages"));
+        assert!(ignored.iter().any(|key| key == "stream"));
+        assert!(ignored.iter().any(|key| key == "response_format"));
+    }
+
+    #[test]
+    fn openai_compatible_extra_body_merge_ignores_non_objects() {
+        let mut request = serde_json::json!({"temperature": 0.2});
+
+        assert!(
+            merge_openai_compatible_extra_body(&mut request, &serde_json::json!([])).is_empty()
+        );
+        assert_eq!(request["temperature"], 0.2);
+
+        let mut not_object = serde_json::json!([]);
+        assert!(
+            merge_openai_compatible_extra_body(&mut not_object, &serde_json::json!({"top_p": 0.9}))
+                .is_empty()
+        );
+        assert_eq!(not_object, serde_json::json!([]));
     }
 
     #[test]
