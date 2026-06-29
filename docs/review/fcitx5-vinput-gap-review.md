@@ -13,7 +13,7 @@ The rewrite should not line-port the C++ architecture.  It should preserve user-
 ## Review inputs
 
 - Legacy source: `/workspace/fcitx5-vinput`, HEAD `aad130341bcb30f1dc15d8210246930384760950`.
-- Rust source: `/workspace/fcitx-vinput-rs`; original review HEAD `0e0ba40d62eb4163b82f08e2b6e5dde788a6c74d`, refreshed through later audio diagnostics and recorder lifecycle work.
+- Rust source: `/workspace/fcitx-vinput-rs`; original review HEAD `0e0ba40d62eb4163b82f08e2b6e5dde788a6c74d`, refreshed through current D-Bus/reload/adapter/command ASR review work on `main`.
 - Rust HEAD check-runs at original takeover: `rust` completed successfully; later CI now also covers D-Bus integration and PipeWire feature guards.
 - Source review used `find`, `rg`, `sed`, Cargo manifests, tests, docs, workflows, and packaging files in both repositories.
 - External dependency spot checks:
@@ -206,9 +206,9 @@ Candidate sources include `raw`, `llm`, `asr`, and `cancel`.  Legacy parse behav
 
 ### D-Bus ABI
 
-The Rust daemon must preserve legacy bus/object/interface names, method names, method signatures, signal signatures, and error behavior.  The current Rust facade is not ABI-compatible for every method because it returns `String` values where the legacy ABI returns void or multiple values.  The most important concrete mismatch is `GetAsrBackendState`: legacy returns `sssssbbas`; Rust currently returns a JSON string.
+The Rust daemon must preserve legacy bus/object/interface names, method names, method signatures, signal signatures, and error behavior.  Current Rust D-Bus integration tests pin the legacy method and signal signatures, including the `GetAsrBackendState` `sssssbbas` tuple.  `GetTextAdapterState` is an explicit Rust diagnostic extension rather than a legacy C++ vtable method.
 
-The first implementation step should add contract tests that introspect or call the D-Bus service and assert exact signatures for all methods and signals.  Implementation should then change the zbus interface to match the legacy ABI, keeping JSON diagnostics only in CLI or explicitly new non-legacy methods if needed.
+The next contract step is behavior parity: caller-level fixtures for frontend-visible edge cases, legacy error mapping/notifications, status ordering, and real-backend lifecycle transitions as PipeWire, sherpa, and text post-processing land.
 
 ### JSON payload
 
@@ -233,7 +233,7 @@ The externally visible status strings and transitions must stay compatible:
 - `postprocessing` when LLM/text processing is active;
 - `error` when fatal start/streaming/runtime errors occur;
 - busy start rejection while non-idle;
-- ASR reload deferral while busy.
+- legacy ASR reload deferral while busy, or a deliberately documented compatibility decision if Rust keeps the current idle-only guard.
 
 ### CLI/smoke behavior
 
@@ -243,9 +243,9 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 
 | Feature domain | Legacy capability | Rust current capability | Rust gap | Must compatible? | Suggested implementation | Risks/dependencies | Priority |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| D-Bus service ABI | Exact legacy `sd-bus` vtable; void and tuple method signatures; legacy signals. | Same names/paths, zbus facade, and D-Bus integration introspection tests for current method/signal signatures. | Remaining behavior compatibility gaps: frontend integration is absent, and some legacy-visible method semantics still need parity as real backends land. | Yes | Keep introspection/signature tests pinned; add behavior-level ABI fixtures while adjusting zbus interface and moving diagnostic JSON to CLI/new methods where needed. | zbus multiple-return mapping, signal ordering, and frontend expectations. | P0 |
+| D-Bus service ABI | Exact legacy `sd-bus` vtable; void and tuple method signatures; legacy signals. | Same names/paths, zbus facade, and D-Bus integration introspection tests for legacy method/signal signatures; `GetTextAdapterState` is an explicit diagnostic extension. | Remaining behavior compatibility gaps: frontend integration is absent, and some legacy-visible method semantics still need parity as real backends land. | Yes | Keep introspection/signature tests pinned; add behavior-level ABI fixtures and keep diagnostic JSON out of legacy method shapes. | zbus multiple-return mapping, signal ordering, and frontend expectations. | P0 |
 | Recognition payload | Stable JSON payload and candidate source semantics. | Matching Rust model and tests. | Need cross-fixture parity with legacy parser edge cases. | Yes | Add golden fixtures copied from legacy behavior; keep serde field names pinned. | Low. | P0 |
-| Status/runtime state | Busy rejection, recording/inferring/postprocessing/error transitions, deferred reload, notification errors. | In-memory mock state with idle/recording/inferring/idle and partial signals. | No worker, streaming chunks, deferred reload, postprocessing phase, real error notification flow. | Yes | Contract tests for transitions; then refactor runtime around backend sessions and event stream. | Async locking and D-Bus signal ordering. | P0 |
+| Status/runtime state | Busy rejection, recording/inferring/postprocessing/error transitions, deferred reload, notification errors. | Runtime owns stateful recorder/session seams, rejects start/reload while recording, emits stop-time partial/result ordering, and preserves active sessions across busy reload attempts. | Remaining gaps: legacy error notifications, explicit postprocessing phase, deferred reload semantics if kept, real worker/audio streaming lifecycle. | Yes | Keep current start/stop/busy/reload guards pinned; add transition fixtures for error notifications, postprocessing, and deferred reload compatibility decisions. | Async locking and D-Bus signal ordering. | P0 |
 | Fcitx frontend addon | Shared-library addon, key state machine, preedit/candidate/menu/notification behavior. | Not implemented. | No input method integration. | Yes for usability | Keep a thin legacy-compatible frontend bridge; decide whether C++ shim or Rust FFI only after daemon ABI stabilizes. | Fcitx5 addon API is C++-oriented; Rust binding maturity unclear. | P1/P2 |
 | Audio capture | PipeWire S16LE/16k/mono capture, target object selection, source enumeration, chunk callback. | Pure PCM processing, `AudioRecorder` lifecycle seam, mock source/recorder, capture-target config parsing, and feature-gated PipeWire source enumeration used by CLI/daemon diagnostics. | No live PipeWire recording stream; enumeration diagnostics exist but capture still returns explicit unavailable errors. | Behavior yes, implementation no | Complete `PipeWireAudioRecorder` live stream behind `AudioRecorder`; keep `AudioDeviceEnumerator` diagnostics and mock tests; mirror target-object/default semantics. | PipeWire runtime and distro deps; Rust crate docs.rs latest build issue should be validated locally. | P1 |
 | Audio processing | Gain, peak normalization, VAD optional trimming. | Gain/normalization-like mock processing and silence threshold. | Exact normalization/VAD path incomplete. | Mostly yes | Add pure audio golden tests before real capture; port VAD behind ASR/audio boundary. | Sample-rate assumptions and clipping behavior. | P1 |
@@ -266,7 +266,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 
 1. D-Bus behavior parity fixtures beyond current signature/introspection and integration coverage, especially frontend-visible edge cases.
 2. Recognition JSON golden fixtures shared by CLI/daemon/protocol tests.
-3. Runtime state-machine parity for start/stop/busy/error/deferred reload/postprocessing.
+3. Runtime state-machine parity beyond current start/stop/busy/reload guards: legacy error notifications, explicit postprocessing phase, and deferred reload semantics.
 4. Config/default-config compatibility fixtures and normalize-vs-validate policy.
 5. Command ASR long-lived streaming lifecycle, broader legacy fixtures, and timeout/cancellation parity; batch raw PCM and one-shot `.streaming` JSON-line runners already exist.
 6. Live PipeWire recording behind `AudioRecorder`; source enumeration diagnostics already exist behind `pipewire-backend` and should stay covered.
@@ -301,10 +301,10 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
    - Model metadata manager.
    - Registry checksum/path/archive planning tests.
    - Prompt/context/candidate parsing logic.
-3. **Add process/local backends**
-   - Command ASR batch.
-   - Command ASR streaming.
-   - Text adapter process supervision.
+3. **Harden process/local backends**
+   - Broader Command ASR batch fixtures.
+   - Long-lived Command ASR streaming lifecycle fixtures.
+   - Richer text adapter process supervision edge cases.
 4. **Add real system backends**
    - PipeWire capture.
    - sherpa offline.
