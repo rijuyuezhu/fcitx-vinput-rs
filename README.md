@@ -101,4 +101,4 @@ The current route is refactor-first. Start with `AGENT.md`, then read `docs/READ
 2. Pin compatibility behavior with tests before changing runtime logic.
 3. Split oversized modules before adding concrete backends.
 4. Keep the `zbus` daemon service behind the same methods/signals.
-5. Do not add live PipeWire, sherpa-onnx, OpenAI HTTP, registry install, frontend, or packaging work until the refactor plan allows it or the user explicitly reprioritizes.
+5. OpenAI-compatible HTTP transport is now runtime-wired behind explicit configured-backend paths; do not add live PipeWire, sherpa-onnx, registry install, frontend, or packaging work until the refactor plan allows it or the user explicitly reprioritizes.
