@@ -5,14 +5,24 @@ use std::{
     fmt, fs,
     io::{BufRead, ErrorKind, Read, Write},
     path::{Path, PathBuf},
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     sync::LazyLock,
 };
-use thiserror::Error;
 use vinput_config::{
     COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
 };
 use vinput_protocol::{Candidate, CandidateSource, RecognitionPayload};
+
+mod adapter_runtime;
+mod error;
+mod payload;
+
+pub use adapter_runtime::{
+    AdapterProcessSpec, AdapterRuntimePaths, AdapterStopOutcome, StartedAdapterProcess,
+    default_adapter_runtime_dir, start_adapter_process, stop_adapter_process,
+};
+pub use error::TextError;
+pub use payload::command_mode_payload;
 
 /// Input to the text finishing stage.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,19 +76,6 @@ impl<'a> PromptContext<'a> {
     }
 }
 
-/// Returns the default text adapter runtime directory.
-///
-/// On Linux desktop sessions this should be rooted under `XDG_RUNTIME_DIR`.
-/// Tests can pass an explicit value to keep the path deterministic; production
-/// callers can use [`AdapterRuntimePaths::for_current_user`].
-#[must_use]
-pub fn default_adapter_runtime_dir(xdg_runtime_dir: Option<&Path>) -> PathBuf {
-    let base = xdg_runtime_dir
-        .filter(|path| !path.as_os_str().is_empty())
-        .map_or_else(std::env::temp_dir, Path::to_path_buf);
-    base.join("vinput").join("adapters")
-}
-
 /// Returns the legacy default recent-input context cache path.
 ///
 /// Legacy resolves this under `XDG_CACHE_HOME`, then `$HOME/.cache`, and falls
@@ -102,222 +99,6 @@ pub fn default_context_cache_path_for_current_user() -> PathBuf {
     let xdg_cache_home = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
     let home = std::env::var_os("HOME").map(PathBuf::from);
     default_context_cache_path(xdg_cache_home.as_deref(), home.as_deref())
-}
-
-/// Filesystem layout helper for supervised text adapter runtime state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdapterRuntimePaths {
-    runtime_dir: PathBuf,
-}
-
-impl AdapterRuntimePaths {
-    /// Creates runtime paths rooted at `runtime_dir`.
-    #[must_use]
-    pub fn new(runtime_dir: impl Into<PathBuf>) -> Self {
-        Self {
-            runtime_dir: runtime_dir.into(),
-        }
-    }
-
-    /// Creates runtime paths for the current user session.
-    #[must_use]
-    pub fn for_current_user() -> Self {
-        let xdg_runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
-        Self::new(default_adapter_runtime_dir(xdg_runtime_dir.as_deref()))
-    }
-
-    /// Returns the runtime directory.
-    #[must_use]
-    pub fn runtime_dir(&self) -> &Path {
-        &self.runtime_dir
-    }
-
-    /// Builds a path for an adapter pid file using a safe adapter id.
-    pub fn pid_path(&self, adapter_id: &str) -> Result<PathBuf, TextError> {
-        Ok(self.runtime_dir.join(adapter_pid_file_name(adapter_id)?))
-    }
-
-    /// Writes an adapter pid file and returns its path.
-    pub fn write_pid(&self, adapter_id: &str, pid: u32) -> Result<PathBuf, TextError> {
-        let path = self.pid_path(adapter_id)?;
-        fs::create_dir_all(&self.runtime_dir).map_err(|error| {
-            TextError::AdapterRuntimeIo(format!(
-                "failed to create adapter runtime directory `{}`: {error}",
-                self.runtime_dir.display()
-            ))
-        })?;
-        fs::write(&path, pid.to_string()).map_err(|error| {
-            TextError::AdapterRuntimeIo(format!(
-                "failed to write adapter pid file `{}`: {error}",
-                path.display()
-            ))
-        })?;
-        Ok(path)
-    }
-
-    /// Reads an adapter pid file. Missing files return `Ok(None)`.
-    pub fn read_pid(&self, adapter_id: &str) -> Result<Option<u32>, TextError> {
-        let path = self.pid_path(adapter_id)?;
-        let content = match fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-            Err(error) => {
-                return Err(TextError::AdapterRuntimeIo(format!(
-                    "failed to read adapter pid file `{}`: {error}",
-                    path.display()
-                )));
-            }
-        };
-        let trimmed = content.trim();
-        trimmed.parse::<u32>().map(Some).map_err(|error| {
-            TextError::InvalidAdapterPid(format!("invalid pid in `{}`: {error}", path.display()))
-        })
-    }
-
-    /// Removes an adapter pid file. Missing files return `Ok(false)`.
-    pub fn remove_pid(&self, adapter_id: &str) -> Result<bool, TextError> {
-        let path = self.pid_path(adapter_id)?;
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(true),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(TextError::AdapterRuntimeIo(format!(
-                "failed to remove adapter pid file `{}`: {error}",
-                path.display()
-            ))),
-        }
-    }
-}
-
-fn adapter_pid_file_name(adapter_id: &str) -> Result<String, TextError> {
-    if adapter_id.is_empty()
-        || adapter_id == "."
-        || adapter_id == ".."
-        || adapter_id.contains('/')
-        || adapter_id.contains('\\')
-    {
-        return Err(TextError::InvalidAdapterId(adapter_id.to_owned()));
-    }
-    Ok(format!("{adapter_id}.pid"))
-}
-
-/// Command specification for a supervised text adapter process.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdapterProcessSpec {
-    /// Stable adapter id.
-    pub id: String,
-    /// Executable path or program name.
-    pub command: String,
-    /// Command-line arguments.
-    pub args: Vec<String>,
-    /// Environment variables added to the child process.
-    pub env: std::collections::HashMap<String, String>,
-    /// Optional child working directory.
-    pub working_dir: Option<String>,
-}
-
-impl AdapterProcessSpec {
-    /// Builds a process spec from typed adapter config.
-    #[must_use]
-    pub fn from_config(config: &LlmAdapterConfig) -> Self {
-        Self {
-            id: config.id.clone(),
-            command: config.command.clone(),
-            args: config.args.clone(),
-            env: config.env.clone(),
-            working_dir: config.working_dir.clone(),
-        }
-    }
-}
-
-/// A started adapter child process whose pid file has been written.
-#[derive(Debug)]
-pub struct StartedAdapterProcess {
-    /// Stable adapter id.
-    pub id: String,
-    /// Child process id.
-    pub pid: u32,
-    /// Path to the written pid file.
-    pub pid_path: PathBuf,
-    /// Running child process handle.
-    pub child: Child,
-}
-
-/// Result of asking the supervisor to stop an adapter process.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AdapterStopOutcome {
-    /// No pid file existed, so no process was targeted.
-    NotRunning,
-    /// A TERM signal was sent and the pid file was removed.
-    Stopped {
-        /// Process id read from the pid file.
-        pid: u32,
-    },
-}
-
-/// Stops a text adapter process from its pid file and removes the pid file.
-pub fn stop_adapter_process(
-    adapter_id: &str,
-    paths: &AdapterRuntimePaths,
-) -> Result<AdapterStopOutcome, TextError> {
-    let Some(pid) = paths.read_pid(adapter_id)? else {
-        return Ok(AdapterStopOutcome::NotRunning);
-    };
-    let status = Command::new("kill")
-        .arg("-TERM")
-        .arg(pid.to_string())
-        .status()
-        .map_err(|error| {
-            TextError::AdapterRuntimeIo(format!(
-                "failed to invoke kill for text adapter `{adapter_id}` pid {pid}: {error}"
-            ))
-        })?;
-    if !status.success() {
-        return Err(TextError::AdapterRuntimeIo(format!(
-            "failed to stop text adapter `{adapter_id}` pid {pid}: kill exited with {status}"
-        )));
-    }
-    paths.remove_pid(adapter_id)?;
-    Ok(AdapterStopOutcome::Stopped { pid })
-}
-
-/// Starts a text adapter process and writes its pid file.
-pub fn start_adapter_process(
-    spec: &AdapterProcessSpec,
-    paths: &AdapterRuntimePaths,
-) -> Result<StartedAdapterProcess, TextError> {
-    let mut command = Command::new(&spec.command);
-    command
-        .args(&spec.args)
-        .envs(&spec.env)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if let Some(working_dir) = &spec.working_dir {
-        command.current_dir(working_dir);
-    }
-
-    let mut child = command.spawn().map_err(|error| {
-        TextError::AdapterFailed(format!(
-            "failed to spawn text adapter `{}`: {error}",
-            spec.id
-        ))
-    })?;
-    let pid = child.id();
-    let pid_path = match paths.write_pid(&spec.id, pid) {
-        Ok(path) => path,
-        Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error);
-        }
-    };
-
-    Ok(StartedAdapterProcess {
-        id: spec.id.clone(),
-        pid,
-        pid_path,
-        child,
-    })
 }
 
 /// JSON request passed to command-backed text adapter helpers.
@@ -950,48 +731,6 @@ pub fn openai_compatible_candidates_to_payload(
 #[must_use]
 pub fn openai_compatible_response_to_payload(response_body: &str) -> Option<RecognitionPayload> {
     openai_compatible_candidates_to_payload(extract_openai_compatible_candidates(response_body))
-}
-
-/// Builds the legacy command-mode payload candidate order.
-///
-/// The menu order is selected text (`raw`), recognized ASR command (`asr`), then
-/// LLM rewrites (`llm`). Empty/whitespace-only candidates are skipped after
-/// trimming. The default commit text is the first LLM rewrite when available;
-/// otherwise it remains the original selected text, matching legacy command
-/// mode fallback behavior.
-#[must_use]
-pub fn command_mode_payload(
-    selected_text: &str,
-    asr_text: &str,
-    llm_candidates: impl IntoIterator<Item = String>,
-) -> RecognitionPayload {
-    let mut candidates = Vec::new();
-    append_trimmed_candidate(&mut candidates, selected_text, CandidateSource::Raw);
-    append_trimmed_candidate(&mut candidates, asr_text, CandidateSource::Asr);
-
-    let mut first_llm_candidate = None;
-    for candidate in llm_candidates {
-        let candidate = candidate.trim().to_owned();
-        if candidate.is_empty() {
-            continue;
-        }
-        if first_llm_candidate.is_none() {
-            first_llm_candidate = Some(candidate.clone());
-        }
-        candidates.push(Candidate::new(candidate, CandidateSource::Llm));
-    }
-
-    RecognitionPayload {
-        commit_text: first_llm_candidate.unwrap_or_else(|| selected_text.to_owned()),
-        candidates,
-    }
-}
-
-fn append_trimmed_candidate(candidates: &mut Vec<Candidate>, text: &str, source: CandidateSource) {
-    let text = text.trim();
-    if !text.is_empty() {
-        candidates.push(Candidate::new(text, source));
-    }
 }
 
 const OPENAI_COMPATIBLE_PROTECTED_EXTRA_BODY_KEYS: &[&str] =
@@ -1820,52 +1559,6 @@ impl TextProcessor for MockTextProcessor {
             PromptTemplate::new("mock postprocess result: {raw_text}").render_request(request),
         ))
     }
-}
-
-/// Errors from text finishing.
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum TextError {
-    /// A non-raw scene with candidates needs adapter support that is not ported yet.
-    #[error("scene `{0}` requires a text adapter backend")]
-    AdapterRequired(String),
-    /// A configured adapter path exists but is not implemented yet.
-    #[error("scene `{0}` requested a text adapter that is not implemented yet")]
-    UnsupportedAdapter(String),
-    /// Adapter selection was ambiguous for a scene.
-    #[error("scene `{0}` has ambiguous text adapter selection")]
-    AmbiguousAdapter(String),
-    /// Scene references an unknown OpenAI-compatible provider.
-    #[error("scene `{scene_id}` references unknown OpenAI-compatible provider `{provider_id}`")]
-    UnknownProvider {
-        /// Scene id.
-        scene_id: String,
-        /// Missing provider id.
-        provider_id: String,
-    },
-    /// OpenAI-compatible provider selection was ambiguous for a scene.
-    #[error("scene `{0}` has ambiguous OpenAI-compatible provider selection")]
-    AmbiguousProvider(String),
-    /// Command adapter id is unsafe for runtime paths.
-    #[error("invalid text adapter id for runtime path: {0}")]
-    InvalidAdapterId(String),
-    /// Adapter runtime filesystem operation failed.
-    #[error("text adapter runtime I/O failed: {0}")]
-    AdapterRuntimeIo(String),
-    /// Adapter runtime pid file was malformed.
-    #[error("text adapter runtime pid file is invalid: {0}")]
-    InvalidAdapterPid(String),
-    /// Command adapter helper returned an error or invalid response.
-    #[error("text adapter failed: {0}")]
-    AdapterFailed(String),
-    /// Legacy prompt file resolution failed.
-    #[error("prompt file load failed: {0}")]
-    PromptFileLoad(String),
-    /// Recent-input context cache read failed.
-    #[error("context cache read failed: {0}")]
-    ContextCacheRead(String),
-    /// Recent-input context cache write failed.
-    #[error("context cache write failed: {0}")]
-    ContextCacheWrite(String),
 }
 
 fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
