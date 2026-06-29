@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{ErrorKind, Read, Write},
+    io::{BufRead, ErrorKind, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
     sync::LazyLock,
@@ -450,6 +450,76 @@ pub fn load_prompt_file_uri(uri: &str) -> Result<String, TextError> {
     }
 
     Ok(String::from_utf8_lossy(&content).into_owned())
+}
+
+/// Builds the legacy recent-input context prompt prefix from cache lines.
+///
+/// Empty lines are ignored, the last `max_lines` non-empty lines are kept, and
+/// the returned text matches the legacy daemon's `{{context}}`/XML context
+/// block content.
+#[must_use]
+pub fn build_recent_input_context_prefix<I, S>(lines: I, max_lines: u8) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    if max_lines == 0 {
+        return String::new();
+    }
+
+    let lines = lines
+        .into_iter()
+        .map(|line| line.as_ref().to_owned())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    let start = lines.len().saturating_sub(usize::from(max_lines));
+    let mut result = String::from("Recent input history (use to fix ASR errors):\n");
+    for line in &lines[start..] {
+        result.push_str(line);
+        result.push('\n');
+    }
+    result.push('\n');
+    result
+}
+
+/// Loads the legacy recent-input context prompt prefix from a JSONL cache file.
+///
+/// Missing cache files are treated as empty context, matching the legacy daemon.
+/// Other I/O failures are surfaced so callers can report diagnostics.
+pub fn load_recent_input_context_prefix(
+    path: impl AsRef<Path>,
+    max_lines: u8,
+) -> Result<String, TextError> {
+    if max_lines == 0 {
+        return Ok(String::new());
+    }
+
+    let path = path.as_ref();
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(String::new()),
+        Err(error) => {
+            return Err(TextError::ContextCacheRead(format!(
+                "failed to open context cache `{}`: {error}",
+                path.display()
+            )));
+        }
+    };
+    let lines = std::io::BufReader::new(file)
+        .lines()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            TextError::ContextCacheRead(format!(
+                "failed to read context cache `{}`: {error}",
+                path.display()
+            ))
+        })?;
+
+    Ok(build_recent_input_context_prefix(lines, max_lines))
 }
 
 fn render_legacy_prompt_placeholders(template: &str, context: &PromptContext<'_>) -> String {
@@ -1237,6 +1307,9 @@ pub enum TextError {
     /// Legacy prompt file resolution failed.
     #[error("prompt file load failed: {0}")]
     PromptFileLoad(String),
+    /// Recent-input context cache read failed.
+    #[error("context cache read failed: {0}")]
+    ContextCacheRead(String),
 }
 
 fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
@@ -1273,10 +1346,11 @@ mod tests {
         CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
         LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
-        UnsupportedTextAdapter, build_openai_compatible_chat_request, default_adapter_runtime_dir,
+        UnsupportedTextAdapter, build_openai_compatible_chat_request,
+        build_recent_input_context_prefix, default_adapter_runtime_dir,
         extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
-        load_prompt_file_uri, merge_openai_compatible_extra_body, start_adapter_process,
-        stop_adapter_process,
+        load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
+        start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{
         COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
@@ -1538,6 +1612,47 @@ mod tests {
         .unwrap();
 
         assert!(built.is_none());
+    }
+
+    #[test]
+    fn recent_input_context_prefix_takes_last_non_empty_lines() {
+        let prefix = build_recent_input_context_prefix(["first", "", "second", "third", "   "], 3);
+
+        assert_eq!(
+            prefix,
+            "Recent input history (use to fix ASR errors):\nsecond\nthird\n   \n\n"
+        );
+    }
+
+    #[test]
+    fn recent_input_context_prefix_returns_empty_for_zero_or_empty_input() {
+        assert_eq!(build_recent_input_context_prefix(["first"], 0), "");
+        assert_eq!(build_recent_input_context_prefix(["", ""], 2), "");
+    }
+
+    #[test]
+    fn recent_input_context_prefix_reads_cache_file() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache_path = tempdir.path().join("context.jsonl");
+        std::fs::write(&cache_path, "one\n\ntwo\nthree\n").unwrap();
+
+        let prefix = load_recent_input_context_prefix(&cache_path, 2).unwrap();
+
+        assert_eq!(
+            prefix,
+            "Recent input history (use to fix ASR errors):\ntwo\nthree\n\n"
+        );
+    }
+
+    #[test]
+    fn recent_input_context_prefix_missing_cache_is_empty() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache_path = tempdir.path().join("missing-context.jsonl");
+
+        assert_eq!(
+            load_recent_input_context_prefix(&cache_path, 3).unwrap(),
+            ""
+        );
     }
 
     #[test]
