@@ -17,7 +17,7 @@ This milestone introduces `vinput-asr`, the first backend seam after the D-Bus b
 - `CommandAsrSpec`: parsed command-provider executable metadata from config.
 - `CommandAsrRequest`: buffered JSON request passed to command helpers.
 - `CommandAsrResponse`: JSON response decoded from command helpers.
-- `CommandAsrBackend`: buffered command backend that delegates to a runner on finish.
+- `CommandAsrBackend`: command backend that delegates to a runner on finish and exposes buffered or streaming capabilities from the factory.
 - `ProcessCommandAsrRunner`: process-backed runner using stdin/stdout JSON.
 - `events_to_payload`: conversion from final ASR events to the legacy recognition payload JSON model.
 
@@ -52,7 +52,7 @@ Command mode still carries selected text in `RecognitionContext`; command-scene 
 
 A command ASR provider is configured with `type = "command"`, a `command`, optional `args`, `env`, `model`, `hotwords_file`, and `timeout_ms`. The config-selected factory currently preserves the legacy command behavior:
 
-1. provider ids that end with `.streaming` use `LegacyCommandStreamingRunner`, which writes one committed audio JSON line plus a finish line to stdin and parses JSON event lines from stdout,
+1. provider ids that end with `.streaming` use `LegacyCommandStreamingRunner`, expose streaming/chunked capabilities, write one committed audio JSON line plus a finish line to stdin, parse JSON event lines from stdout, and suppress repeated partial text like the legacy C++ session,
 2. other command providers use `LegacyCommandBatchRunner`, which writes raw signed 16-bit little-endian PCM to stdin and reads final text from stdout,
 3. both runners honor configured args/env and process timeout/error handling.
 
