@@ -477,6 +477,45 @@ pub fn load_prompt_file_uri(uri: &str) -> Result<String, TextError> {
     Ok(String::from_utf8_lossy(&content).into_owned())
 }
 
+fn first_legacy_utf8_codepoint(text: &str) -> u32 {
+    text.chars().next().map_or(0, u32::from)
+}
+
+fn last_legacy_utf8_codepoint(text: &str) -> u32 {
+    text.chars().next_back().map_or(0, u32::from)
+}
+
+fn is_legacy_cjk_codepoint(codepoint: u32) -> bool {
+    codepoint >= 0x2E80
+}
+
+fn is_legacy_sentence_ending_punctuation(codepoint: u32) -> bool {
+    matches!(
+        codepoint,
+        0x3002 | 0xFF01 | 0xFF1F | 0x2026 | 0x2E | 0x21 | 0x3F | 0x0A
+    )
+}
+
+/// Appends committed text to a recent-input context buffer.
+///
+/// The helper mirrors the legacy frontend buffering rule: non-CJK fragments are
+/// separated by one space, CJK boundaries are kept tight, and sentence-ending
+/// punctuation asks the caller to flush the buffer immediately.
+pub fn append_recent_input_context_buffer(buffer: &mut String, text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+    if !buffer.is_empty() {
+        let cjk_boundary = is_legacy_cjk_codepoint(last_legacy_utf8_codepoint(buffer))
+            || is_legacy_cjk_codepoint(first_legacy_utf8_codepoint(text));
+        if !cjk_boundary && !buffer.ends_with(' ') {
+            buffer.push(' ');
+        }
+    }
+    buffer.push_str(text);
+    is_legacy_sentence_ending_punctuation(last_legacy_utf8_codepoint(buffer))
+}
+
 /// Builds the legacy recent-input context prompt prefix from cache lines.
 ///
 /// Empty lines are ignored, the last `max_lines` non-empty lines are kept, and
@@ -1865,7 +1904,8 @@ mod tests {
         OpenAiCompatibleChatTransport, OpenAiCompatibleTextAdapter, OpenAiCompatibleTextProcessor,
         ProcessCommandTextRunner, PromptContext, PromptTemplate, RecentInputContextEntry,
         TextAdapter, TextError, TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
-        append_recent_input_context_entry, build_openai_compatible_chat_request,
+        append_recent_input_context_buffer, append_recent_input_context_entry,
+        build_openai_compatible_chat_request,
         build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
         build_openai_compatible_headers, build_recent_input_context_prefix, command_mode_payload,
         default_adapter_runtime_dir, default_context_cache_path,
@@ -2761,6 +2801,39 @@ latest
             load_recent_input_context_prefix(&cache_path, 3).unwrap(),
             ""
         );
+    }
+
+    #[test]
+    fn recent_input_context_buffer_joins_latin_with_spaces() {
+        let mut buffer = String::new();
+
+        assert!(!append_recent_input_context_buffer(&mut buffer, "hello"));
+        assert!(!append_recent_input_context_buffer(&mut buffer, "world"));
+        assert_eq!(buffer, "hello world");
+        assert!(append_recent_input_context_buffer(&mut buffer, "done."));
+        assert_eq!(buffer, "hello world done.");
+    }
+
+    #[test]
+    fn recent_input_context_buffer_keeps_cjk_boundaries_tight() {
+        let mut buffer = String::new();
+
+        assert!(!append_recent_input_context_buffer(&mut buffer, "你好"));
+        assert!(append_recent_input_context_buffer(&mut buffer, "世界。"));
+        assert_eq!(buffer, "你好世界。");
+    }
+
+    #[test]
+    fn recent_input_context_buffer_recognizes_legacy_sentence_enders() {
+        for ender in [".", "!", "?", "。", "！", "？", "…", "\n"] {
+            let mut buffer = String::from("text");
+            assert!(
+                append_recent_input_context_buffer(&mut buffer, ender),
+                "expected `{ender}` to flush"
+            );
+        }
+        let mut buffer = String::from("text");
+        assert!(!append_recent_input_context_buffer(&mut buffer, "fragment"));
     }
 
     #[test]
