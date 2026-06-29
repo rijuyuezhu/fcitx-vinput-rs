@@ -48,17 +48,15 @@ StopRecording
 
 Command mode still carries selected text in `RecognitionContext`; command-scene post-processing can move to `vinput-text` later without changing the ASR trait boundary.
 
-## Command helper JSON contract
+## Command ASR provider contracts
 
-A command ASR provider is configured with `type = "command"`, a `command`, optional `args`, `env`, `model`, `hotwords_file`, and `timeout_ms`. At runtime the process runner:
+A command ASR provider is configured with `type = "command"`, a `command`, optional `args`, `env`, `model`, `hotwords_file`, and `timeout_ms`. The config-selected factory currently preserves the legacy command behavior:
 
-1. spawns `command` with `args` and `env`,
-2. writes one `CommandAsrRequest` JSON object to stdin,
-3. closes stdin,
-4. waits for stdout within `timeout_ms` when configured,
-5. decodes one `CommandAsrResponse` JSON object from stdout.
+1. provider ids that end with `.streaming` use `LegacyCommandStreamingRunner`, which writes one committed audio JSON line plus a finish line to stdin and parses JSON event lines from stdout,
+2. other command providers use `LegacyCommandBatchRunner`, which writes raw signed 16-bit little-endian PCM to stdin and reads final text from stdout,
+3. both runners honor configured args/env and process timeout/error handling.
 
-The request shape is intentionally plain JSON so shell/Python/Rust helpers can implement it without a binary protocol:
+`CommandAsrRequest` remains the internal buffered request type shared by these runners and by explicit test seams. It carries provider metadata, recognition context, PCM layout, and interleaved signed 16-bit samples:
 
 ```json
 {
@@ -80,9 +78,9 @@ The request shape is intentionally plain JSON so shell/Python/Rust helpers can i
 }
 ```
 
-`samples` are signed 16-bit PCM values. When `channels` is greater than one they are interleaved in frame order; the current runtime still produces mono mock audio by default. A single command request has one PCM spec, so the command session rejects attempts to append buffers with different sample rates or channel counts.
+`samples` are signed 16-bit PCM values. When `channels` is greater than one they are interleaved in frame order. A single command session has one PCM spec, so the session rejects attempts to append buffers with different sample rates or channel counts.
 
-A successful helper can return final text, and optionally a partial text:
+For the explicit JSON helper seam used by `ProcessCommandAsrRunner`, a helper can return final text, and optionally a partial text:
 
 ```json
 {"partial_text":"listening","text":"final text"}
@@ -94,9 +92,7 @@ A helper can also return an ASR-level error without a non-zero process exit:
 {"error":"asr failed"}
 ```
 
-The deprecated `failure` response key is accepted as an alias for `error` while the contract is still settling. Non-zero exits, invalid JSON, missing final text, and timeout paths are surfaced as backend errors.
-
-This JSON helper contract is the current Rust command seam, not a claim of full legacy command-ASR protocol compatibility. The legacy raw-PCM stdin and streaming JSON-line stdout modes still need separate contract fixtures before existing third-party helpers can be treated as drop-in compatible.
+The deprecated `failure` response key is accepted as an alias for `error` while the JSON helper seam is still settling. Non-zero exits, invalid JSON, missing final text, and timeout paths are surfaced as backend errors.
 
 ## Diagnostics
 
