@@ -1958,6 +1958,34 @@ sys.stdout.write('|'.join(str(sample) for sample in samples))
     }
 
     #[test]
+    fn legacy_command_batch_runner_times_out_slow_helpers() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "cat >/dev/null; sleep 1".to_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(25),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", None),
+            vec![1, 2, 3],
+        );
+
+        let error = LegacyCommandBatchRunner
+            .recognize(&spec, &request)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("command ASR provider `cmd`")
+                    && message.contains("timed out after 25 ms")
+        ));
+    }
+
+    #[test]
     fn legacy_command_batch_runner_rejects_empty_stdout() {
         let spec = CommandAsrSpec {
             provider_id: "cmd".to_owned(),
@@ -2211,6 +2239,34 @@ print(json.dumps({'type':'closed'}))
                 if message.contains("cmd.streaming")
                     && message.contains("exited with")
                     && message.contains("streaming boom")
+        ));
+    }
+
+    #[test]
+    fn legacy_command_streaming_runner_times_out_slow_helpers() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd.streaming".to_owned(),
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "cat >/dev/null; sleep 1".to_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(25),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", None),
+            vec![1, 2, 3],
+        );
+
+        let error = LegacyCommandStreamingRunner
+            .recognize(&spec, &request)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("command ASR provider `cmd.streaming`")
+                    && message.contains("timed out after 25 ms")
         ));
     }
 
