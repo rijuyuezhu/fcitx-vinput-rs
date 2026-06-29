@@ -868,14 +868,24 @@ impl CommandAsrBackend<UnsupportedCommandAsrRunner> {
 }
 
 impl<R> CommandAsrBackend<R> {
-    /// Creates a command ASR backend with an injected runner.
+    /// Creates a command ASR backend with an injected buffered runner.
     #[must_use]
     pub fn with_runner(spec: CommandAsrSpec, runner: R) -> Self {
+        Self::with_runner_and_capabilities(spec, runner, BackendCapabilities::buffered())
+    }
+
+    /// Creates a command ASR backend with an injected runner and explicit capabilities.
+    #[must_use]
+    pub fn with_runner_and_capabilities(
+        spec: CommandAsrSpec,
+        runner: R,
+        capabilities: BackendCapabilities,
+    ) -> Self {
         let descriptor = BackendDescriptor::new(
             spec.provider_id.clone(),
             spec.model_id.clone().unwrap_or_default(),
             "Command ASR",
-            BackendCapabilities::buffered(),
+            capabilities,
         );
         Self {
             spec,
@@ -886,9 +896,19 @@ impl<R> CommandAsrBackend<R> {
 
     /// Creates a command ASR backend from typed provider config with an injected runner.
     pub fn with_config(provider: &AsrProviderConfig, runner: R) -> Result<Self, AsrError> {
-        Ok(Self::with_runner(
+        Self::with_config_and_capabilities(provider, runner, BackendCapabilities::buffered())
+    }
+
+    /// Creates a command ASR backend from typed provider config with explicit capabilities.
+    pub fn with_config_and_capabilities(
+        provider: &AsrProviderConfig,
+        runner: R,
+        capabilities: BackendCapabilities,
+    ) -> Result<Self, AsrError> {
+        Ok(Self::with_runner_and_capabilities(
             CommandAsrSpec::try_from(provider)?,
             runner,
+            capabilities,
         ))
     }
 
@@ -960,9 +980,10 @@ impl AsrBackendFactory {
         }
         if provider.kind == AsrProviderKind::Command {
             if is_legacy_streaming_command_provider(&provider.id) {
-                return Ok(Box::new(CommandAsrBackend::with_config(
+                return Ok(Box::new(CommandAsrBackend::with_config_and_capabilities(
                     provider,
                     LegacyCommandStreamingRunner,
+                    BackendCapabilities::streaming(),
                 )?));
             }
             return Ok(Box::new(CommandAsrBackend::with_config(
@@ -1741,6 +1762,33 @@ mod tests {
             AudioDeliveryMode::Buffered
         );
         assert_eq!(backend.spec().command, "helper");
+    }
+
+    #[test]
+    fn backend_factory_marks_streaming_command_provider_capabilities() {
+        let provider = AsrProviderConfig {
+            id: "cmd.streaming".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("helper".to_owned()),
+            args: Vec::new(),
+            env: std::collections::HashMap::default(),
+            endpoint: None,
+        };
+
+        let descriptor = AsrBackendFactory::build_provider(&provider)
+            .expect("streaming command provider should build")
+            .describe();
+
+        assert_eq!(descriptor.provider_id, "cmd.streaming");
+        assert_eq!(descriptor.model_id, "cmd-model");
+        assert_eq!(
+            descriptor.capabilities.delivery_mode,
+            AudioDeliveryMode::Chunked
+        );
+        assert!(descriptor.capabilities.partial_results);
     }
 
     #[test]
