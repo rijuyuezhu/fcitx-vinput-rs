@@ -311,6 +311,27 @@ mod tests {
     }
 
     #[test]
+    fn parser_preserves_blank_cancel_candidate_only() {
+        let payload = RecognitionPayload::from_json_str(
+            r#"{
+                "commit_text":"",
+                "candidates":[
+                    {"text":"","source":"raw"},
+                    {"text":"","source":"future"},
+                    {"text":"","source":"cancel"}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(payload.commit_text.is_empty());
+        assert_eq!(
+            payload.candidates,
+            vec![Candidate::new("", CandidateSource::Cancel)]
+        );
+    }
+
+    #[test]
     fn parser_defaults_missing_or_unknown_candidate_source_to_raw() {
         let payload = RecognitionPayload::from_json_str(
             r#"{
