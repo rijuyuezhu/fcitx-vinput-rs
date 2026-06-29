@@ -596,6 +596,13 @@ mod tests {
     "#;
 
     #[test]
+    fn rejects_missing_registry_version() {
+        let error = RegistryIndex::from_json_str(r#"{"models":[]}"#).unwrap_err();
+
+        assert!(matches!(error, RegistryError::Json(_)));
+    }
+
+    #[test]
     fn rejects_zero_registry_version() {
         assert_eq!(
             RegistryIndex::from_json_str(r#"{"version":0}"#).unwrap_err(),
