@@ -9,7 +9,9 @@ use std::{
     sync::LazyLock,
 };
 use thiserror::Error;
-use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
+use vinput_config::{
+    COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
+};
 use vinput_protocol::RecognitionPayload;
 
 /// Input to the text finishing stage.
@@ -451,16 +453,56 @@ pub fn load_prompt_file_uri(uri: &str) -> Result<String, TextError> {
 }
 
 fn render_legacy_prompt_placeholders(template: &str, context: &PromptContext<'_>) -> String {
+    render_legacy_prompt_placeholders_with_context(template, context, "")
+}
+
+fn render_legacy_prompt_placeholders_with_context(
+    template: &str,
+    context: &PromptContext<'_>,
+    rendered_context: &str,
+) -> String {
     LEGACY_PROMPT_VAR_RE
         .replace_all(template, |captures: &regex::Captures<'_>| {
             match &captures[1] {
                 "asr" => context.raw_text.to_owned(),
                 "selected" => context.selected_text.to_owned(),
-                "context" => String::new(),
+                "context" => rendered_context.to_owned(),
                 _ => captures[0].to_owned(),
             }
         })
         .into_owned()
+}
+
+fn wrap_xml_block(tag: &str, text: &str) -> String {
+    let mut out = String::with_capacity(tag.len() * 2 + text.len() + 12);
+    out.push('<');
+    out.push_str(tag);
+    out.push_str(">\n");
+    out.push_str(text);
+    if text.is_empty() || !text.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("</");
+    out.push_str(tag);
+    out.push('>');
+    out
+}
+
+fn build_constraints_suffix(candidate_count: u8) -> String {
+    if candidate_count == 0 {
+        return String::new();
+    }
+    format!(
+        "\n\n## Constraints\n\
+         - Return only the JSON object described below.\n\
+         - Each candidate must contain only the final rewritten text.\n\
+         - Do not include explanations, Markdown fences, or extra keys.\n\
+         \n\n## Format\n\
+         Return EXACTLY {candidate_count} candidate(s) in a JSON object:\n\
+         ```json\n\
+         {{\"candidates\": [\"<string>\", \"<string>\"]}}\n\
+         ```"
+    )
 }
 
 /// Tiny deterministic template renderer for command placeholders and future adapters.
@@ -577,6 +619,93 @@ pub fn merge_openai_compatible_extra_body(
         request.insert(key.clone(), value.clone());
     }
     ignored
+}
+
+/// OpenAI-compatible chat-completions request body built from a scene prompt.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenAiCompatibleChatRequest {
+    /// JSON body for a non-streaming chat-completions request.
+    pub body: serde_json::Value,
+    /// Protected `extra_body` keys that were ignored while building the body.
+    pub ignored_extra_body_keys: Vec<String>,
+}
+
+/// Builds the legacy OpenAI-compatible non-streaming request body.
+///
+/// The caller still owns HTTP transport, timeout, cancellation, and secret
+/// handling. This helper only pins request assembly: prompt-file resolution,
+/// legacy `{{asr}}`/`{{selected}}`/`{{context}}` interpolation, XML fallback,
+/// candidate constraints, JSON-object response format, and protected
+/// `extra_body` handling.
+pub fn build_openai_compatible_chat_request(
+    request: &TextRequest<'_>,
+    provider: &LlmProviderConfig,
+    context_prefix: &str,
+) -> Result<Option<OpenAiCompatibleChatRequest>, TextError> {
+    let Some(prompt) = request
+        .scene
+        .prompt
+        .as_deref()
+        .filter(|prompt| !prompt.is_empty())
+    else {
+        return Ok(None);
+    };
+    let base_prompt = if is_prompt_file_uri(prompt) {
+        load_prompt_file_uri(prompt)?
+    } else {
+        prompt.to_owned()
+    };
+    let prompt_context = PromptContext::from_request(request);
+    let mut user_content = if has_legacy_prompt_interpolation(&base_prompt) {
+        render_legacy_prompt_placeholders_with_context(
+            &base_prompt,
+            &prompt_context,
+            context_prefix,
+        )
+    } else {
+        let mut content = base_prompt;
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push_str("\n\n");
+        } else if !content.is_empty() {
+            content.push('\n');
+        }
+        if !context_prefix.is_empty() {
+            content.push_str(&wrap_xml_block("context", context_prefix));
+            content.push('\n');
+        }
+        if !request.raw_text.is_empty() {
+            content.push_str(&wrap_xml_block("asr", request.raw_text));
+            content.push('\n');
+        }
+        content
+    };
+    user_content.push_str(&build_constraints_suffix(request.scene.candidate_count));
+
+    let model = request
+        .scene
+        .model
+        .as_deref()
+        .or(provider.model.as_deref())
+        .unwrap_or_default();
+    let mut body = serde_json::json!({
+        "model": model,
+        "stream": false,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {
+                "role": "user",
+                "content": user_content,
+            }
+        ],
+    });
+    let ignored_extra_body_keys =
+        merge_openai_compatible_extra_body(&mut body, &provider.extra_body);
+
+    Ok(Some(OpenAiCompatibleChatRequest {
+        body,
+        ignored_extra_body_keys,
+    }))
 }
 
 /// Synchronous text post-processing seam used by daemon runtime and tests.
@@ -1144,11 +1273,14 @@ mod tests {
         CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
         LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
-        UnsupportedTextAdapter, default_adapter_runtime_dir, extract_openai_compatible_candidates,
-        has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
-        merge_openai_compatible_extra_body, start_adapter_process, stop_adapter_process,
+        UnsupportedTextAdapter, build_openai_compatible_chat_request, default_adapter_runtime_dir,
+        extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
+        load_prompt_file_uri, merge_openai_compatible_extra_body, start_adapter_process,
+        stop_adapter_process,
     };
-    use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
+    use vinput_config::{
+        COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
+    };
     use vinput_protocol::RecognitionPayload;
 
     #[derive(Debug, Clone, Copy)]
@@ -1185,6 +1317,17 @@ mod tests {
             candidate_count,
             timeout_ms: None,
             context_lines: 0,
+        }
+    }
+
+    fn provider(extra_body: serde_json::Value) -> LlmProviderConfig {
+        LlmProviderConfig {
+            id: "openai-compatible".to_owned(),
+            base_url: "http://localhost:8080/v1".to_owned(),
+            api_key: String::new(),
+            model: Some("provider-model".to_owned()),
+            extra_body,
+            extra: std::collections::HashMap::default(),
         }
     }
 
@@ -1280,6 +1423,121 @@ mod tests {
             rendered,
             "prompt=apply command; asr=make it shorter; selected=This is the selected text.; context=; unknown={{ future }}"
         );
+    }
+
+    #[test]
+    fn openai_chat_request_wraps_xml_without_interpolation() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish this.".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            model: Some("scene-model".to_owned()),
+            candidate_count: 2,
+            ..scene("polish", 2)
+        };
+        let provider = provider(serde_json::json!({
+            "top_p": 0.8,
+            "messages": [{"role": "system", "content": "override"}],
+        }));
+
+        let built = build_openai_compatible_chat_request(
+            &TextRequest {
+                raw_text: "raw dictated",
+                scene: &prompted,
+                selected_text: None,
+            },
+            &provider,
+            "previous line",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(built.ignored_extra_body_keys, ["messages"]);
+        assert_eq!(built.body["model"], "scene-model");
+        assert_eq!(built.body["stream"], false);
+        assert_eq!(built.body["temperature"], 0.2);
+        assert_eq!(
+            built.body["response_format"],
+            serde_json::json!({"type": "json_object"})
+        );
+        assert_eq!(built.body["top_p"], 0.8);
+        let content = built.body["messages"][0]["content"].as_str().unwrap();
+        assert!(content.starts_with(
+            "Polish this.\n\n<context>\nprevious line\n</context>\n<asr>\nraw dictated\n</asr>\n"
+        ));
+        assert!(content.contains("\n\n## Constraints\n"));
+        assert!(content.contains("Return EXACTLY 2 candidate(s)"));
+        assert!(content.contains("{\"candidates\": [\"<string>\", \"<string>\"]}"));
+    }
+
+    #[test]
+    fn openai_chat_request_interpolates_context_and_selected_without_xml() {
+        let prompted = SceneDefinition {
+            prompt: Some("Context={{ context }} ASR={{ asr }} Selected={{ selected }}".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene("polish", 0)
+        };
+        let provider = provider(serde_json::json!({
+            "stream": true,
+            "response_format": {"type": "text"},
+            "frequency_penalty": 0.5,
+        }));
+
+        let built = build_openai_compatible_chat_request(
+            &TextRequest {
+                raw_text: "fix text",
+                scene: &prompted,
+                selected_text: Some("source text"),
+            },
+            &provider,
+            "recent input\n",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(built.ignored_extra_body_keys.len(), 2);
+        assert!(
+            built
+                .ignored_extra_body_keys
+                .iter()
+                .any(|key| key == "stream")
+        );
+        assert!(
+            built
+                .ignored_extra_body_keys
+                .iter()
+                .any(|key| key == "response_format")
+        );
+        assert_eq!(built.body["model"], "provider-model");
+        assert_eq!(built.body["stream"], false);
+        assert_eq!(
+            built.body["response_format"],
+            serde_json::json!({"type": "json_object"})
+        );
+        assert_eq!(built.body["frequency_penalty"], 0.5);
+        let content = built.body["messages"][0]["content"].as_str().unwrap();
+        assert_eq!(
+            content,
+            "Context=recent input\n ASR=fix text Selected=source text"
+        );
+        assert!(!content.contains("<asr>"));
+        assert!(!content.contains("## Constraints"));
+    }
+
+    #[test]
+    fn openai_chat_request_without_prompt_is_not_applicable() {
+        let raw = scene("noop", 0);
+        let built = build_openai_compatible_chat_request(
+            &TextRequest {
+                raw_text: "raw",
+                scene: &raw,
+                selected_text: None,
+            },
+            &provider(serde_json::json!({})),
+            "",
+        )
+        .unwrap();
+
+        assert!(built.is_none());
     }
 
     #[test]
