@@ -15,10 +15,13 @@ The first milestones are intentionally small: preserve the public daemon/fronten
 - `crates/vinput-daemon`: mock/configured daemon runtime, diagnostics, and `zbus` service facade for the legacy daemon ABI.
 - `crates/vinput-cli`: bootstrap CLI named `vinput` for protocol/config/registry/payload inspection.
 - `data/default-config.json`: copied from the original project as the compatibility baseline.
-- `docs/architecture/README.md`: architecture notes index and contract map.
+- `AGENT.md`: required short instruction file for coding agents.
+- `docs/README.md`: documentation map and required reading order.
+- `docs/development.md`: project style, commit message style, and `just` command guide.
+- `docs/architecture/README.md`: tracked architecture contract index.
 - `docs/legacy/`: tracked original-source annotations.
 
-Local planning notes under `docs/plan/` are intentionally ignored by that directory's local `.gitignore`.
+Local planning notes under `docs/plan/` are intentionally ignored by the root `.gitignore`. Do not manually track them.
 
 ## Tooling
 
@@ -92,8 +95,10 @@ cargo run -p vinput-daemon -- --dbus
 
 ## Development route
 
+The current route is refactor-first. Start with `AGENT.md`, then read `docs/README.md` and `docs/development.md`. If `docs/plan/review-driven-refactor-plan.md` exists locally, treat it as the single source of truth for next-step planning.
+
 1. Keep `vinput-protocol` ABI-compatible with the existing C++ Fcitx5 addon.
-2. Port config and pure data transformations with tests first.
-3. Keep the `zbus` daemon service behind the same methods/signals.
-4. Replace mock runtime edges with PipeWire audio capture, concrete ASR sessions, post-processing, registry/download, adapter supervision, and packaging.
-5. Annotate every original `fcitx5-vinput/src` file before porting complex behavior.
+2. Pin compatibility behavior with tests before changing runtime logic.
+3. Split oversized modules before adding concrete backends.
+4. Keep the `zbus` daemon service behind the same methods/signals.
+5. Do not add live PipeWire, sherpa-onnx, OpenAI HTTP, registry install, frontend, or packaging work until the refactor plan allows it or the user explicitly reprioritizes.

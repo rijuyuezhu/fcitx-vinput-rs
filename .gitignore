@@ -11,3 +11,6 @@
 *.swp
 *.swo
 .DS_Store
+
+# Local planning scratch
+/docs/plan/

@@ -1,19 +1,22 @@
-# Architecture notes
+# Architecture contracts
 
-This directory tracks the stable architecture contracts used while porting the daemon/backend from the original C++ project to Rust.
+This directory contains tracked architecture and compatibility contracts for the Rust rewrite. Read [`../development.md`](../development.md) first, then use this index to choose the subsystem document relevant to the task.
 
-Start with:
+## Reading order
 
-- [`target-architecture.md`](target-architecture.md): target crate boundaries, runtime actors, compatibility contracts, and migration order.
-- [`bootstrap.md`](bootstrap.md): current bootstrap workspace shape and early local commands.
+1. [`target-architecture.md`](target-architecture.md): crate boundaries, runtime actors, state machine target, and migration principles.
+2. Subsystem contract for the area being changed:
+   - [`dbus-service.md`](dbus-service.md): legacy D-Bus service facade, diagnostic extension, and compatibility rules.
+   - [`config-contract.md`](config-contract.md): default config fixture, parsing, validation, and diagnostics behavior.
+   - [`registry-contract.md`](registry-contract.md): registry metadata, dry-run planning, and sample fixture contracts.
+   - [`asr-contract.md`](asr-contract.md): ASR backend/session seams, command ASR behavior, and diagnostics.
+   - [`audio-contract.md`](audio-contract.md): PCM layout, WAV/raw byte policy, recorder lifecycle, and PipeWire scaffold.
+   - [`text-contract.md`](text-contract.md): text post-processing, prompt/context cache, command adapters, and OpenAI-compatible seams.
+3. `../plan/review-driven-refactor-plan.md`, when present locally, for the current ignored scratch plan and next refactor steps.
 
-Contract references:
+## Maintenance rules
 
-- [`dbus-service.md`](dbus-service.md): legacy D-Bus service facade and test expectations.
-- [`config-contract.md`](config-contract.md): committed default config fixture and diagnostics behavior.
-- [`registry-contract.md`](registry-contract.md): registry metadata shape, planning, and sample fixture ids.
-- [`asr-contract.md`](asr-contract.md): ASR backend/session seams and diagnostic payloads.
-- [`audio-contract.md`](audio-contract.md): PCM layout, raw byte, WAV decode, and processing order contracts.
-- [`text-contract.md`](text-contract.md): text adapter and scene post-processing seams.
-
-Keep these documents aligned with committed fixtures, smoke checks, and integration tests. Planning scratch notes live under `docs/plan/` and are intentionally not part of this public architecture index.
+- These files are tracked and should describe stable contracts or explicit compatibility targets.
+- Do not use these files as scratch planning space; use ignored `docs/plan/` for that.
+- Delete stale review snapshots after consolidating their conclusions into `docs/plan/` or these contract docs.
+- Keep statements precise: distinguish `implemented`, `mock/seam only`, `configured behind an explicit flag`, and `future work`.

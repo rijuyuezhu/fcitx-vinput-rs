@@ -53,13 +53,13 @@ fn architecture_index_links_existing_notes() {
 }
 
 #[test]
-fn bootstrap_doc_lists_all_workspace_crates() {
-    let bootstrap = std::fs::read_to_string(architecture_dir().join("bootstrap.md"))
-        .expect("read bootstrap architecture doc");
+fn development_doc_lists_all_workspace_crates() {
+    let development = std::fs::read_to_string(workspace_file("docs/development.md"))
+        .expect("read development guide");
     for crate_name in workspace_crate_names() {
         assert!(
-            bootstrap.contains(&crate_name),
-            "bootstrap architecture doc should list `{crate_name}`"
+            development.contains(&crate_name),
+            "development guide should list `{crate_name}`"
         );
     }
 }

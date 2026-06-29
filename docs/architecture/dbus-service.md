@@ -1,54 +1,68 @@
-# D-Bus service milestone
+# D-Bus service contract
 
-This milestone introduces the first real daemon-side D-Bus boundary while keeping the runtime mocked.
+`vinput-daemon` exposes the legacy daemon D-Bus ABI while the backend implementation is rewritten in Rust. The service must remain compatible with the existing C++ Fcitx5 frontend.
 
 ## What exists now
 
-- `crates/vinput-daemon/src/lib.rs` exports daemon library modules for tests and future integration.
-- `crates/vinput-daemon/src/runtime.rs` remains the deterministic mock state machine.
+- `crates/vinput-protocol/src/dbus.rs` owns shared wire constants, method names, and signal names.
 - `crates/vinput-daemon/src/dbus_service.rs` wraps `RuntimeState` in a `zbus` interface named `org.fcitx.Vinput.Service`.
 - `vinput-daemon --dbus` registers the legacy bus/object/interface on the session bus.
-- `crates/vinput-daemon/tests/dbus_integration.rs` uses `zbus::Proxy` under `dbus-run-session` to exercise real bus calls.
+- `crates/vinput-daemon/tests/dbus_integration.rs` exercises real bus calls under `dbus-run-session`.
+- The default runtime still uses deterministic mock ASR/text/audio seams, while explicit configured paths can exercise configured command ASR/text seams. This is not full backend parity.
 
-The service exposes compatibility and diagnostic method names:
+## Wire names to preserve
+
+- Bus name: `org.fcitx.Vinput`
+- Object path: `/org/fcitx/Vinput`
+- Service interface: `org.fcitx.Vinput.Service`
+- Fcitx bus: `org.fcitx.Fcitx5`
+- Frontend notifier object: `/org/fcitx/Fcitx5/Vinput`
+- Frontend notifier interface: `org.fcitx.Fcitx5.Vinput1`
+
+## Service methods
+
+Preserve these legacy method names and payload shapes:
 
 - `StartRecording`
 - `StartCommandRecording`
 - `StopRecording`
 - `GetStatus`
 - `GetAsrBackendState`
-- `GetTextAdapterState`
 - `ReloadAsrBackend`
 - `StartAdapter`
 - `StopAdapter`
 
-`GetTextAdapterState` is a Rust diagnostic extension. The legacy frontend notifier method is separate: `Notify` lives on `org.fcitx.Fcitx5.Vinput1` at `/org/fcitx/Fcitx5/Vinput` and accepts the legacy error-info tuple `(code, subject, detail, raw_message)`.
+`GetTextAdapterState` is a Rust diagnostic extension. It can remain available, but it is not part of the original C++ daemon vtable and should be documented as an extension whenever listed.
 
-It also declares the legacy signal names:
+## Signals
 
-- `RecognitionResult`
-- `RecognitionPartial`
-- `StatusChanged`
-- `DaemonNotification` with the legacy `ssss` error-info payload: code, subject, detail, raw_message.
+Preserve these signal names and payload shapes:
 
-## Current test coverage
+- `RecognitionResult(s)`
+- `RecognitionPartial(s)`
+- `StatusChanged(s)`
+- `DaemonNotification(ssss)`, carrying code, subject, detail, and raw message.
 
-Unit tests call the service facade directly and assert that the mock D-Bus methods exercise the same state transitions and JSON payloads as the runtime:
+## Test coverage
 
-- idle → recording → stop → idle
-- command recording with selected text context
-- ASR backend state JSON parsing
-
-The optional integration test runs through a real session bus:
+Unit tests call the service facade directly and assert runtime transitions and JSON payloads. The optional integration test runs through a real session bus:
 
 ```sh
 dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
 ```
 
-That test starts the Rust service, builds a `zbus::Proxy`, calls legacy methods by their exact wire names, and parses the returned recognition payload JSON.
+That test starts the Rust service, builds a `zbus::Proxy`, calls legacy methods by their exact wire names, and parses returned recognition payload JSON.
 
-`vinput-cli protocol` serializes method and signal names from `vinput-protocol::dbus::SERVICE_METHODS` and `SERVICE_SIGNALS`, so the smoke CLI and service tests read the same member list.
+`vinput-cli protocol` serializes method and signal names from `vinput-protocol`, so smoke commands and service tests read the same member list.
+
+## Known compatibility gaps
+
+These are next-phase refactor/fix items, not optional cleanups:
+
+- D-Bus errors should preserve the legacy operation failure name `org.fcitx.Vinput.Error.OperationFailed` instead of exposing only generic failure errors.
+- `ReloadAsrBackend` should match legacy busy behavior: return success while recording/inferring, mark reload pending, and apply it when the runtime returns to idle.
+- Status ordering must stay covered by tests, especially when a future real post-processing phase is wired.
 
 ## Compatibility rule
 
-The C++ frontend should not know whether the backend is C++ or Rust. Any service method rename, object path change, status string change, or recognition payload shape change must be caught by `vinput-protocol` tests before it reaches D-Bus integration.
+The frontend should not need to know whether the daemon is C++ or Rust. Any service method rename, object path change, status string change, signal shape change, recognition payload shape change, or D-Bus error behavior change must be pinned by compatibility tests before it reaches runtime code.
