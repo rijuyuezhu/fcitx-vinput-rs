@@ -9,7 +9,7 @@ StopRecording passes the final ASR payload into `TextProcessor::finish`. Raw or 
 ## Core types
 
 - `TextRequest`: raw ASR text, selected scene definition, and optional selected text for command mode.
-- `PromptContext` and `PromptTemplate`: deterministic placeholder rendering for scene metadata.
+- `PromptContext` and `PromptTemplate`: deterministic placeholder rendering for scene metadata, legacy `{{ asr }}`/`{{ selected }}`/`{{ context }}` variables, and `file:///` prompt-file loading.
 - `TextProcessor`: synchronous runtime seam used by the daemon.
 - `TextAdapter`: post-processing seam for command, prompt, provider, timeout, context, or candidate handling.
 - `CommandTextAdapter`: configured command adapter that delegates execution to a runner.
@@ -29,6 +29,8 @@ The command text adapter contract mirrors the command ASR helper style: one JSON
 ## Daemon runtime wiring
 
 The default daemon constructor still uses mock text processing for prototype compatibility. To exercise configured backends explicitly, run the daemon with `--configured-backends`. That path builds ASR from `asr.active_provider` and text post-processing from `llm.adapters[]`.
+
+Prompt-file compatibility mirrors the legacy daemon: only literal `file:///absolute/path` URIs are accepted, the path is loaded only when it points to a regular file, and reads are capped at 256 KiB. Legacy double-brace interpolation accepts optional whitespace around variable names; unsupported variables are preserved verbatim. `{{context}}` currently renders empty until the recent-input context cache is implemented.
 
 `CommandTextProcessor` only dispatches a post-processing scene when exactly one command adapter is configured. With no adapters it returns `AdapterRequired`; with multiple adapters it returns `AmbiguousAdapter` instead of guessing. `SceneDefinition::provider_id` is kept as provider metadata; adapter selection needs a future explicit field or mapping. Runtime code can use `RuntimeState::with_configured_backends` for configured ASR plus configured command text adapters, or `RuntimeState::with_configured_text` when ASR/audio seams are injected in tests.
 

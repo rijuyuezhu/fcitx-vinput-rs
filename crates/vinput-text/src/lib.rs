@@ -3,9 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{ErrorKind, Write},
+    io::{ErrorKind, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
+    sync::LazyLock,
 };
 use thiserror::Error;
 use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
@@ -393,6 +394,75 @@ impl CommandTextResponse {
     }
 }
 
+const PROMPT_FILE_URI_PREFIX: &str = "file:///";
+const MAX_PROMPT_FILE_BYTES: usize = 256 * 1024;
+
+static LEGACY_PROMPT_VAR_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\{\{\s*(\w+)\s*\}\}").expect("legacy prompt variable regex is valid")
+});
+
+/// Returns true when a prompt references a legacy `file:///` prompt file.
+#[must_use]
+pub fn is_prompt_file_uri(input: &str) -> bool {
+    input.starts_with(PROMPT_FILE_URI_PREFIX)
+}
+
+/// Returns true when a prompt contains a legacy double-brace interpolation marker.
+#[must_use]
+pub fn has_legacy_prompt_interpolation(input: &str) -> bool {
+    input.contains("{{")
+}
+
+/// Loads a legacy `file:///absolute/path` prompt file with the daemon safety cap.
+///
+/// Legacy C++ accepts only the literal `file:///` prefix, strips `file://`
+/// while keeping the absolute path's leading slash, requires a regular file,
+/// and truncates reads to 256 KiB. This helper keeps those externally visible
+/// semantics instead of using generic URL parsing, because percent-decoding or
+/// host handling would change accepted legacy config values.
+pub fn load_prompt_file_uri(uri: &str) -> Result<String, TextError> {
+    if !is_prompt_file_uri(uri) {
+        return Err(TextError::PromptFileLoad("not a file:/// URI".to_owned()));
+    }
+
+    let path = &uri[PROMPT_FILE_URI_PREFIX.len() - 1..];
+    if path.is_empty() || path == "/" {
+        return Err(TextError::PromptFileLoad("empty path".to_owned()));
+    }
+
+    let metadata = fs::metadata(path)
+        .map_err(|error| TextError::PromptFileLoad(format!("stat failed: {error}")))?;
+    if !metadata.is_file() {
+        return Err(TextError::PromptFileLoad("not a regular file".to_owned()));
+    }
+
+    let mut file = fs::File::open(path)
+        .map_err(|error| TextError::PromptFileLoad(format!("open failed: {error}")))?;
+    let mut content = Vec::with_capacity(MAX_PROMPT_FILE_BYTES + 1);
+    std::io::Read::by_ref(&mut file)
+        .take((MAX_PROMPT_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut content)
+        .map_err(|error| TextError::PromptFileLoad(format!("read failed: {error}")))?;
+    if content.len() > MAX_PROMPT_FILE_BYTES {
+        content.truncate(MAX_PROMPT_FILE_BYTES);
+    }
+
+    Ok(String::from_utf8_lossy(&content).into_owned())
+}
+
+fn render_legacy_prompt_placeholders(template: &str, context: &PromptContext<'_>) -> String {
+    LEGACY_PROMPT_VAR_RE
+        .replace_all(template, |captures: &regex::Captures<'_>| {
+            match &captures[1] {
+                "asr" => context.raw_text.to_owned(),
+                "selected" => context.selected_text.to_owned(),
+                "context" => String::new(),
+                _ => captures[0].to_owned(),
+            }
+        })
+        .into_owned()
+}
+
 /// Tiny deterministic template renderer for command placeholders and future adapters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptTemplate {
@@ -422,10 +492,7 @@ impl PromptTemplate {
             .timeout_ms
             .map(|timeout_ms| timeout_ms.to_string())
             .unwrap_or_default();
-        self.template
-            .replace("{{asr}}", context.raw_text)
-            .replace("{{selected}}", context.selected_text)
-            .replace("{{context}}", "")
+        render_legacy_prompt_placeholders(&self.template, context)
             .replace("{raw_text}", context.raw_text)
             .replace("{selected_text}", context.selected_text)
             .replace("{scene_id}", context.scene_id)
@@ -1006,6 +1073,9 @@ pub enum TextError {
     /// Command adapter helper returned an error or invalid response.
     #[error("text adapter failed: {0}")]
     AdapterFailed(String),
+    /// Legacy prompt file resolution failed.
+    #[error("prompt file load failed: {0}")]
+    PromptFileLoad(String),
 }
 
 fn scene_needs_postprocessing(scene: &SceneDefinition) -> bool {
@@ -1043,6 +1113,7 @@ mod tests {
         LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
         UnsupportedTextAdapter, default_adapter_runtime_dir, extract_openai_compatible_candidates,
+        has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
         start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{COMMAND_SCENE_ID, LlmAdapterConfig, RAW_SCENE_ID, SceneDefinition};
@@ -1169,14 +1240,76 @@ mod tests {
         };
 
         let rendered = PromptTemplate::new(
-            "prompt={scene_prompt}; asr={{asr}}; selected={{selected}}; context={{context}}; unknown={{future}}",
+            "prompt={scene_prompt}; asr={{ asr }}; selected={{selected}}; context={{ context }}; unknown={{ future }}",
         )
         .render_request(&request);
 
         assert_eq!(
             rendered,
-            "prompt=apply command; asr=make it shorter; selected=This is the selected text.; context=; unknown={{future}}"
+            "prompt=apply command; asr=make it shorter; selected=This is the selected text.; context=; unknown={{ future }}"
         );
+    }
+
+    #[test]
+    fn prompt_file_uri_loader_reads_absolute_file_uri() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let prompt_path = tempdir.path().join("prompt.txt");
+        std::fs::write(&prompt_path, "Please rewrite: {{ asr }}").unwrap();
+        let uri = format!("file://{}", prompt_path.display());
+
+        assert!(is_prompt_file_uri(&uri));
+        assert_eq!(
+            load_prompt_file_uri(&uri).unwrap(),
+            "Please rewrite: {{ asr }}"
+        );
+    }
+
+    #[test]
+    fn prompt_file_uri_loader_rejects_non_file_uri() {
+        assert!(!is_prompt_file_uri("file://relative/prompt.txt"));
+        assert_eq!(
+            load_prompt_file_uri("file://relative/prompt.txt").unwrap_err(),
+            TextError::PromptFileLoad("not a file:/// URI".to_owned())
+        );
+    }
+
+    #[test]
+    fn prompt_file_uri_loader_rejects_empty_path() {
+        assert_eq!(
+            load_prompt_file_uri("file:///").unwrap_err(),
+            TextError::PromptFileLoad("empty path".to_owned())
+        );
+    }
+
+    #[test]
+    fn prompt_file_uri_loader_requires_regular_file() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let uri = format!("file://{}", tempdir.path().display());
+
+        assert_eq!(
+            load_prompt_file_uri(&uri).unwrap_err(),
+            TextError::PromptFileLoad("not a regular file".to_owned())
+        );
+    }
+
+    #[test]
+    fn prompt_file_uri_loader_truncates_to_legacy_cap() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let prompt_path = tempdir.path().join("prompt.txt");
+        std::fs::write(&prompt_path, vec![b'a'; 256 * 1024 + 1]).unwrap();
+        let uri = format!("file://{}", prompt_path.display());
+
+        let prompt = load_prompt_file_uri(&uri).unwrap();
+
+        assert_eq!(prompt.len(), 256 * 1024);
+        assert!(prompt.bytes().all(|byte| byte == b'a'));
+    }
+
+    #[test]
+    fn legacy_prompt_interpolation_detection_matches_prefix_check() {
+        assert!(has_legacy_prompt_interpolation("hello {{ asr }}"));
+        assert!(has_legacy_prompt_interpolation("literal {{"));
+        assert!(!has_legacy_prompt_interpolation("hello {raw_text}"));
     }
 
     #[test]
