@@ -13,7 +13,7 @@ This milestone introduces `vinput-asr`, the first backend seam after the D-Bus b
 - `RecognitionEvent`: partial text, final text, backend error, and completed markers.
 - `RecognitionSession`: mutable session trait for `push_pcm`/raw `push_audio`/finish/cancel/poll.
 - `AsrBackend`: backend factory trait.
-- `MockAsrBackend`: deterministic backend used by daemon runtime and tests.
+- `MockAsrBackend`: deterministic backend used by daemon runtime and tests, including buffered, streaming, and early-final event variants.
 - `CommandAsrSpec`: parsed command-provider executable metadata from config.
 - `CommandAsrRequest`: buffered JSON request passed to command helpers.
 - `CommandAsrResponse`: JSON response decoded from command helpers.
