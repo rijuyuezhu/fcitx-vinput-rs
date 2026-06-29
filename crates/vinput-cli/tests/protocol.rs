@@ -3,7 +3,26 @@
 mod common;
 
 use common::{assert_json_success, vinput_command};
-use vinput_protocol::dbus;
+use vinput_protocol::{RecognitionPayload, dbus};
+
+const RAW_PAYLOAD_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/recognition/raw.json"
+));
+
+fn fixture_json(input: &str) -> &str {
+    input.trim_end()
+}
+
+#[test]
+fn shared_recognition_fixture_roundtrips_through_protocol_crate() {
+    let payload = RecognitionPayload::from_json_str(fixture_json(RAW_PAYLOAD_JSON)).unwrap();
+
+    assert_eq!(
+        payload.to_json_string().unwrap(),
+        fixture_json(RAW_PAYLOAD_JSON)
+    );
+}
 
 #[test]
 fn protocol_prints_service_dbus_contract() {
