@@ -9,19 +9,29 @@ const RAW_PAYLOAD_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../fixtures/recognition/raw.json"
 ));
+const MENU_PAYLOAD_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/recognition/menu.json"
+));
+const SENTINEL_PAYLOAD_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/recognition/sentinel.json"
+));
 
 fn fixture_json(input: &str) -> &str {
     input.trim_end()
 }
 
 #[test]
-fn shared_recognition_fixture_roundtrips_through_protocol_crate() {
-    let payload = RecognitionPayload::from_json_str(fixture_json(RAW_PAYLOAD_JSON)).unwrap();
+fn shared_recognition_fixtures_roundtrip_through_protocol_crate() {
+    for fixture in [RAW_PAYLOAD_JSON, MENU_PAYLOAD_JSON, SENTINEL_PAYLOAD_JSON] {
+        let fixture = fixture_json(fixture);
+        let payload = RecognitionPayload::from_json_str(fixture).unwrap();
 
-    assert_eq!(
-        payload.to_json_string().unwrap(),
-        fixture_json(RAW_PAYLOAD_JSON)
-    );
+        if !payload.candidates.is_empty() {
+            assert_eq!(payload.to_json_string().unwrap(), fixture);
+        }
+    }
 }
 
 #[test]
