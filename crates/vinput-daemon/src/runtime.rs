@@ -434,14 +434,17 @@ impl RuntimeState {
                 }
             };
             let scene_definition = self.scene_definition(&scene);
-            let payload = self
-                .text_processor
-                .finish(&TextRequest {
-                    raw_text: &raw_payload.commit_text,
-                    scene: &scene_definition,
-                    selected_text: self.selected_text.as_deref(),
-                })
-                .map_err(RuntimeError::Finish)?;
+            let payload = match self.text_processor.finish(&TextRequest {
+                raw_text: &raw_payload.commit_text,
+                scene: &scene_definition,
+                selected_text: self.selected_text.as_deref(),
+            }) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    let _ = session.cancel();
+                    return Err(RuntimeError::Finish(error));
+                }
+            };
             Ok(StopRecordingReport {
                 payload,
                 partial_text,
@@ -772,7 +775,12 @@ mod tests {
         }
 
         fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
-            Ok(Vec::new())
+            Ok(vec![
+                RecognitionEvent::FinalText {
+                    text: "tracked final".to_owned(),
+                },
+                RecognitionEvent::Completed,
+            ])
         }
     }
 
@@ -1928,7 +1936,8 @@ mod tests {
                 timeout_ms: None,
                 context_lines: 0,
             });
-        let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+        let cancelled = Arc::new(Mutex::new(false));
+        let backend = CancelTrackingBackend::new(Arc::clone(&cancelled));
         let audio = super::default_mock_audio_source();
         let mut runtime = RuntimeState::with_components(
             config,
@@ -1944,6 +1953,7 @@ mod tests {
         assert!(matches!(error, super::RuntimeError::Finish(_)));
         assert_eq!(runtime.status(), ServiceStatus::Idle);
         assert!(runtime.partial_text().is_none());
+        assert!(*cancelled.lock().expect("cancel lock poisoned"));
     }
 
     #[test]
