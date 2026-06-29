@@ -304,6 +304,19 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
             .contains("runtime is busy: recording"),
         "unexpected command start while recording error: {command_while_recording_error}"
     );
+
+    let reload_while_recording: zbus::Result<()> =
+        proxy.call(dbus::method::RELOAD_ASR_BACKEND, &()).await;
+    let reload_while_recording_error =
+        reload_while_recording.expect_err("reload while recording should fail");
+    assert!(
+        reload_while_recording_error
+            .to_string()
+            .contains("runtime is busy: recording"),
+        "unexpected reload while recording error: {reload_while_recording_error}"
+    );
+    let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
+    assert_eq!(status, "recording");
     expect_no_string_signal(&mut status_signals).await?;
 
     let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
