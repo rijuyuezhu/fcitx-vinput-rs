@@ -192,7 +192,7 @@ Candidate sources include `raw`, `llm`, `asr`, and `cancel`.  Legacy parse behav
 - Recognition JSON payload matches the legacy `commit_text`/`candidates` shape and fallback behavior.
 - Config can parse the current legacy default config, pins committed-file vs bundled-default parity, covers legacy version promotion, missing-version rejection, minimal/preserved/partial built-in scene normalization, omitted/blank active-scene defaulting, and has extensive validation tests.
 - Text crate has command adapter seams and deterministic command processor tests, but no OpenAI-compatible HTTP LLM client and no context-cache/prompt-file parity with legacy templates.
-- Registry crate deliberately lacks network download and archive handling; it currently owns pure manifest contracts, deterministic planning, checksum policy, and path safety fixtures.
+- Registry crate deliberately lacks network download and archive handling; it currently owns pure manifest contracts, version validation, deterministic planning, checksum policy, and path safety fixtures.
 
 ### Runtime/daemon/CLI/CI coverage
 
@@ -274,7 +274,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 8. sherpa-onnx offline backend, then streaming backend, then VAD/hotwords.
 9. OpenAI-compatible post-processing and command mode parity.
 10. Adapter lifecycle parity beyond the current runtime/D-Bus start-stop path: install materialization, richer edge fixtures, and frontend UX.
-11. Registry fetch/cache/archive/install/materialization; pure manifest planning, checksum policy, and path safety fixtures already exist.
+11. Registry fetch/cache/archive/install/materialization; pure manifest version validation, planning, checksum policy, and path safety fixtures already exist.
 12. Minimal Fcitx frontend integration.
 13. systemd user unit, D-Bus service file, Fcitx addon installation, and packaging.
 
