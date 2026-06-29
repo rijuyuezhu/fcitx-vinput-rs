@@ -596,6 +596,14 @@ mod tests {
     "#;
 
     #[test]
+    fn rejects_zero_registry_version() {
+        assert_eq!(
+            RegistryIndex::from_json_str(r#"{"version":0}"#).unwrap_err(),
+            RegistryError::InvalidVersion
+        );
+    }
+
+    #[test]
     fn parses_and_finds_registry_entries() {
         let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
         assert_eq!(index.version, 1);
