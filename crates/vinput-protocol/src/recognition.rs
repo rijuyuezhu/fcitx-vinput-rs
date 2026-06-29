@@ -280,6 +280,27 @@ mod tests {
     }
 
     #[test]
+    fn parser_uses_commit_text_when_candidates_are_invalid() {
+        let payload = RecognitionPayload::from_json_str(
+            r#"{
+                "commit_text":"fallback text",
+                "candidates":[
+                    "bad",
+                    {"text":"","source":"raw"},
+                    {"text":7,"source":"llm"}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "fallback text");
+        assert_eq!(
+            payload.candidates,
+            vec![Candidate::new("fallback text", CandidateSource::Raw)]
+        );
+    }
+
+    #[test]
     fn parser_returns_empty_payload_for_legacy_invalid_inputs() {
         for input in ["", "not json", "[]", "null", r#"{"commit_text":7}"#] {
             let payload = RecognitionPayload::from_json_str(input).unwrap();
