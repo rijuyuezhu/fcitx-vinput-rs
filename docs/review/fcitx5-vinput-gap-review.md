@@ -2,19 +2,19 @@
 
 ## Executive summary
 
-This review compares the legacy C++ project at `/workspace/fcitx5-vinput` with the Rust rewrite at `/workspace/fcitx-vinput-rs` as of Rust HEAD `0e0ba40 test(cli): share stdout helper`.  The Rust workspace has already established useful crate boundaries, typed config/protocol contracts, deterministic mock audio/ASR/text runtime seams, D-Bus smoke coverage, registry fixtures, docs guards, and CI.  It is not yet functionally equivalent to the legacy plugin.
+This review compares the legacy C++ project at `/workspace/fcitx5-vinput` with the Rust rewrite at `/workspace/fcitx-vinput-rs`. It was originally written around Rust HEAD `0e0ba40 test(cli): share stdout helper`; this copy has been refreshed for the later audio diagnostics, stateful recorder seam, D-Bus signal-order coverage, and PipeWire feature scaffolding now present in the workspace. The Rust workspace has established useful crate boundaries, typed config/protocol contracts, deterministic mock audio/ASR/text runtime seams, D-Bus smoke coverage, registry fixtures, docs guards, and CI. It is not yet functionally equivalent to the legacy plugin.
 
-The most important compatibility risk is the daemon D-Bus ABI.  The legacy daemon exposes `org.fcitx.Vinput` at `/org/fcitx/Vinput` with `org.fcitx.Vinput.Service`; several methods intentionally return no value, and `GetAsrBackendState` returns the tuple signature `sssssbbas`.  The Rust D-Bus facade uses the same names but currently returns JSON `String` values for some of those methods, so legacy frontends/CLI callers are not ABI-compatible yet.
+The most important compatibility risk remains the daemon D-Bus ABI and frontend integration. The legacy daemon exposes `org.fcitx.Vinput` at `/org/fcitx/Vinput` with `org.fcitx.Vinput.Service`; Rust now has signature/introspection coverage for the current facade, but compatibility still depends on preserving legacy-visible method names, return shapes, signal ordering, and frontend expectations while real backends are added.
 
-The second major gap is runtime completeness.  The legacy daemon has a real PipeWire capture path, local sherpa-onnx offline and streaming ASR, Silero VAD trimming, command ASR backends, OpenAI-compatible post-processing, adapter supervision, registry download/install flows, remote text input, and packaging.  The Rust project currently has mostly contracts, mock runtime behavior, command-process seams, and pure-data validation.  That is a good foundation, but the next work should first lock compatibility tests, then fill pure logic, then connect real backends.
+The second major gap is runtime completeness. The legacy daemon has a real PipeWire capture path, local sherpa-onnx offline and streaming ASR, Silero VAD trimming, command ASR backends, OpenAI-compatible post-processing, adapter supervision, registry download/install flows, remote text input, and packaging. The Rust project now has stronger runtime contracts, stateful recorder ownership, command-process seams, audio diagnostics/device enumeration under the PipeWire feature, and deterministic D-Bus tests. It still lacks live PipeWire recording, sherpa-onnx, full legacy ASR/text behavior, install artifacts, frontend integration, and packaging.
 
 The rewrite should not line-port the C++ architecture.  It should preserve user-visible interfaces and behavior while improving safety: exact D-Bus contract tests, redacted secret logging, safe archive extraction tests, typed error taxonomy, backend isolation, and small crate-owned responsibilities.
 
 ## Review inputs
 
 - Legacy source: `/workspace/fcitx5-vinput`, HEAD `aad130341bcb30f1dc15d8210246930384760950`.
-- Rust source: `/workspace/fcitx-vinput-rs`, HEAD `0e0ba40d62eb4163b82f08e2b6e5dde788a6c74d`.
-- Rust HEAD check-runs at takeover: `rust` completed successfully.
+- Rust source: `/workspace/fcitx-vinput-rs`; original review HEAD `0e0ba40d62eb4163b82f08e2b6e5dde788a6c74d`, refreshed through later audio diagnostics and recorder lifecycle work.
+- Rust HEAD check-runs at original takeover: `rust` completed successfully; later CI now also covers D-Bus integration and PipeWire feature guards.
 - Source review used `find`, `rg`, `sed`, Cargo manifests, tests, docs, workflows, and packaging files in both repositories.
 - External dependency spot checks:
   - PipeWire Rust bindings: `pipewire` crate/docs (`https://docs.rs/pipewire/latest/pipewire/`) show current Rust bindings.
@@ -178,12 +178,12 @@ Candidate sources include `raw`, `llm`, `asr`, and `cancel`.  Legacy parse behav
 | --- | --- |
 | `vinput-protocol` | D-Bus names, status strings, ASR/text diagnostic structs, recognition payload JSON. |
 | `vinput-config` | Typed default-config schema, validation, normalization-like constraints, built-in scenes. |
-| `vinput-audio` | PCM buffer/spec types, pure audio processing, mock audio source. |
-| `vinput-asr` | ASR traits, mock backend, command ASR JSON/process seam, factory diagnostics. |
+| `vinput-audio` | PCM buffer/spec types, pure audio processing, stateful recorder/source seams, mock audio, and PipeWire diagnostics scaffolding. |
+| `vinput-asr` | ASR traits, mock backend including early-final event cases, command ASR JSON/process seam, factory diagnostics. |
 | `vinput-text` | prompt/template helpers, command text adapter request/response, mock and command text processors. |
 | `vinput-registry` | registry index data contract, validation, safe path/asset planning, dry-run install plans. |
-| `vinput-daemon` | in-memory mock/configured runtime and optional zbus facade. |
-| `vinput-cli` | diagnostics and smoke commands for protocol/config/registry/asr/text/daemon. |
+| `vinput-daemon` | in-memory configured runtime, stateful audio recorder ownership, D-Bus facade/integration, and daemon diagnostics. |
+| `vinput-cli` | diagnostics and smoke commands for protocol/config/registry/asr/text/audio/daemon. |
 
 ### Protocol/config/text/registry coverage
 
@@ -196,11 +196,11 @@ Candidate sources include `raw`, `llm`, `asr`, and `cancel`.  Legacy parse behav
 
 ### Runtime/daemon/CLI/CI coverage
 
-- `RuntimeState` uses mock audio by default and can build configured ASR/text seams.
-- D-Bus integration tests exist behind `dbus-integration`.
-- CLI smoke validates the early diagnostic command set.
-- CI runs fmt, workspace tests, D-Bus integration tests, clippy, and D-Bus-feature clippy.
-- No Fcitx addon, real PipeWire source, real sherpa backend, real registry install, systemd/dbus install artifacts, or distro packaging exist in Rust yet.
+- `RuntimeState` owns a stateful `AudioRecorder`, uses mock audio by default, and can build configured ASR/text seams.
+- D-Bus integration tests exist behind `dbus-integration`, including stop-time partial/result signal ordering.
+- CLI and daemon smoke paths cover protocol/config/registry/asr/text/audio diagnostics.
+- CI runs fmt, workspace tests, D-Bus integration tests, clippy, D-Bus-feature clippy, and PipeWire feature compile/test guards.
+- No Fcitx addon, live PipeWire recording stream, real sherpa backend, real registry install, systemd/dbus install artifacts, or distro packaging exist in Rust yet.
 
 ## Compatibility constraints
 
@@ -247,7 +247,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 | Recognition payload | Stable JSON payload and candidate source semantics. | Matching Rust model and tests. | Need cross-fixture parity with legacy parser edge cases. | Yes | Add golden fixtures copied from legacy behavior; keep serde field names pinned. | Low. | P0 |
 | Status/runtime state | Busy rejection, recording/inferring/postprocessing/error transitions, deferred reload, notification errors. | In-memory mock state with idle/recording/inferring/idle and partial signals. | No worker, streaming chunks, deferred reload, postprocessing phase, real error notification flow. | Yes | Contract tests for transitions; then refactor runtime around backend sessions and event stream. | Async locking and D-Bus signal ordering. | P0 |
 | Fcitx frontend addon | Shared-library addon, key state machine, preedit/candidate/menu/notification behavior. | Not implemented. | No input method integration. | Yes for usability | Keep a thin legacy-compatible frontend bridge; decide whether C++ shim or Rust FFI only after daemon ABI stabilizes. | Fcitx5 addon API is C++-oriented; Rust binding maturity unclear. | P1/P2 |
-| Audio capture | PipeWire S16LE/16k/mono capture, target object selection, source enumeration, chunk callback. | Pure PCM processing and mock source. | No real capture or device enumeration. | Behavior yes, implementation no | Add `PipeWireAudioSource` behind `AudioSource`; keep mock tests; mirror target-object/default semantics. | PipeWire runtime and distro deps; Rust crate docs.rs latest build issue should be validated locally. | P1 |
+| Audio capture | PipeWire S16LE/16k/mono capture, target object selection, source enumeration, chunk callback. | Pure PCM processing, `AudioRecorder` lifecycle seam, mock source/recorder, capture-target config parsing, and feature-gated PipeWire source enumeration used by CLI/daemon diagnostics. | No live PipeWire recording stream; enumeration diagnostics exist but capture still returns explicit unavailable errors. | Behavior yes, implementation no | Complete `PipeWireAudioRecorder` live stream behind `AudioRecorder`; keep `AudioDeviceEnumerator` diagnostics and mock tests; mirror target-object/default semantics. | PipeWire runtime and distro deps; Rust crate docs.rs latest build issue should be validated locally. | P1 |
 | Audio processing | Gain, peak normalization, VAD optional trimming. | Gain/normalization-like mock processing and silence threshold. | Exact normalization/VAD path incomplete. | Mostly yes | Add pure audio golden tests before real capture; port VAD behind ASR/audio boundary. | Sample-rate assumptions and clipping behavior. | P1 |
 | Local ASR | sherpa-onnx offline/streaming, many model families, hotwords, model metadata, warmup. | Traits/mock; command seam; local providers mostly mock/unsupported. | No real sherpa backend or model manager. | Yes | Add model metadata parser/validator, then sherpa offline, then streaming. | FFI safety, bundled runtime libraries, model family coverage. | P1/P2 |
 | Command ASR | Batch raw PCM stdin; streaming line JSON stdout; timeouts/errors. | Command request/response JSON seam and process tests; not the same raw PCM/stdout protocol. | Legacy command provider protocol mismatch and no streaming command backend. | Yes for existing adapters | Add legacy command-ASR contract tests, implement batch raw PCM runner, then streaming JSON-line runner. | Process timeout/cancellation and stderr handling. | P1 |
@@ -269,7 +269,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 3. Runtime state-machine parity for start/stop/busy/error/deferred reload/postprocessing.
 4. Config/default-config compatibility fixtures and normalize-vs-validate policy.
 5. Real command ASR batch protocol and streaming JSON-line protocol.
-6. Real PipeWire capture and source enumeration behind `vinput-audio`.
+6. Live PipeWire recording behind `AudioRecorder`; source enumeration diagnostics already exist behind `pipewire-backend` and should stay covered.
 7. Model metadata/path manager and local model validation.
 8. sherpa-onnx offline backend, then streaming backend, then VAD/hotwords.
 9. OpenAI-compatible post-processing and command mode parity.
