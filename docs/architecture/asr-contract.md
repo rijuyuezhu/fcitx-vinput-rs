@@ -21,7 +21,7 @@ This milestone introduces `vinput-asr`, the first backend seam after the D-Bus b
 - `ProcessCommandAsrRunner`: process-backed runner using stdin/stdout JSON.
 - `events_to_payload`: conversion from final ASR events to the legacy recognition payload JSON model.
 
-This mirrors the original C++ recognition contract while keeping concrete backends behind Rust trait boundaries. The command backend is now executable through a small JSON helper contract; sherpa-onnx remains a later feature-gated backend.
+This mirrors the original C++ recognition contract while keeping concrete backends behind Rust trait boundaries. Command providers now use legacy batch or `.streaming` runners through the factory, while the JSON helper seam remains available for explicit process-runner tests and small helper integrations. sherpa-onnx remains a later feature-gated backend.
 
 ## Daemon integration
 
