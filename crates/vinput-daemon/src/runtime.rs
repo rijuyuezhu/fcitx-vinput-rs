@@ -21,8 +21,9 @@ use vinput_audio::{
 use vinput_config::VinputConfig;
 use vinput_protocol::{RecognitionPayload, ServiceStatus};
 use vinput_text::{
-    AdapterRuntimePaths, CommandTextProcessor, MockTextProcessor, ProcessCommandTextRunner,
-    StartedAdapterProcess, TextProcessor,
+    AdapterRuntimePaths, CommandTextProcessor, MockTextProcessor, OpenAiCompatibleTextProcessor,
+    ProcessCommandTextRunner, ReqwestOpenAiCompatibleChatTransport, StartedAdapterProcess,
+    TextProcessor,
 };
 
 const MOCK_PCM: &[i16] = &[256, -128, 64, -32];
@@ -122,10 +123,17 @@ impl RuntimeState {
         asr_backend: Box<dyn AsrBackend>,
         audio_source: Box<dyn AudioSource>,
     ) -> Result<Self, RuntimeError> {
-        let text_processor = Box::new(CommandTextProcessor::from_configs_with_runner(
-            &config.llm.adapters,
-            ProcessCommandTextRunner,
-        ));
+        let text_processor: Box<dyn TextProcessor> = if config.llm.providers.is_empty() {
+            Box::new(CommandTextProcessor::from_configs_with_runner(
+                &config.llm.adapters,
+                ProcessCommandTextRunner,
+            ))
+        } else {
+            Box::new(OpenAiCompatibleTextProcessor::new(
+                config.llm.providers.clone(),
+                ReqwestOpenAiCompatibleChatTransport::new(),
+            ))
+        };
         Self::with_components(config, asr_backend, audio_source, text_processor)
     }
 
