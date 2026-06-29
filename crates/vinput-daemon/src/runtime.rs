@@ -410,7 +410,7 @@ impl RuntimeState {
                 let _ = session.cancel();
                 return Err(RuntimeError::Asr(error));
             }
-            let mut events = match self.capture_partial_events(&mut *session) {
+            let mut events = match self.drain_pending_events(&mut *session) {
                 Ok(events) => events,
                 Err(error) => {
                     let _ = session.cancel();
@@ -525,7 +525,7 @@ impl RuntimeState {
         Ok(())
     }
 
-    fn capture_partial_events(
+    fn drain_pending_events(
         &mut self,
         session: &mut dyn RecognitionSession,
     ) -> Result<Vec<RecognitionEvent>, RuntimeError> {
