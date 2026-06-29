@@ -423,7 +423,13 @@ impl RuntimeState {
                 }
             };
             let partial_text = latest_partial_text(&events).or_else(|| self.partial_text.clone());
-            let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
+            let raw_payload = match events_to_payload(&events) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    let _ = session.cancel();
+                    return Err(RuntimeError::Asr(error));
+                }
+            };
             let scene_definition = self.scene_definition(&scene);
             let payload = self
                 .text_processor
@@ -824,6 +830,7 @@ mod tests {
         PartialPoll,
         Finish,
         FinalPoll,
+        NoFinalText,
     }
 
     impl SessionFailureStage {
@@ -832,6 +839,7 @@ mod tests {
                 Self::PartialPoll => "test partial poll failed",
                 Self::Finish => "test finish failed",
                 Self::FinalPoll => "test final poll failed",
+                Self::NoFinalText => "recognition completed without final text",
             }
         }
     }
@@ -900,6 +908,9 @@ mod tests {
             }
             if matches!(self.stage, SessionFailureStage::FinalPoll) && poll_index == 1 {
                 return Err(AsrError::Backend(self.stage.message().to_owned()));
+            }
+            if matches!(self.stage, SessionFailureStage::NoFinalText) && poll_index == 1 {
+                return Ok(vec![RecognitionEvent::Completed]);
             }
             Ok(vec![RecognitionEvent::PartialText {
                 text: "partial before failure".to_owned(),
@@ -1568,11 +1579,12 @@ mod tests {
     }
 
     #[test]
-    fn asr_finish_path_failures_cancel_session_and_return_to_idle() {
+    fn asr_stop_result_failures_cancel_session_and_return_to_idle() {
         for stage in [
             SessionFailureStage::PartialPoll,
             SessionFailureStage::Finish,
             SessionFailureStage::FinalPoll,
+            SessionFailureStage::NoFinalText,
         ] {
             let config = VinputConfig::bundled_default().unwrap();
             let cancelled = Arc::new(Mutex::new(false));
