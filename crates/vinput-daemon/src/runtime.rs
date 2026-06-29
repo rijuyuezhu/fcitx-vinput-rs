@@ -701,17 +701,12 @@ mod tests {
 
     #[test]
     fn shared_recognition_fixtures_roundtrip_in_daemon_tests() {
-        for fixture in [RAW_PAYLOAD_JSON, MENU_PAYLOAD_JSON] {
+        for fixture in [RAW_PAYLOAD_JSON, MENU_PAYLOAD_JSON, SENTINEL_PAYLOAD_JSON] {
             let fixture = fixture_json(fixture);
             let payload = RecognitionPayload::from_json_str(fixture).unwrap();
 
             assert_eq!(payload.to_json_string().unwrap(), fixture);
         }
-
-        let sentinel =
-            RecognitionPayload::from_json_str(fixture_json(SENTINEL_PAYLOAD_JSON)).unwrap();
-        assert!(sentinel.commit_text.is_empty());
-        assert!(sentinel.candidates.is_empty());
     }
 
     fn unique_adapter_runtime_dir(name: &str) -> std::path::PathBuf {

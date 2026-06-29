@@ -28,9 +28,7 @@ fn shared_recognition_fixtures_roundtrip_through_protocol_crate() {
         let fixture = fixture_json(fixture);
         let payload = RecognitionPayload::from_json_str(fixture).unwrap();
 
-        if !payload.candidates.is_empty() {
-            assert_eq!(payload.to_json_string().unwrap(), fixture);
-        }
+        assert_eq!(payload.to_json_string().unwrap(), fixture);
     }
 }
 

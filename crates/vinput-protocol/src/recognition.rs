@@ -175,14 +175,14 @@ impl RecognitionPayload {
 fn candidate_from_legacy_json(value: &serde_json::Value) -> Option<Candidate> {
     let candidate = value.as_object()?;
     let text = candidate.get("text")?.as_str()?.to_owned();
-    if text.is_empty() {
-        return None;
-    }
     let source = candidate
         .get("source")
         .and_then(serde_json::Value::as_str)
         .and_then(|source| CandidateSource::parse_wire(source).ok())
         .unwrap_or(CandidateSource::Raw);
+    if text.is_empty() && source != CandidateSource::Cancel {
+        return None;
+    }
     Some(Candidate::new(text, source))
 }
 
@@ -228,6 +228,7 @@ mod tests {
         let json = payload.to_json_string().unwrap();
 
         assert_eq!(json, fixture_json(SENTINEL_PAYLOAD_JSON));
+        assert_eq!(RecognitionPayload::from_json_str(&json).unwrap(), payload);
         assert_eq!(
             payload.default_candidate().unwrap().source,
             CandidateSource::Cancel
