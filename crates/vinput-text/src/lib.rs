@@ -726,6 +726,48 @@ pub fn openai_compatible_candidates_to_payload(
     })
 }
 
+/// Builds the legacy command-mode payload candidate order.
+///
+/// The menu order is selected text (`raw`), recognized ASR command (`asr`), then
+/// LLM rewrites (`llm`). Empty/whitespace-only candidates are skipped after
+/// trimming. The default commit text is the first LLM rewrite when available;
+/// otherwise it remains the original selected text, matching legacy command
+/// mode fallback behavior.
+#[must_use]
+pub fn command_mode_payload(
+    selected_text: &str,
+    asr_text: &str,
+    llm_candidates: impl IntoIterator<Item = String>,
+) -> RecognitionPayload {
+    let mut candidates = Vec::new();
+    append_trimmed_candidate(&mut candidates, selected_text, CandidateSource::Raw);
+    append_trimmed_candidate(&mut candidates, asr_text, CandidateSource::Asr);
+
+    let mut first_llm_candidate = None;
+    for candidate in llm_candidates {
+        let candidate = candidate.trim().to_owned();
+        if candidate.is_empty() {
+            continue;
+        }
+        if first_llm_candidate.is_none() {
+            first_llm_candidate = Some(candidate.clone());
+        }
+        candidates.push(Candidate::new(candidate, CandidateSource::Llm));
+    }
+
+    RecognitionPayload {
+        commit_text: first_llm_candidate.unwrap_or_else(|| selected_text.to_owned()),
+        candidates,
+    }
+}
+
+fn append_trimmed_candidate(candidates: &mut Vec<Candidate>, text: &str, source: CandidateSource) {
+    let text = text.trim();
+    if !text.is_empty() {
+        candidates.push(Candidate::new(text, source));
+    }
+}
+
 const OPENAI_COMPATIBLE_PROTECTED_EXTRA_BODY_KEYS: &[&str] =
     &["messages", "stream", "response_format"];
 
@@ -1425,7 +1467,7 @@ mod tests {
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
         UnsupportedTextAdapter, build_openai_compatible_chat_request,
         build_openai_compatible_chat_url, build_openai_compatible_headers,
-        build_recent_input_context_prefix, default_adapter_runtime_dir,
+        build_recent_input_context_prefix, command_mode_payload, default_adapter_runtime_dir,
         extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
         load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
         openai_compatible_candidates_to_payload, start_adapter_process, stop_adapter_process,
@@ -2148,6 +2190,40 @@ mod tests {
             stop_adapter_process("cmd-adapter", &paths).unwrap(),
             AdapterStopOutcome::NotRunning
         );
+    }
+
+    #[test]
+    fn command_mode_payload_orders_raw_asr_and_llm_candidates() {
+        let payload = command_mode_payload(
+            " selected source ",
+            " make it shorter ",
+            [
+                " first rewrite ".to_owned(),
+                String::new(),
+                "second rewrite".to_owned(),
+            ],
+        );
+
+        assert_eq!(payload.commit_text, "first rewrite");
+        assert_eq!(payload.candidates.len(), 4);
+        assert_eq!(payload.candidates[0].text, "selected source");
+        assert_eq!(payload.candidates[0].source.to_string(), "raw");
+        assert_eq!(payload.candidates[1].text, "make it shorter");
+        assert_eq!(payload.candidates[1].source.to_string(), "asr");
+        assert_eq!(payload.candidates[2].text, "first rewrite");
+        assert_eq!(payload.candidates[2].source.to_string(), "llm");
+        assert_eq!(payload.candidates[3].text, "second rewrite");
+        assert_eq!(payload.candidates[3].source.to_string(), "llm");
+    }
+
+    #[test]
+    fn command_mode_payload_falls_back_to_selected_text_without_llm() {
+        let payload = command_mode_payload("selected source", "", Vec::<String>::new());
+
+        assert_eq!(payload.commit_text, "selected source");
+        assert_eq!(payload.candidates.len(), 1);
+        assert_eq!(payload.candidates[0].text, "selected source");
+        assert_eq!(payload.candidates[0].source.to_string(), "raw");
     }
 
     #[test]
