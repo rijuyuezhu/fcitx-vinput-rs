@@ -32,12 +32,14 @@ The current runtime flow is:
 ```text
 StartRecording
   -> create_session
-  -> push mock/processed PCM
-  -> poll partial events
+  -> begin audio recorder
 StopRecording
-  -> push mock/processed PCM
+  -> stop recorder and collect PCM
+  -> apply deterministic audio processing
+  -> push PCM to the active ASR session
+  -> drain already-pending ASR events
   -> finish session
-  -> poll final/stop-time partial events
+  -> poll and merge final/stop-time events
   -> emit stop-time partial through D-Bus when present
   -> events_to_payload
   -> text finishing
@@ -93,6 +95,8 @@ A helper can also return an ASR-level error without a non-zero process exit:
 ```
 
 The deprecated `failure` response key is accepted as an alias for `error` while the contract is still settling. Non-zero exits, invalid JSON, missing final text, and timeout paths are surfaced as backend errors.
+
+This JSON helper contract is the current Rust command seam, not a claim of full legacy command-ASR protocol compatibility. The legacy raw-PCM stdin and streaming JSON-line stdout modes still need separate contract fixtures before existing third-party helpers can be treated as drop-in compatible.
 
 ## Diagnostics
 
