@@ -946,6 +946,19 @@ mod tests {
     }
 
     #[test]
+    fn committed_default_file_matches_bundled_default() {
+        let disk_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../data/default-config.json");
+        let disk_json = std::fs::read_to_string(&disk_path).unwrap();
+
+        let disk_config = VinputConfig::from_json_str(&disk_json).unwrap();
+        let bundled_config = VinputConfig::bundled_default().unwrap();
+
+        assert_eq!(disk_config, bundled_config);
+        disk_config.validate().unwrap();
+    }
+
+    #[test]
     fn bundled_default_parses_and_validates() {
         let config = VinputConfig::bundled_default().unwrap();
         config.validate().unwrap();
