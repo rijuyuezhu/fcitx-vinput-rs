@@ -15,14 +15,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use vinput_audio::{PcmBuffer, PcmSpec, i16_samples_to_le_bytes};
 use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
-use vinput_protocol::{AsrBackendState, CandidateSource, RecognitionPayload};
+use vinput_protocol::AsrBackendState;
 
 mod error;
 mod mock;
+mod payload;
 mod traits;
 
 pub use error::AsrError;
 pub use mock::MockAsrBackend;
+pub use payload::events_to_payload;
 pub use traits::{
     AsrBackend, AudioDeliveryMode, BackendCapabilities, BackendDescriptor, RecognitionContext,
     RecognitionEvent, RecognitionSession,
@@ -813,25 +815,6 @@ fn provider_kind_label(kind: &AsrProviderKind) -> &'static str {
         AsrProviderKind::Command => "command",
     }
 }
-/// Converts recognition events into a legacy result payload.
-pub fn events_to_payload(events: &[RecognitionEvent]) -> Result<RecognitionPayload, AsrError> {
-    let final_text = events.iter().find_map(|event| match event {
-        RecognitionEvent::FinalText { text } => Some(text.as_str()),
-        RecognitionEvent::Error { message } => Some(message.as_str()),
-        RecognitionEvent::PartialText { .. } | RecognitionEvent::Completed => None,
-    });
-
-    match final_text {
-        Some(text) => Ok(RecognitionPayload {
-            commit_text: text.to_owned(),
-            candidates: vec![vinput_protocol::Candidate::new(text, CandidateSource::Raw)],
-        }),
-        None => Err(AsrError::Backend(
-            "recognition completed without final text".to_owned(),
-        )),
-    }
-}
-
 #[derive(Debug)]
 struct CommandRecognitionSession<R> {
     spec: CommandAsrSpec,
