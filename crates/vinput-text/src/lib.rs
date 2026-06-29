@@ -873,6 +873,12 @@ pub fn build_openai_compatible_chat_request(
             content.push_str(&wrap_xml_block("asr", request.raw_text));
             content.push('\n');
         }
+        if request.scene.id == COMMAND_SCENE_ID
+            && let Some(selected_text) = request.selected_text.filter(|text| !text.is_empty())
+        {
+            content.push_str(&wrap_xml_block("selected", selected_text));
+            content.push('\n');
+        }
         content
     };
     user_content.push_str(&build_constraints_suffix(request.scene.candidate_count));
@@ -984,7 +990,15 @@ impl<T: OpenAiCompatibleChatTransport> TextAdapter for OpenAiCompatibleTextAdapt
         .ok_or_else(|| TextError::UnsupportedAdapter(request.scene.id.clone()))?;
 
         let response_body = self.transport.send(&built, request.scene.timeout_ms)?;
-        openai_compatible_response_to_payload(&response_body).ok_or_else(|| {
+        let candidates = extract_openai_compatible_candidates(&response_body);
+        if request.scene.id == COMMAND_SCENE_ID {
+            return Ok(command_mode_payload(
+                request.selected_text.unwrap_or_default(),
+                request.raw_text,
+                candidates,
+            ));
+        }
+        openai_compatible_candidates_to_payload(candidates).ok_or_else(|| {
             TextError::AdapterFailed(format!(
                 "OpenAI-compatible provider `{}` response did not contain candidates",
                 self.provider.id
@@ -1805,6 +1819,72 @@ mod tests {
     }
 
     #[test]
+    fn openai_text_adapter_command_scene_orders_raw_asr_and_llm_candidates() {
+        let command = SceneDefinition {
+            prompt: Some("Rewrite selected text using command: {{ asr }}".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene(COMMAND_SCENE_ID, 0)
+        };
+        let response_body = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::json!({"candidates": ["short rewrite", "second rewrite"]}).to_string()
+                }
+            }]
+        })
+        .to_string();
+
+        let payload = OpenAiCompatibleTextAdapter::new(
+            provider(serde_json::json!({})),
+            StaticOpenAiTransport::new(response_body),
+        )
+        .finish(&TextRequest {
+            raw_text: "make it shorter",
+            scene: &command,
+            selected_text: Some("This is the selected text."),
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "short rewrite");
+        assert_eq!(payload.candidates.len(), 4);
+        assert_eq!(payload.candidates[0].text, "This is the selected text.");
+        assert_eq!(payload.candidates[0].source.to_string(), "raw");
+        assert_eq!(payload.candidates[1].text, "make it shorter");
+        assert_eq!(payload.candidates[1].source.to_string(), "asr");
+        assert_eq!(payload.candidates[2].text, "short rewrite");
+        assert_eq!(payload.candidates[2].source.to_string(), "llm");
+        assert_eq!(payload.candidates[3].text, "second rewrite");
+        assert_eq!(payload.candidates[3].source.to_string(), "llm");
+    }
+
+    #[test]
+    fn openai_text_adapter_command_scene_falls_back_to_selected_without_llm_candidates() {
+        let command = SceneDefinition {
+            prompt: Some("Rewrite selected text using command: {{ asr }}".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene(COMMAND_SCENE_ID, 0)
+        };
+
+        let payload = OpenAiCompatibleTextAdapter::new(
+            provider(serde_json::json!({})),
+            StaticOpenAiTransport::new(serde_json::json!({"choices": []}).to_string()),
+        )
+        .finish(&TextRequest {
+            raw_text: "make it shorter",
+            scene: &command,
+            selected_text: Some("This is the selected text."),
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "This is the selected text.");
+        assert_eq!(payload.candidates.len(), 2);
+        assert_eq!(payload.candidates[0].text, "This is the selected text.");
+        assert_eq!(payload.candidates[0].source.to_string(), "raw");
+        assert_eq!(payload.candidates[1].text, "make it shorter");
+        assert_eq!(payload.candidates[1].source.to_string(), "asr");
+    }
+
+    #[test]
     fn openai_chat_request_wraps_xml_without_interpolation() {
         let prompted = SceneDefinition {
             prompt: Some("Polish this.".to_owned()),
@@ -1851,6 +1931,33 @@ mod tests {
         assert!(content.contains("\n\n## Constraints\n"));
         assert!(content.contains("Return EXACTLY 2 candidate(s)"));
         assert!(content.contains("{\"candidates\": [\"<string>\", \"<string>\"]}"));
+    }
+
+    #[test]
+    fn openai_chat_request_wraps_selected_xml_for_command_scene() {
+        let command = SceneDefinition {
+            prompt: Some("Apply the command.".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene(COMMAND_SCENE_ID, 0)
+        };
+
+        let built = build_openai_compatible_chat_request(
+            &TextRequest {
+                raw_text: "make it shorter",
+                scene: &command,
+                selected_text: Some("This is the selected text."),
+            },
+            &provider(serde_json::json!({})),
+            "",
+        )
+        .unwrap()
+        .unwrap();
+
+        let content = built.body["messages"][0]["content"].as_str().unwrap();
+        assert_eq!(
+            content,
+            "Apply the command.\n\n<asr>\nmake it shorter\n</asr>\n<selected>\nThis is the selected text.\n</selected>\n"
+        );
     }
 
     #[test]
