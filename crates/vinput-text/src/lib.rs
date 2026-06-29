@@ -623,6 +623,29 @@ impl PromptTemplate {
     }
 }
 
+const OPENAI_COMPATIBLE_CHAT_COMPLETIONS_PATH: &str = "/chat/completions";
+
+/// Builds the legacy OpenAI-compatible chat-completions endpoint URL.
+///
+/// Empty base URLs are not requestable. If the base URL already ends with
+/// `/chat/completions`, it is preserved verbatim; otherwise trailing slashes are
+/// removed before appending exactly one path separator.
+#[must_use]
+pub fn build_openai_compatible_chat_url(base_url: &str) -> Option<String> {
+    if base_url.is_empty() {
+        return None;
+    }
+    if base_url.ends_with(OPENAI_COMPATIBLE_CHAT_COMPLETIONS_PATH) {
+        return Some(base_url.to_owned());
+    }
+    let mut url = base_url.to_owned();
+    while url.ends_with('/') {
+        url.pop();
+    }
+    url.push_str(OPENAI_COMPATIBLE_CHAT_COMPLETIONS_PATH);
+    Some(url)
+}
+
 /// Extracts candidate strings from the legacy OpenAI-compatible chat response shape.
 ///
 /// The legacy post-processor asks providers to return a chat-completions response
@@ -1347,9 +1370,10 @@ mod tests {
         LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
         UnsupportedTextAdapter, build_openai_compatible_chat_request,
-        build_recent_input_context_prefix, default_adapter_runtime_dir,
-        extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
-        load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
+        build_openai_compatible_chat_url, build_recent_input_context_prefix,
+        default_adapter_runtime_dir, extract_openai_compatible_candidates,
+        has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
+        load_recent_input_context_prefix, merge_openai_compatible_extra_body,
         start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{
@@ -1612,6 +1636,28 @@ mod tests {
         .unwrap();
 
         assert!(built.is_none());
+    }
+
+    #[test]
+    fn openai_chat_url_appends_chat_completions_path() {
+        assert_eq!(
+            build_openai_compatible_chat_url("https://api.example.test/v1").as_deref(),
+            Some("https://api.example.test/v1/chat/completions")
+        );
+        assert_eq!(
+            build_openai_compatible_chat_url("https://api.example.test/v1///").as_deref(),
+            Some("https://api.example.test/v1/chat/completions")
+        );
+    }
+
+    #[test]
+    fn openai_chat_url_preserves_complete_endpoint_and_rejects_empty_base() {
+        assert_eq!(
+            build_openai_compatible_chat_url("https://api.example.test/v1/chat/completions")
+                .as_deref(),
+            Some("https://api.example.test/v1/chat/completions")
+        );
+        assert_eq!(build_openai_compatible_chat_url(""), None);
     }
 
     #[test]
