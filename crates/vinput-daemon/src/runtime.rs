@@ -679,8 +679,40 @@ mod tests {
         MockAudioSource, PcmBuffer, PcmSpec,
     };
     use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
-    use vinput_protocol::ServiceStatus;
+    use vinput_protocol::{RecognitionPayload, ServiceStatus};
     use vinput_text::{AdapterRuntimePaths, TextFinisher};
+
+    const RAW_PAYLOAD_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/recognition/raw.json"
+    ));
+    const MENU_PAYLOAD_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/recognition/menu.json"
+    ));
+    const SENTINEL_PAYLOAD_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/recognition/sentinel.json"
+    ));
+
+    fn fixture_json(input: &str) -> &str {
+        input.trim_end()
+    }
+
+    #[test]
+    fn shared_recognition_fixtures_roundtrip_in_daemon_tests() {
+        for fixture in [RAW_PAYLOAD_JSON, MENU_PAYLOAD_JSON] {
+            let fixture = fixture_json(fixture);
+            let payload = RecognitionPayload::from_json_str(fixture).unwrap();
+
+            assert_eq!(payload.to_json_string().unwrap(), fixture);
+        }
+
+        let sentinel =
+            RecognitionPayload::from_json_str(fixture_json(SENTINEL_PAYLOAD_JSON)).unwrap();
+        assert!(sentinel.commit_text.is_empty());
+        assert!(sentinel.candidates.is_empty());
+    }
 
     fn unique_adapter_runtime_dir(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
