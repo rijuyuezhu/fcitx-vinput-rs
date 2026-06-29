@@ -717,6 +717,8 @@ pub fn merge_openai_compatible_extra_body(
 /// OpenAI-compatible chat-completions request body built from a scene prompt.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpenAiCompatibleChatRequest {
+    /// Fully resolved chat-completions endpoint URL.
+    pub url: String,
     /// JSON body for a non-streaming chat-completions request.
     pub body: serde_json::Value,
     /// Protected `extra_body` keys that were ignored while building the body.
@@ -735,6 +737,9 @@ pub fn build_openai_compatible_chat_request(
     provider: &LlmProviderConfig,
     context_prefix: &str,
 ) -> Result<Option<OpenAiCompatibleChatRequest>, TextError> {
+    let Some(url) = build_openai_compatible_chat_url(&provider.base_url) else {
+        return Ok(None);
+    };
     let Some(prompt) = request
         .scene
         .prompt
@@ -796,6 +801,7 @@ pub fn build_openai_compatible_chat_request(
         merge_openai_compatible_extra_body(&mut body, &provider.extra_body);
 
     Ok(Some(OpenAiCompatibleChatRequest {
+        url,
         body,
         ignored_extra_body_keys,
     }))
@@ -1549,6 +1555,7 @@ mod tests {
         .unwrap()
         .unwrap();
 
+        assert_eq!(built.url, "http://localhost:8080/v1/chat/completions");
         assert_eq!(built.ignored_extra_body_keys, ["messages"]);
         assert_eq!(built.body["model"], "scene-model");
         assert_eq!(built.body["stream"], false);
@@ -1605,6 +1612,7 @@ mod tests {
                 .iter()
                 .any(|key| key == "response_format")
         );
+        assert_eq!(built.url, "http://localhost:8080/v1/chat/completions");
         assert_eq!(built.body["model"], "provider-model");
         assert_eq!(built.body["stream"], false);
         assert_eq!(
@@ -1631,6 +1639,30 @@ mod tests {
                 selected_text: None,
             },
             &provider(serde_json::json!({})),
+            "",
+        )
+        .unwrap();
+
+        assert!(built.is_none());
+    }
+
+    #[test]
+    fn openai_chat_request_without_base_url_is_not_applicable() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish this.".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene("polish", 0)
+        };
+        let mut provider = provider(serde_json::json!({}));
+        provider.base_url.clear();
+
+        let built = build_openai_compatible_chat_request(
+            &TextRequest {
+                raw_text: "raw",
+                scene: &prompted,
+                selected_text: None,
+            },
+            &provider,
             "",
         )
         .unwrap();
