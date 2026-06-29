@@ -268,7 +268,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 2. Recognition JSON golden fixtures shared by CLI/daemon/protocol tests.
 3. Runtime state-machine parity for start/stop/busy/error/deferred reload/postprocessing.
 4. Config/default-config compatibility fixtures and normalize-vs-validate policy.
-5. Real command ASR batch protocol and streaming JSON-line protocol.
+5. Command ASR long-lived streaming lifecycle, broader legacy fixtures, and timeout/cancellation parity; batch raw PCM and one-shot `.streaming` JSON-line runners already exist.
 6. Live PipeWire recording behind `AudioRecorder`; source enumeration diagnostics already exist behind `pipewire-backend` and should stay covered.
 7. Model metadata/path manager and local model validation.
 8. sherpa-onnx offline backend, then streaming backend, then VAD/hotwords.
