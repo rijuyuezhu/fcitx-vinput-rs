@@ -191,7 +191,7 @@ Candidate sources include `raw`, `llm`, `asr`, and `cancel`.  Legacy parse behav
 - Status strings match legacy strings.
 - Recognition JSON payload matches the legacy `commit_text`/`candidates` shape and fallback behavior.
 - Config can parse the current legacy default config, pins committed-file vs bundled-default parity, covers legacy version promotion, missing-version rejection, minimal/preserved/partial built-in scene normalization, omitted/blank active-scene defaulting, and has extensive validation tests.
-- Text crate has command adapter seams and deterministic command processor tests, but no OpenAI-compatible HTTP LLM client and no context-cache/prompt-file parity with legacy templates.
+- Text crate has prompt fixtures, command adapter seams, and deterministic command processor tests, but no OpenAI-compatible HTTP LLM client and no context-cache/prompt-file parity with legacy templates.
 - Registry crate deliberately lacks network download and archive handling; it currently owns pure manifest contracts, zero/missing version checks, entry field checks, deterministic planning/order and mirror/install fixtures, checksum policy, and expanded path safety fixtures.
 
 ### Runtime/daemon/CLI/CI coverage
