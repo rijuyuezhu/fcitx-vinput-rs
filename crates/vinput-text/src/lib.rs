@@ -933,6 +933,66 @@ pub trait TextAdapter: Send + Sync {
     fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError>;
 }
 
+/// Transport seam for OpenAI-compatible chat-completions providers.
+pub trait OpenAiCompatibleChatTransport: Send + Sync {
+    /// Sends a fully built request and returns the raw response body.
+    fn send(
+        &self,
+        request: &OpenAiCompatibleChatRequest,
+        timeout_ms: Option<u64>,
+    ) -> Result<String, TextError>;
+}
+
+/// Text adapter backed by an OpenAI-compatible chat transport.
+#[derive(Debug, Clone)]
+pub struct OpenAiCompatibleTextAdapter<T> {
+    provider: LlmProviderConfig,
+    transport: T,
+    context_cache_path: Option<PathBuf>,
+}
+
+impl<T> OpenAiCompatibleTextAdapter<T> {
+    /// Creates an adapter without recent-input context cache wiring.
+    #[must_use]
+    pub fn new(provider: LlmProviderConfig, transport: T) -> Self {
+        Self {
+            provider,
+            transport,
+            context_cache_path: None,
+        }
+    }
+
+    /// Adds a recent-input context cache path used by scenes with context lines.
+    #[must_use]
+    pub fn with_context_cache_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.context_cache_path = Some(path.into());
+        self
+    }
+}
+
+impl<T: OpenAiCompatibleChatTransport> TextAdapter for OpenAiCompatibleTextAdapter<T> {
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        let built = if let Some(context_cache_path) = &self.context_cache_path {
+            build_openai_compatible_chat_request_from_context_cache(
+                request,
+                &self.provider,
+                context_cache_path,
+            )?
+        } else {
+            build_openai_compatible_chat_request(request, &self.provider, "")?
+        }
+        .ok_or_else(|| TextError::UnsupportedAdapter(request.scene.id.clone()))?;
+
+        let response_body = self.transport.send(&built, request.scene.timeout_ms)?;
+        openai_compatible_response_to_payload(&response_body).ok_or_else(|| {
+            TextError::AdapterFailed(format!(
+                "OpenAI-compatible provider `{}` response did not contain candidates",
+                self.provider.id
+            ))
+        })
+    }
+}
+
 /// Text processor that delegates post-processing scenes to an adapter.
 #[derive(Debug, Clone)]
 pub struct LlmTextProcessor<A> {
@@ -1487,9 +1547,10 @@ mod tests {
     use super::{
         AdapterProcessSpec, AdapterRuntimePaths, AdapterStopOutcome, CommandTextAdapter,
         CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
-        LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
-        PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
-        UnsupportedTextAdapter, build_openai_compatible_chat_request,
+        LlmTextProcessor, MockTextProcessor, OpenAiCompatibleChatRequest,
+        OpenAiCompatibleChatTransport, OpenAiCompatibleTextAdapter, ProcessCommandTextRunner,
+        PromptContext, PromptTemplate, TextAdapter, TextError, TextFinisher, TextProcessor,
+        TextRequest, UnsupportedTextAdapter, build_openai_compatible_chat_request,
         build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
         build_openai_compatible_headers, build_recent_input_context_prefix, command_mode_payload,
         default_adapter_runtime_dir, extract_openai_compatible_candidates,
@@ -1524,6 +1585,35 @@ mod tests {
                 working_dir.unwrap_or_default(),
                 request.raw_text
             )))
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct StaticOpenAiTransport {
+        response_body: String,
+        seen_request: std::sync::Arc<std::sync::Mutex<Option<OpenAiCompatibleChatRequest>>>,
+        seen_timeout_ms: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
+    }
+
+    impl StaticOpenAiTransport {
+        fn new(response_body: String) -> Self {
+            Self {
+                response_body,
+                seen_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                seen_timeout_ms: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+    }
+
+    impl OpenAiCompatibleChatTransport for StaticOpenAiTransport {
+        fn send(
+            &self,
+            request: &OpenAiCompatibleChatRequest,
+            timeout_ms: Option<u64>,
+        ) -> Result<String, TextError> {
+            *self.seen_request.lock().unwrap() = Some(request.clone());
+            *self.seen_timeout_ms.lock().unwrap() = timeout_ms;
+            Ok(self.response_body.clone())
         }
     }
 
@@ -1643,6 +1733,75 @@ mod tests {
             rendered,
             "prompt=apply command; asr=make it shorter; selected=This is the selected text.; context=; unknown={{ future }}"
         );
+    }
+
+    #[test]
+    fn openai_text_adapter_sends_request_and_maps_payload() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish: {{ asr }}".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            model: Some("scene-model".to_owned()),
+            timeout_ms: Some(2500),
+            ..scene("polish", 0)
+        };
+        let mut provider = provider(serde_json::json!({}));
+        provider.api_key = "secret-token".to_owned();
+        let response_body = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::json!({"candidates": ["polished"]}).to_string()
+                }
+            }]
+        })
+        .to_string();
+        let transport = StaticOpenAiTransport::new(response_body);
+        let seen_request = transport.seen_request.clone();
+        let seen_timeout_ms = transport.seen_timeout_ms.clone();
+
+        let payload = OpenAiCompatibleTextAdapter::new(provider, transport)
+            .finish(&TextRequest {
+                raw_text: "raw text",
+                scene: &prompted,
+                selected_text: None,
+            })
+            .unwrap();
+
+        assert_eq!(payload.commit_text, "polished");
+        assert_eq!(payload.candidates[0].source.to_string(), "llm");
+        let built = seen_request.lock().unwrap().clone().unwrap();
+        assert_eq!(built.url, "http://localhost:8080/v1/chat/completions");
+        assert_eq!(
+            built.headers,
+            [
+                ("Content-Type".to_owned(), "application/json".to_owned()),
+                ("Authorization".to_owned(), "Bearer secret-token".to_owned()),
+            ]
+        );
+        assert_eq!(built.body["messages"][0]["content"], "Polish: raw text");
+        assert_eq!(*seen_timeout_ms.lock().unwrap(), Some(2500));
+    }
+
+    #[test]
+    fn openai_text_adapter_reports_response_without_candidates() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish: {{ asr }}".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene("polish", 0)
+        };
+        let transport = StaticOpenAiTransport::new(serde_json::json!({"choices": []}).to_string());
+
+        let error = OpenAiCompatibleTextAdapter::new(provider(serde_json::json!({})), transport)
+            .finish(&TextRequest {
+                raw_text: "raw text",
+                scene: &prompted,
+                selected_text: None,
+            })
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TextError::AdapterFailed(message) if message.contains("did not contain candidates")
+        ));
     }
 
     #[test]
