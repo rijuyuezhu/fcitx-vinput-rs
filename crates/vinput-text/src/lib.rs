@@ -2269,6 +2269,44 @@ mod tests {
     }
 
     #[test]
+    fn openai_text_processor_uses_context_cache_path() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache_path = tempdir.path().join("context.jsonl");
+        std::fs::write(&cache_path, "older\nlatest\n").unwrap();
+        let prompted = SceneDefinition {
+            prompt: Some("Context={{ context }} ASR={{ asr }}".to_owned()),
+            context_lines: 1,
+            ..scene("polish", 0)
+        };
+        let transport = StaticOpenAiTransport::new(
+            serde_json::json!({
+                "choices": [{"message": {"content": serde_json::json!({"candidates": ["polished"]}).to_string()}}]
+            })
+            .to_string(),
+        );
+        let seen_request = transport.seen_request.clone();
+
+        let payload = OpenAiCompatibleTextProcessor::new(
+            vec![provider_with_id("single", "https://single.example/v1")],
+            transport,
+        )
+        .with_context_cache_path(&cache_path)
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "polished");
+        let built = seen_request.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            built.body["messages"][0]["content"],
+            "Context=Recent input history (use to fix ASR errors):\nlatest\n\n ASR=raw text"
+        );
+    }
+
+    #[test]
     fn openai_text_adapter_command_scene_orders_raw_asr_and_llm_candidates() {
         let command = SceneDefinition {
             prompt: Some("Rewrite selected text using command: {{ asr }}".to_owned()),
