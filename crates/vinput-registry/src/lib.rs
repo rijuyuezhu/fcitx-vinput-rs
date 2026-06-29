@@ -649,6 +649,46 @@ mod tests {
     }
 
     #[test]
+    fn planned_assets_preserve_manifest_entry_order() {
+        let index = RegistryIndex::from_json_str(
+            r#"{
+              "version": 1,
+              "models": [
+                {"id":"m1","label":"M1","provider":"p","assets":[{"path":"models/m1.tar"}]},
+                {"id":"m2","label":"M2","provider":"p","assets":[{"path":"models/m2.tar"}]}
+              ],
+              "adapters": [
+                {"id":"a1","label":"A1","kind":"command","assets":[{"path":"adapters/a1.tar"}]},
+                {"id":"a2","label":"A2","kind":"command","assets":[{"path":"adapters/a2.tar"}]}
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        let plan = index.planned_assets(&RegistryConfig {
+            base_urls: vec!["mirror".to_owned()],
+        });
+
+        assert_eq!(
+            plan.iter()
+                .map(|asset| asset.entry_id.as_str())
+                .collect::<Vec<_>>(),
+            ["m1", "m2", "a1", "a2"]
+        );
+        assert_eq!(
+            plan.iter()
+                .map(|asset| asset.path.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "models/m1.tar",
+                "models/m2.tar",
+                "adapters/a1.tar",
+                "adapters/a2.tar"
+            ]
+        );
+    }
+
+    #[test]
     fn plans_assets_with_entry_metadata_and_urls() {
         let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
         let plan = index.planned_assets(&RegistryConfig {
