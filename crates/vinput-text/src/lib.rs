@@ -1007,6 +1007,80 @@ impl<T: OpenAiCompatibleChatTransport> TextAdapter for OpenAiCompatibleTextAdapt
     }
 }
 
+fn select_openai_compatible_provider<'a>(
+    providers: &'a [LlmProviderConfig],
+    scene: &SceneDefinition,
+) -> Result<Option<&'a LlmProviderConfig>, TextError> {
+    if let Some(provider_id) = scene.provider_id.as_deref() {
+        return providers
+            .iter()
+            .find(|provider| provider.id == provider_id)
+            .map(Some)
+            .ok_or_else(|| TextError::UnknownProvider {
+                scene_id: scene.id.clone(),
+                provider_id: provider_id.to_owned(),
+            });
+    }
+
+    match providers {
+        [] => Ok(None),
+        [provider] => Ok(Some(provider)),
+        _ => Err(TextError::AmbiguousProvider(scene.id.clone())),
+    }
+}
+
+/// Text processor that selects an OpenAI-compatible provider per scene.
+#[derive(Debug, Clone)]
+pub struct OpenAiCompatibleTextProcessor<T> {
+    providers: Vec<LlmProviderConfig>,
+    transport: T,
+    context_cache_path: Option<PathBuf>,
+}
+
+impl<T> OpenAiCompatibleTextProcessor<T> {
+    /// Creates a processor from OpenAI-compatible provider config entries.
+    #[must_use]
+    pub fn new(providers: Vec<LlmProviderConfig>, transport: T) -> Self {
+        Self {
+            providers,
+            transport,
+            context_cache_path: None,
+        }
+    }
+
+    /// Adds a recent-input context cache path used by scenes with context lines.
+    #[must_use]
+    pub fn with_context_cache_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.context_cache_path = Some(path.into());
+        self
+    }
+
+    /// Returns configured OpenAI-compatible providers.
+    #[must_use]
+    pub fn providers(&self) -> &[LlmProviderConfig] {
+        &self.providers
+    }
+}
+
+impl<T> TextProcessor for OpenAiCompatibleTextProcessor<T>
+where
+    T: OpenAiCompatibleChatTransport + Clone,
+{
+    fn finish(&self, request: &TextRequest<'_>) -> Result<RecognitionPayload, TextError> {
+        if request.scene.id == RAW_SCENE_ID || !scene_needs_postprocessing(request.scene) {
+            return Ok(RecognitionPayload::raw(request.raw_text));
+        }
+        let provider = select_openai_compatible_provider(&self.providers, request.scene)?
+            .ok_or_else(|| TextError::AdapterRequired(request.scene.id.clone()))?;
+        let mut adapter =
+            OpenAiCompatibleTextAdapter::new(provider.clone(), self.transport.clone());
+        if let Some(context_cache_path) = &self.context_cache_path {
+            adapter = adapter.with_context_cache_path(context_cache_path.clone());
+        }
+        adapter.finish(request)
+    }
+}
+
 /// Text processor that delegates post-processing scenes to an adapter.
 #[derive(Debug, Clone)]
 pub struct LlmTextProcessor<A> {
@@ -1509,6 +1583,17 @@ pub enum TextError {
     /// Adapter selection was ambiguous for a scene.
     #[error("scene `{0}` has ambiguous text adapter selection")]
     AmbiguousAdapter(String),
+    /// Scene references an unknown OpenAI-compatible provider.
+    #[error("scene `{scene_id}` references unknown OpenAI-compatible provider `{provider_id}`")]
+    UnknownProvider {
+        /// Scene id.
+        scene_id: String,
+        /// Missing provider id.
+        provider_id: String,
+    },
+    /// OpenAI-compatible provider selection was ambiguous for a scene.
+    #[error("scene `{0}` has ambiguous OpenAI-compatible provider selection")]
+    AmbiguousProvider(String),
     /// Command adapter id is unsafe for runtime paths.
     #[error("invalid text adapter id for runtime path: {0}")]
     InvalidAdapterId(String),
@@ -1562,9 +1647,10 @@ mod tests {
         AdapterProcessSpec, AdapterRuntimePaths, AdapterStopOutcome, CommandTextAdapter,
         CommandTextProcessor, CommandTextRequest, CommandTextResponse, CommandTextRunner,
         LlmTextProcessor, MockTextProcessor, OpenAiCompatibleChatRequest,
-        OpenAiCompatibleChatTransport, OpenAiCompatibleTextAdapter, ProcessCommandTextRunner,
-        PromptContext, PromptTemplate, TextAdapter, TextError, TextFinisher, TextProcessor,
-        TextRequest, UnsupportedTextAdapter, build_openai_compatible_chat_request,
+        OpenAiCompatibleChatTransport, OpenAiCompatibleTextAdapter, OpenAiCompatibleTextProcessor,
+        ProcessCommandTextRunner, PromptContext, PromptTemplate, TextAdapter, TextError,
+        TextFinisher, TextProcessor, TextRequest, UnsupportedTextAdapter,
+        build_openai_compatible_chat_request,
         build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
         build_openai_compatible_headers, build_recent_input_context_prefix, command_mode_payload,
         default_adapter_runtime_dir, extract_openai_compatible_candidates,
@@ -1651,6 +1737,17 @@ mod tests {
             api_key: String::new(),
             model: Some("provider-model".to_owned()),
             extra_body,
+            extra: std::collections::HashMap::default(),
+        }
+    }
+
+    fn provider_with_id(id: &str, base_url: &str) -> LlmProviderConfig {
+        LlmProviderConfig {
+            id: id.to_owned(),
+            base_url: base_url.to_owned(),
+            api_key: String::new(),
+            model: Some(format!("{id}-model")),
+            extra_body: serde_json::json!({}),
             extra: std::collections::HashMap::default(),
         }
     }
@@ -1816,6 +1913,144 @@ mod tests {
             error,
             TextError::AdapterFailed(message) if message.contains("did not contain candidates")
         ));
+    }
+
+    #[test]
+    fn openai_text_processor_selects_scene_provider_id() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish: {{ asr }}".to_owned()),
+            provider_id: Some("second".to_owned()),
+            ..scene("polish", 0)
+        };
+        let transport = StaticOpenAiTransport::new(
+            serde_json::json!({
+                "choices": [{"message": {"content": serde_json::json!({"candidates": ["polished"]}).to_string()}}]
+            })
+            .to_string(),
+        );
+        let seen_request = transport.seen_request.clone();
+
+        let payload = OpenAiCompatibleTextProcessor::new(
+            vec![
+                provider_with_id("first", "https://first.example/v1"),
+                provider_with_id("second", "https://second.example/v1"),
+            ],
+            transport,
+        )
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "polished");
+        let built = seen_request.lock().unwrap().clone().unwrap();
+        assert_eq!(built.url, "https://second.example/v1/chat/completions");
+        assert_eq!(built.body["model"], "second-model");
+    }
+
+    #[test]
+    fn openai_text_processor_uses_single_provider_without_scene_provider_id() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish: {{ asr }}".to_owned()),
+            ..scene("polish", 0)
+        };
+        let transport = StaticOpenAiTransport::new(
+            serde_json::json!({
+                "choices": [{"message": {"content": serde_json::json!({"candidates": ["polished"]}).to_string()}}]
+            })
+            .to_string(),
+        );
+        let seen_request = transport.seen_request.clone();
+
+        let payload = OpenAiCompatibleTextProcessor::new(
+            vec![provider_with_id("single", "https://single.example/v1")],
+            transport,
+        )
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap();
+
+        assert_eq!(payload.commit_text, "polished");
+        let built = seen_request.lock().unwrap().clone().unwrap();
+        assert_eq!(built.url, "https://single.example/v1/chat/completions");
+    }
+
+    #[test]
+    fn openai_text_processor_requires_provider_for_prompted_scene() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish: {{ asr }}".to_owned()),
+            ..scene("polish", 0)
+        };
+
+        let error = OpenAiCompatibleTextProcessor::new(
+            Vec::new(),
+            StaticOpenAiTransport::new(serde_json::json!({"choices": []}).to_string()),
+        )
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert_eq!(error, TextError::AdapterRequired("polish".to_owned()));
+    }
+
+    #[test]
+    fn openai_text_processor_rejects_ambiguous_providers_without_scene_provider_id() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish: {{ asr }}".to_owned()),
+            ..scene("polish", 0)
+        };
+
+        let error = OpenAiCompatibleTextProcessor::new(
+            vec![
+                provider_with_id("first", "https://first.example/v1"),
+                provider_with_id("second", "https://second.example/v1"),
+            ],
+            StaticOpenAiTransport::new(serde_json::json!({"choices": []}).to_string()),
+        )
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert_eq!(error, TextError::AmbiguousProvider("polish".to_owned()));
+    }
+
+    #[test]
+    fn openai_text_processor_reports_unknown_scene_provider_id() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish: {{ asr }}".to_owned()),
+            provider_id: Some("missing".to_owned()),
+            ..scene("polish", 0)
+        };
+
+        let error = OpenAiCompatibleTextProcessor::new(
+            vec![provider_with_id("default", "https://default.example/v1")],
+            StaticOpenAiTransport::new(serde_json::json!({"choices": []}).to_string()),
+        )
+        .finish(&TextRequest {
+            raw_text: "raw text",
+            scene: &prompted,
+            selected_text: None,
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            TextError::UnknownProvider {
+                scene_id: "polish".to_owned(),
+                provider_id: "missing".to_owned(),
+            }
+        );
     }
 
     #[test]
