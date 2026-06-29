@@ -840,6 +840,33 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_model_ids() {
+        let json = r#"{"version":1,"models":[{"id":" ","label":"M","provider":"p","assets":[]}]}"#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::EmptyId
+        );
+    }
+
+    #[test]
+    fn rejects_empty_model_providers() {
+        let json = r#"{"version":1,"models":[{"id":"m","label":"M","provider":" ","assets":[]}]}"#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::EmptyProvider("m".to_owned())
+        );
+    }
+
+    #[test]
+    fn rejects_empty_adapter_kinds() {
+        let json = r#"{"version":1,"adapters":[{"id":"a","label":"A","kind":" ","assets":[]}]}"#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::EmptyAdapterKind("a".to_owned())
+        );
+    }
+
+    #[test]
     fn rejects_duplicate_model_ids() {
         let json = r#"
         {
