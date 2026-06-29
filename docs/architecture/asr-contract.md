@@ -98,6 +98,8 @@ The deprecated `failure` response key is accepted as an alias for `error` while 
 
 Both `vinput-cli asr-state` and `vinput-daemon asr-state` serialize `AsrBackendState` from config only. They do not construct, reload, or probe the runtime backend. The daemon diagnostic remains usable with `--configured-backends` even when the selected runtime backend is unavailable.
 
+Runtime ASR reload is only valid while the service is idle. `ReloadAsrBackend` and the configured-backend reload seam reject recording or inferring states with `Busy`, preserving the active ASR session and recorder so `StopRecording` can still complete normally.
+
 ## Next ASR steps
 
 1. Move command-scene prompt and post-processing policy to `vinput-text` while preserving `RecognitionContext` as the frontend/runtime seam.
