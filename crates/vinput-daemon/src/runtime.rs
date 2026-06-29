@@ -841,55 +841,6 @@ mod tests {
         }
     }
 
-    struct EarlyFinalBackend;
-
-    impl AsrBackend for EarlyFinalBackend {
-        fn describe(&self) -> BackendDescriptor {
-            MockAsrBackend::streaming("early partial", "late final").describe()
-        }
-
-        fn create_session(
-            &self,
-            _context: RecognitionContext,
-        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
-            Ok(Box::new(EarlyFinalSession { poll_count: 0 }))
-        }
-    }
-
-    struct EarlyFinalSession {
-        poll_count: usize,
-    }
-
-    impl RecognitionSession for EarlyFinalSession {
-        fn push_audio(&mut self, _samples: &[i16]) -> Result<(), AsrError> {
-            Ok(())
-        }
-
-        fn finish(&mut self) -> Result<(), AsrError> {
-            Ok(())
-        }
-
-        fn cancel(&mut self) -> Result<(), AsrError> {
-            Ok(())
-        }
-
-        fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
-            let poll_index = self.poll_count;
-            self.poll_count += 1;
-            if poll_index == 0 {
-                return Ok(vec![
-                    RecognitionEvent::PartialText {
-                        text: "early partial".to_owned(),
-                    },
-                    RecognitionEvent::FinalText {
-                        text: "early final".to_owned(),
-                    },
-                ]);
-            }
-            Ok(vec![RecognitionEvent::Completed])
-        }
-    }
-
     #[derive(Clone, Copy)]
     enum SessionFailureStage {
         PartialPoll,
@@ -1753,8 +1704,14 @@ mod tests {
     #[test]
     fn early_final_event_is_preserved_until_payload_conversion() {
         let config = VinputConfig::bundled_default().unwrap();
-        let mut runtime =
-            RuntimeState::with_asr_backend(config, Box::new(EarlyFinalBackend)).unwrap();
+        let mut runtime = RuntimeState::with_asr_backend(
+            config,
+            Box::new(MockAsrBackend::streaming_with_early_final(
+                "early partial",
+                "early final",
+            )),
+        )
+        .unwrap();
 
         runtime.start_recording().unwrap();
         let report = runtime.stop_recording_report(None).unwrap();

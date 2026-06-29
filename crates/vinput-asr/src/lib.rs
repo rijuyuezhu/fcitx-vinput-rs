@@ -217,6 +217,20 @@ pub struct MockAsrBackend {
     descriptor: BackendDescriptor,
     final_text: String,
     partial_text: Option<String>,
+    final_timing: MockFinalTiming,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MockFinalTiming {
+    OnFinish,
+    Early,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MockSessionState {
+    Active,
+    Finished,
+    Cancelled,
 }
 
 impl MockAsrBackend {
@@ -232,6 +246,7 @@ impl MockAsrBackend {
             ),
             final_text: final_text.into(),
             partial_text: None,
+            final_timing: MockFinalTiming::OnFinish,
         }
     }
 
@@ -247,6 +262,19 @@ impl MockAsrBackend {
             ),
             final_text: final_text.into(),
             partial_text: Some(partial_text.into()),
+            final_timing: MockFinalTiming::OnFinish,
+        }
+    }
+
+    /// Creates a streaming mock backend that emits its final text before the session is closed.
+    #[must_use]
+    pub fn streaming_with_early_final(
+        partial_text: impl Into<String>,
+        final_text: impl Into<String>,
+    ) -> Self {
+        Self {
+            final_timing: MockFinalTiming::Early,
+            ..Self::streaming(partial_text, final_text)
         }
     }
 }
@@ -1013,10 +1041,11 @@ impl AsrBackend for MockAsrBackend {
         Ok(Box::new(MockRecognitionSession {
             final_text: self.final_text.clone(),
             partial_text: self.partial_text.clone(),
+            final_timing: self.final_timing,
             accepted_samples: 0,
-            finished: false,
-            cancelled: false,
+            state: MockSessionState::Active,
             partial_sent: false,
+            final_sent: false,
             events: Vec::new(),
         }))
     }
@@ -1120,20 +1149,20 @@ impl<R: CommandAsrRunner> RecognitionSession for CommandRecognitionSession<R> {
 struct MockRecognitionSession {
     final_text: String,
     partial_text: Option<String>,
+    final_timing: MockFinalTiming,
     accepted_samples: usize,
-    finished: bool,
-    cancelled: bool,
+    state: MockSessionState,
     partial_sent: bool,
+    final_sent: bool,
     events: Vec<RecognitionEvent>,
 }
 
 impl RecognitionSession for MockRecognitionSession {
     fn push_audio(&mut self, samples: &[i16]) -> Result<(), AsrError> {
-        if self.cancelled {
-            return Err(AsrError::Cancelled);
-        }
-        if self.finished {
-            return Err(AsrError::AlreadyFinished);
+        match self.state {
+            MockSessionState::Active => {}
+            MockSessionState::Finished => return Err(AsrError::AlreadyFinished),
+            MockSessionState::Cancelled => return Err(AsrError::Cancelled),
         }
         self.accepted_samples += samples.len();
         if !self.partial_sent
@@ -1143,26 +1172,34 @@ impl RecognitionSession for MockRecognitionSession {
                 .push(RecognitionEvent::PartialText { text: text.clone() });
             self.partial_sent = true;
         }
+        if self.final_timing == MockFinalTiming::Early && !self.final_sent {
+            self.events.push(RecognitionEvent::FinalText {
+                text: self.final_text.clone(),
+            });
+            self.final_sent = true;
+        }
         Ok(())
     }
 
     fn finish(&mut self) -> Result<(), AsrError> {
-        if self.cancelled {
-            return Err(AsrError::Cancelled);
+        match self.state {
+            MockSessionState::Active => {}
+            MockSessionState::Finished => return Err(AsrError::AlreadyFinished),
+            MockSessionState::Cancelled => return Err(AsrError::Cancelled),
         }
-        if self.finished {
-            return Err(AsrError::AlreadyFinished);
+        self.state = MockSessionState::Finished;
+        if !self.final_sent {
+            self.events.push(RecognitionEvent::FinalText {
+                text: self.final_text.clone(),
+            });
+            self.final_sent = true;
         }
-        self.finished = true;
-        self.events.push(RecognitionEvent::FinalText {
-            text: self.final_text.clone(),
-        });
         self.events.push(RecognitionEvent::Completed);
         Ok(())
     }
 
     fn cancel(&mut self) -> Result<(), AsrError> {
-        self.cancelled = true;
+        self.state = MockSessionState::Cancelled;
         self.events.clear();
         Ok(())
     }
@@ -1334,6 +1371,35 @@ mod tests {
         );
         session.push_audio(&[2]).unwrap();
         assert!(session.poll_events().unwrap().is_empty());
+    }
+
+    #[test]
+    fn mock_streaming_backend_can_emit_final_before_finish() {
+        let backend = MockAsrBackend::streaming_with_early_final("partial", "final");
+        let mut session = backend
+            .create_session(RecognitionContext::normal("__raw__", None))
+            .unwrap();
+
+        session.push_audio(&[1]).unwrap();
+        let events = session.poll_events().unwrap();
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::PartialText {
+                    text: "partial".to_owned()
+                },
+                RecognitionEvent::FinalText {
+                    text: "final".to_owned()
+                }
+            ]
+        );
+        assert_eq!(events_to_payload(&events).unwrap().commit_text, "final");
+
+        session.finish().unwrap();
+        assert_eq!(
+            session.poll_events().unwrap(),
+            vec![RecognitionEvent::Completed]
+        );
     }
 
     #[test]
