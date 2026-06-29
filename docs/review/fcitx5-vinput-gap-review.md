@@ -273,7 +273,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 7. Model metadata/path manager and local model validation.
 8. sherpa-onnx offline backend, then streaming backend, then VAD/hotwords.
 9. OpenAI-compatible post-processing and command mode parity.
-10. Adapter process supervision and D-Bus start/stop behavior.
+10. Adapter lifecycle parity beyond the current runtime/D-Bus start-stop path: install materialization, richer edge fixtures, and frontend UX.
 11. Registry fetch/cache/checksum/archive/install/materialization.
 12. Minimal Fcitx frontend integration.
 13. systemd user unit, D-Bus service file, Fcitx addon installation, and packaging.
