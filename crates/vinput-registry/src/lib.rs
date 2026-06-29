@@ -773,6 +773,20 @@ mod tests {
     }
 
     #[test]
+    fn install_plan_keeps_assets_without_urls() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let plan = index.install_plan(
+            &RegistryConfig {
+                base_urls: Vec::new(),
+            },
+            "cache",
+        );
+
+        assert_eq!(plan.summary.asset_count, 2);
+        assert!(plan.assets.iter().all(|asset| asset.urls.is_empty()));
+    }
+
+    #[test]
     fn install_plan_summarizes_empty_indexes() {
         let index = RegistryIndex::from_json_str(r#"{"version":1}"#).unwrap();
         let plan = index.install_plan(
