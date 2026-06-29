@@ -818,6 +818,18 @@ mod tests {
     }
 
     #[test]
+    fn resolves_no_urls_when_registry_has_no_base_urls() {
+        let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
+        let asset = &index.model("sherpa-zh-small").unwrap().assets[0];
+
+        assert!(
+            asset
+                .resolved_urls(&RegistryConfig { base_urls: vec![] })
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn resolves_asset_against_all_base_urls() {
         let index = RegistryIndex::from_json_str(SAMPLE).unwrap();
         let asset = &index.model("sherpa-zh-small").unwrap().assets[0];
