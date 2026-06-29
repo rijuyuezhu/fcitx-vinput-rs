@@ -486,6 +486,7 @@ impl RuntimeState {
     /// state includes the config-selected target provider, model, and remote
     /// endpoint metadata.
     pub fn reload_asr_backend(&mut self) -> Result<AsrBackendState, RuntimeError> {
+        self.ensure_idle()?;
         self.config
             .validate()
             .map_err(RuntimeError::InvalidConfig)?;
@@ -494,6 +495,7 @@ impl RuntimeState {
 
     /// Rebuilds the runtime ASR backend from the validated active provider.
     pub fn reload_configured_asr_backend(&mut self) -> Result<AsrBackendState, RuntimeError> {
+        self.ensure_idle()?;
         self.config
             .validate()
             .map_err(RuntimeError::InvalidConfig)?;
@@ -1336,6 +1338,57 @@ mod tests {
         assert_eq!(state.effective_provider_id, "mock");
         assert_eq!(state.target_provider_id, "cmd");
         assert_eq!(state.target_model_id, "cmd-model");
+    }
+
+    #[test]
+    fn reload_asr_backend_is_rejected_while_recording() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let mut runtime = RuntimeState::new(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let error = runtime.reload_asr_backend().unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::RuntimeError::Busy(ServiceStatus::Recording)
+        ));
+        assert_eq!(runtime.status(), ServiceStatus::Recording);
+        assert!(matches!(
+            runtime.stop_recording(None),
+            Ok(payload) if payload.commit_text == "mock recognition result"
+        ));
+    }
+
+    #[test]
+    fn reload_configured_asr_backend_is_rejected_while_recording() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "mock".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "mock".to_owned(),
+            kind: AsrProviderKind::Local,
+            timeout_ms: None,
+            model: Some("mock-model".to_owned()),
+            hotwords_file: None,
+            command: None,
+            args: Vec::new(),
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let mut runtime = RuntimeState::new(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let error = runtime.reload_configured_asr_backend().unwrap_err();
+
+        assert!(matches!(
+            error,
+            super::RuntimeError::Busy(ServiceStatus::Recording)
+        ));
+        assert_eq!(runtime.status(), ServiceStatus::Recording);
+        assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
+        assert!(matches!(
+            runtime.stop_recording(None),
+            Ok(payload) if payload.commit_text == "mock recognition result"
+        ));
     }
 
     #[test]
