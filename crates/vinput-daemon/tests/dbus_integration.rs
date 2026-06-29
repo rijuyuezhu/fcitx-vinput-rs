@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use tokio::time::{sleep, timeout};
-use vinput_asr::AsrBackendFactory;
+use vinput_asr::{AsrBackendFactory, MockAsrBackend};
 use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
@@ -408,6 +408,55 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn early_final_roundtrips_through_session_bus() -> anyhow::Result<()> {
+    let config = VinputConfig::bundled_default()?;
+    let runtime = RuntimeState::with_asr_backend(
+        config,
+        Box::new(MockAsrBackend::streaming_with_early_final(
+            "early partial",
+            "early final",
+        )),
+    )?;
+    let (_service_connection, service_name) = spawn_runtime_on_unique_name(runtime).await?;
+    let client_connection = zbus::Connection::session().await?;
+    let proxy = Proxy::new(
+        &client_connection,
+        service_name.as_str(),
+        dbus::SERVICE_OBJECT_PATH,
+        dbus::SERVICE_INTERFACE,
+    )
+    .await?;
+    let mut status_signals = proxy.receive_signal(dbus::signal::STATUS_CHANGED).await?;
+    let mut partial_signals = proxy
+        .receive_signal(dbus::signal::RECOGNITION_PARTIAL)
+        .await?;
+    let mut result_signals = proxy
+        .receive_signal(dbus::signal::RECOGNITION_RESULT)
+        .await?;
+
+    proxy
+        .call::<_, _, ()>(dbus::method::START_RECORDING, &())
+        .await?;
+    assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
+    expect_no_string_signal(&mut partial_signals).await?;
+
+    let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
+    let payload = RecognitionPayload::from_json_str(&payload_json)?;
+    assert_eq!(payload.commit_text, "early final");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
+    assert_eq!(
+        next_string_signal(&mut partial_signals).await?,
+        "early partial"
+    );
+    let result_payload_json = next_string_signal(&mut result_signals).await?;
+    let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
+    assert_eq!(signal_payload.commit_text, "early final");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
 
     Ok(())
 }
