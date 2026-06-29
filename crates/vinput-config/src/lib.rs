@@ -885,6 +885,21 @@ mod tests {
     }
 
     #[test]
+    fn parser_requires_explicit_schema_version() {
+        let error = VinputConfig::from_json_str(
+            r#"{
+              "asr": {
+                "active_provider": "p",
+                "providers": [{"id":"p","type":"local"}]
+              }
+            }"#,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, super::ConfigError::Json(_)));
+    }
+
+    #[test]
     fn normalization_promotes_legacy_zero_version_to_one() {
         let config = VinputConfig::from_json_str(
             r#"{
