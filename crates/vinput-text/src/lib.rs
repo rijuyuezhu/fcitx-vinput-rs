@@ -1193,6 +1193,21 @@ mod tests {
     }
 
     #[test]
+    fn prompt_template_renders_missing_selected_text_as_empty() {
+        let raw = scene("raw", 0);
+        let request = TextRequest {
+            raw_text: "dictated text",
+            scene: &raw,
+            selected_text: None,
+        };
+
+        let rendered = PromptTemplate::new("selected={selected_text}; legacy={{selected}}")
+            .render_request(&request);
+
+        assert_eq!(rendered, "selected=; legacy=");
+    }
+
+    #[test]
     fn prompt_template_keeps_unknown_placeholders() {
         let raw = scene("raw", 0);
         let request = TextRequest {
