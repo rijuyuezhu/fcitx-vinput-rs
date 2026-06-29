@@ -13,6 +13,15 @@ use vinput_protocol::{RecognitionPayload, TextAdapterState, dbus};
 use vinput_text::AdapterRuntimePaths;
 use zbus::{Message, Proxy};
 
+const RAW_PAYLOAD_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/recognition/raw.json"
+));
+
+fn fixture_json(input: &str) -> &str {
+    input.trim_end()
+}
+
 async fn spawn_service() -> anyhow::Result<zbus::Connection> {
     let config = VinputConfig::bundled_default()?;
     let runtime = RuntimeState::new(config)?;
@@ -348,16 +357,18 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     expect_no_string_signal(&mut status_signals).await?;
 
     let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
+    assert_eq!(payload_json, fixture_json(RAW_PAYLOAD_JSON));
     let payload = RecognitionPayload::from_json_str(&payload_json)?;
-    assert_eq!(payload.commit_text, "mock recognition result");
+    assert_eq!(payload.candidates.len(), 1);
     assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
     assert_eq!(
         next_string_signal(&mut partial_signals).await?,
         "mock partial"
     );
     let result_payload_json = next_string_signal(&mut result_signals).await?;
+    assert_eq!(result_payload_json, fixture_json(RAW_PAYLOAD_JSON));
     let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
-    assert_eq!(signal_payload.commit_text, "mock recognition result");
+    assert_eq!(signal_payload, payload);
     assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
 
     proxy

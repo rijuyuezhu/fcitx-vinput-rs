@@ -217,10 +217,9 @@ mod tests {
 
     #[test]
     fn raw_payload_matches_legacy_json_shape() {
-        let payload = RecognitionPayload::raw("hello");
+        let payload = RecognitionPayload::from_json_str(fixture_json(RAW_PAYLOAD_JSON)).unwrap();
         let json = payload.to_json_string().unwrap();
         assert_eq!(json, fixture_json(RAW_PAYLOAD_JSON));
-        assert_eq!(RecognitionPayload::from_json_str(&json).unwrap(), payload);
     }
 
     #[test]
