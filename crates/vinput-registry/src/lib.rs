@@ -432,7 +432,11 @@ impl AssetEntry {
         if self.path.trim().is_empty() {
             return Err(RegistryError::EmptyAssetPath);
         }
-        if self.path.starts_with('/') || self.path.contains("..") {
+        if self.path.starts_with('/')
+            || self.path.contains("..")
+            || self.path.contains("://")
+            || self.path.contains('\\')
+        {
             return Err(RegistryError::UnsafeAssetPath(self.path.clone()));
         }
         if let Some(sha256) = &self.sha256 {
@@ -875,6 +879,24 @@ mod tests {
         assert_eq!(
             RegistryIndex::from_json_str(json).unwrap_err(),
             RegistryError::EmptyAssetPath
+        );
+    }
+
+    #[test]
+    fn rejects_url_like_asset_paths() {
+        let json = r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"https://example.invalid/model.tar"}]}]}"#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::UnsafeAssetPath("https://example.invalid/model.tar".to_owned())
+        );
+    }
+
+    #[test]
+    fn rejects_backslash_asset_paths() {
+        let json = r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"models\\m.tar"}]}]}"#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::UnsafeAssetPath("models\\m.tar".to_owned())
         );
     }
 
