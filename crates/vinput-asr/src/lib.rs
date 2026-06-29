@@ -2570,7 +2570,7 @@ print(json.dumps({'type':'closed'}))
     }
 
     #[test]
-    fn backend_factory_builds_command_backend_skeleton() {
+    fn command_asr_backend_with_config_describes_provider() {
         let provider = AsrProviderConfig {
             id: "cmd".to_owned(),
             kind: AsrProviderKind::Command,
