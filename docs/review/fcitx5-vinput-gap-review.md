@@ -244,7 +244,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 | Feature domain | Legacy capability | Rust current capability | Rust gap | Must compatible? | Suggested implementation | Risks/dependencies | Priority |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | D-Bus service ABI | Exact legacy `sd-bus` vtable; void and tuple method signatures; legacy signals. | Same names/paths, zbus facade, and D-Bus integration introspection tests for legacy method/signal signatures; `GetTextAdapterState` is an explicit diagnostic extension. | Remaining behavior compatibility gaps: frontend integration is absent, and some legacy-visible method semantics still need parity as real backends land. | Yes | Keep introspection/signature tests pinned; add behavior-level ABI fixtures and keep diagnostic JSON out of legacy method shapes. | zbus multiple-return mapping, signal ordering, and frontend expectations. | P0 |
-| Recognition payload | Stable JSON payload and candidate source semantics. | Matching Rust model and tests. | Need cross-fixture parity with legacy parser edge cases. | Yes | Add golden fixtures copied from legacy behavior; keep serde field names pinned. | Low. | P0 |
+| Recognition payload | Stable JSON payload and candidate source semantics. | Matching Rust model, fallback tests, and protocol-level golden fixtures for raw/menu/sentinel payload JSON. | Need shared CLI/daemon/protocol fixture files and more legacy parser edge cases. | Yes | Promote protocol goldens into shared fixtures consumed by daemon/D-Bus and CLI tests; keep serde field names pinned. | Low. | P0 |
 | Status/runtime state | Busy rejection, recording/inferring/postprocessing/error transitions, deferred reload, notification errors. | Runtime owns stateful recorder/session seams, rejects start/reload while recording, emits stop-time partial/result ordering, and preserves active sessions across busy reload attempts. | Remaining gaps: legacy error notifications, explicit postprocessing phase, deferred reload semantics if kept, real worker/audio streaming lifecycle. | Yes | Keep current start/stop/busy/reload guards pinned; add transition fixtures for error notifications, postprocessing, and deferred reload compatibility decisions. | Async locking and D-Bus signal ordering. | P0 |
 | Fcitx frontend addon | Shared-library addon, key state machine, preedit/candidate/menu/notification behavior. | Not implemented. | No input method integration. | Yes for usability | Keep a thin legacy-compatible frontend bridge; decide whether C++ shim or Rust FFI only after daemon ABI stabilizes. | Fcitx5 addon API is C++-oriented; Rust binding maturity unclear. | P1/P2 |
 | Audio capture | PipeWire S16LE/16k/mono capture, target object selection, source enumeration, chunk callback. | Pure PCM processing, `AudioRecorder` lifecycle seam, mock source/recorder, capture-target config parsing, and feature-gated PipeWire source enumeration used by CLI/daemon diagnostics. | No live PipeWire recording stream; enumeration diagnostics exist but capture still returns explicit unavailable errors. | Behavior yes, implementation no | Complete `PipeWireAudioRecorder` live stream behind `AudioRecorder`; keep `AudioDeviceEnumerator` diagnostics and mock tests; mirror target-object/default semantics. | PipeWire runtime and distro deps; Rust crate docs.rs latest build issue should be validated locally. | P1 |
@@ -265,7 +265,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 ## Must-fill functionality before Rust can replace legacy
 
 1. D-Bus behavior parity fixtures beyond current signature/introspection and integration coverage, especially frontend-visible edge cases.
-2. Recognition JSON golden fixtures shared by CLI/daemon/protocol tests.
+2. Recognition JSON golden fixtures shared by CLI/daemon/protocol tests; protocol-level raw/menu/sentinel goldens are now pinned.
 3. Runtime state-machine parity beyond current start/stop/busy/reload guards: legacy error notifications, explicit postprocessing phase, and deferred reload semantics.
 4. Config/default-config compatibility fixtures and normalize-vs-validate policy.
 5. Command ASR long-lived streaming lifecycle plus broader cancellation/process-shutdown parity; batch raw PCM, one-shot `.streaming` JSON-line runners, stderr/timeout fixtures, duplicate-partial suppression, streaming capabilities, and D-Bus stop-time partial fixtures already exist.
@@ -293,7 +293,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 
 1. **Lock contracts first**
    - D-Bus introspection/signature tests.
-   - Recognition payload golden fixtures.
+   - Promote recognition payload goldens from protocol tests into shared daemon/CLI fixtures.
    - Config default/normalization fixtures.
    - Command ASR and text post-processing fixtures.
 2. **Fill pure logic**
