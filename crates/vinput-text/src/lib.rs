@@ -12,7 +12,7 @@ use thiserror::Error;
 use vinput_config::{
     COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
 };
-use vinput_protocol::RecognitionPayload;
+use vinput_protocol::{Candidate, CandidateSource, RecognitionPayload};
 
 /// Input to the text finishing stage.
 #[derive(Debug, Clone, PartialEq)]
@@ -704,6 +704,26 @@ pub fn extract_openai_compatible_candidates(response_body: &str) -> Vec<String> 
         .filter(|candidate| !candidate.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+/// Converts OpenAI-compatible candidate strings into the daemon payload shape.
+///
+/// The first LLM candidate becomes the default committed text, matching the
+/// legacy recognition payload normalization rule. Empty candidate lists return
+/// `None` so callers can fall back to raw ASR/command candidates.
+#[must_use]
+pub fn openai_compatible_candidates_to_payload(
+    candidates: impl IntoIterator<Item = String>,
+) -> Option<RecognitionPayload> {
+    let candidates = candidates
+        .into_iter()
+        .map(|candidate| Candidate::new(candidate, CandidateSource::Llm))
+        .collect::<Vec<_>>();
+    let commit_text = candidates.first()?.text.clone();
+    Some(RecognitionPayload {
+        commit_text,
+        candidates,
+    })
 }
 
 const OPENAI_COMPATIBLE_PROTECTED_EXTRA_BODY_KEYS: &[&str] =
@@ -1408,7 +1428,7 @@ mod tests {
         build_recent_input_context_prefix, default_adapter_runtime_dir,
         extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
         load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
-        start_adapter_process, stop_adapter_process,
+        openai_compatible_candidates_to_payload, start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{
         COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
@@ -2217,6 +2237,25 @@ mod tests {
                 "response should not yield candidates: {response}"
             );
         }
+    }
+
+    #[test]
+    fn openai_compatible_candidates_to_payload_uses_llm_source() {
+        let payload =
+            openai_compatible_candidates_to_payload(vec!["first".to_owned(), "second".to_owned()])
+                .unwrap();
+
+        assert_eq!(payload.commit_text, "first");
+        assert_eq!(payload.candidates.len(), 2);
+        assert_eq!(payload.candidates[0].text, "first");
+        assert_eq!(payload.candidates[0].source.to_string(), "llm");
+        assert_eq!(payload.candidates[1].text, "second");
+        assert_eq!(payload.candidates[1].source.to_string(), "llm");
+    }
+
+    #[test]
+    fn openai_compatible_candidates_to_payload_returns_none_for_empty_candidates() {
+        assert!(openai_compatible_candidates_to_payload(Vec::<String>::new()).is_none());
     }
 
     #[test]
