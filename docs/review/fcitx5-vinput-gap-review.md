@@ -190,7 +190,7 @@ Candidate sources include `raw`, `llm`, `asr`, and `cancel`.  Legacy parse behav
 - D-Bus constants match legacy names and paths.
 - Status strings match legacy strings.
 - Recognition JSON payload matches the legacy `commit_text`/`candidates` shape and fallback behavior.
-- Config can parse the current legacy default config, pins committed-file vs bundled-default parity, covers legacy version promotion, minimal/preserved/partial built-in scene normalization, omitted/blank active-scene defaulting, and has extensive validation tests.
+- Config can parse the current legacy default config, pins committed-file vs bundled-default parity, covers legacy version promotion, missing-version rejection, minimal/preserved/partial built-in scene normalization, omitted/blank active-scene defaulting, and has extensive validation tests.
 - Text crate has command adapter seams and deterministic command processor tests, but no OpenAI-compatible HTTP LLM client and no context-cache/prompt-file parity with legacy templates.
 - Registry crate deliberately lacks network download and archive handling; it currently owns pure manifest contracts and planning.
 
@@ -267,7 +267,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 1. D-Bus behavior parity fixtures beyond current signature/introspection and integration coverage, especially frontend-visible edge cases.
 2. Recognition JSON golden fixtures shared by CLI/daemon/protocol tests; raw/menu/sentinel files are shared across all three crates and cancel sentinel, blank-cancel parsing, and invalid-candidate fallback now roundtrip, while behavior-level D-Bus coverage still only pins raw output.
 3. Runtime state-machine parity beyond current start/stop/busy/reload guards: legacy error notifications, explicit postprocessing phase, and deferred reload semantics.
-4. Config/default-config compatibility fixtures beyond committed-vs-bundled parity, version promotion, built-in scene normalization, and omitted/blank active-scene defaulting, plus normalize-vs-validate policy.
+4. Config/default-config compatibility fixtures beyond committed-vs-bundled parity, version promotion, missing-version rejection, built-in scene normalization, and omitted/blank active-scene defaulting, plus normalize-vs-validate policy.
 5. Command ASR long-lived streaming lifecycle plus broader cancellation/process-shutdown parity; batch raw PCM, one-shot `.streaming` JSON-line runners, stderr/timeout fixtures, duplicate-partial suppression, streaming capabilities, and D-Bus stop-time partial fixtures already exist.
 6. Live PipeWire recording behind `AudioRecorder`; source enumeration diagnostics already exist behind `pipewire-backend` and should stay covered.
 7. Model metadata/path manager and local model validation.
