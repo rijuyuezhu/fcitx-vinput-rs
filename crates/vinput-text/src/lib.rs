@@ -726,6 +726,15 @@ pub fn openai_compatible_candidates_to_payload(
     })
 }
 
+/// Parses an OpenAI-compatible chat response into a daemon recognition payload.
+///
+/// Invalid response shapes or empty candidate lists return `None` so callers can
+/// fall back to raw ASR or command-mode fallback candidates.
+#[must_use]
+pub fn openai_compatible_response_to_payload(response_body: &str) -> Option<RecognitionPayload> {
+    openai_compatible_candidates_to_payload(extract_openai_compatible_candidates(response_body))
+}
+
 /// Builds the legacy command-mode payload candidate order.
 ///
 /// The menu order is selected text (`raw`), recognized ASR command (`asr`), then
@@ -1470,7 +1479,8 @@ mod tests {
         build_recent_input_context_prefix, command_mode_payload, default_adapter_runtime_dir,
         extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
         load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
-        openai_compatible_candidates_to_payload, start_adapter_process, stop_adapter_process,
+        openai_compatible_candidates_to_payload, openai_compatible_response_to_payload,
+        start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{
         COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
@@ -2332,6 +2342,37 @@ mod tests {
     #[test]
     fn openai_compatible_candidates_to_payload_returns_none_for_empty_candidates() {
         assert!(openai_compatible_candidates_to_payload(Vec::<String>::new()).is_none());
+    }
+
+    #[test]
+    fn openai_compatible_response_to_payload_parses_llm_candidates() {
+        let response = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::json!({
+                        "candidates": [" first ", "second"]
+                    }).to_string()
+                }
+            }]
+        });
+
+        let payload = openai_compatible_response_to_payload(&response.to_string()).unwrap();
+
+        assert_eq!(payload.commit_text, "first");
+        assert_eq!(payload.candidates.len(), 2);
+        assert_eq!(payload.candidates[0].source.to_string(), "llm");
+        assert_eq!(payload.candidates[1].text, "second");
+    }
+
+    #[test]
+    fn openai_compatible_response_to_payload_returns_none_for_invalid_shapes() {
+        assert!(openai_compatible_response_to_payload("not-json").is_none());
+        assert!(
+            openai_compatible_response_to_payload(
+                &serde_json::json!({"choices": [{"message": {"content": "not-json"}}]}).to_string()
+            )
+            .is_none()
+        );
     }
 
     #[test]
