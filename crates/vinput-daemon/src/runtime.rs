@@ -407,9 +407,21 @@ impl RuntimeState {
                 let _ = session.cancel();
                 return Err(RuntimeError::Asr(error));
             }
-            self.capture_partial_events(&mut *session)?;
-            session.finish().map_err(RuntimeError::Asr)?;
-            let events = session.poll_events().map_err(RuntimeError::Asr)?;
+            if let Err(error) = self.capture_partial_events(&mut *session) {
+                let _ = session.cancel();
+                return Err(error);
+            }
+            if let Err(error) = session.finish() {
+                let _ = session.cancel();
+                return Err(RuntimeError::Asr(error));
+            }
+            let events = match session.poll_events() {
+                Ok(events) => events,
+                Err(error) => {
+                    let _ = session.cancel();
+                    return Err(RuntimeError::Asr(error));
+                }
+            };
             let partial_text = latest_partial_text(&events).or_else(|| self.partial_text.clone());
             let raw_payload = events_to_payload(&events).map_err(RuntimeError::Asr)?;
             let scene_definition = self.scene_definition(&scene);
@@ -804,6 +816,94 @@ mod tests {
 
         fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
             Ok(Vec::new())
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum SessionFailureStage {
+        PartialPoll,
+        Finish,
+        FinalPoll,
+    }
+
+    impl SessionFailureStage {
+        fn message(self) -> &'static str {
+            match self {
+                Self::PartialPoll => "test partial poll failed",
+                Self::Finish => "test finish failed",
+                Self::FinalPoll => "test final poll failed",
+            }
+        }
+    }
+
+    struct SessionFailureBackend {
+        inner: MockAsrBackend,
+        cancelled: Arc<Mutex<bool>>,
+        stage: SessionFailureStage,
+    }
+
+    impl SessionFailureBackend {
+        fn new(cancelled: Arc<Mutex<bool>>, stage: SessionFailureStage) -> Self {
+            Self {
+                inner: MockAsrBackend::streaming("listening", "custom final"),
+                cancelled,
+                stage,
+            }
+        }
+    }
+
+    impl AsrBackend for SessionFailureBackend {
+        fn describe(&self) -> BackendDescriptor {
+            self.inner.describe()
+        }
+
+        fn create_session(
+            &self,
+            _context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            Ok(Box::new(SessionFailureSession {
+                cancelled: Arc::clone(&self.cancelled),
+                stage: self.stage,
+                poll_count: 0,
+            }))
+        }
+    }
+
+    struct SessionFailureSession {
+        cancelled: Arc<Mutex<bool>>,
+        stage: SessionFailureStage,
+        poll_count: usize,
+    }
+
+    impl RecognitionSession for SessionFailureSession {
+        fn push_audio(&mut self, _samples: &[i16]) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), AsrError> {
+            if matches!(self.stage, SessionFailureStage::Finish) {
+                return Err(AsrError::Backend(self.stage.message().to_owned()));
+            }
+            Ok(())
+        }
+
+        fn cancel(&mut self) -> Result<(), AsrError> {
+            *self.cancelled.lock().expect("cancel lock poisoned") = true;
+            Ok(())
+        }
+
+        fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
+            let poll_index = self.poll_count;
+            self.poll_count += 1;
+            if matches!(self.stage, SessionFailureStage::PartialPoll) && poll_index == 0 {
+                return Err(AsrError::Backend(self.stage.message().to_owned()));
+            }
+            if matches!(self.stage, SessionFailureStage::FinalPoll) && poll_index == 1 {
+                return Err(AsrError::Backend(self.stage.message().to_owned()));
+            }
+            Ok(vec![RecognitionEvent::PartialText {
+                text: "partial before failure".to_owned(),
+            }])
         }
     }
 
@@ -1465,6 +1565,44 @@ mod tests {
             *events.lock().expect("events lock poisoned"),
             vec!["begin", "stop"]
         );
+    }
+
+    #[test]
+    fn asr_finish_path_failures_cancel_session_and_return_to_idle() {
+        for stage in [
+            SessionFailureStage::PartialPoll,
+            SessionFailureStage::Finish,
+            SessionFailureStage::FinalPoll,
+        ] {
+            let config = VinputConfig::bundled_default().unwrap();
+            let cancelled = Arc::new(Mutex::new(false));
+            let expected_message = stage.message();
+            let backend = SessionFailureBackend::new(Arc::clone(&cancelled), stage);
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let recorder = EventRecordingRecorder::new(
+                Arc::clone(&events),
+                CapturedAudio::anonymous(PcmBuffer::at_default_rate(vec![0, 96, -96, 0])),
+            );
+            let mut runtime =
+                RuntimeState::with_audio_recorder(config, Box::new(backend), Box::new(recorder))
+                    .unwrap();
+
+            runtime.start_recording().unwrap();
+            let error = runtime.stop_recording(None).unwrap_err();
+
+            assert!(matches!(
+                error,
+                super::RuntimeError::Asr(AsrError::Backend(message))
+                    if message == expected_message
+            ));
+            assert_eq!(runtime.status(), ServiceStatus::Idle);
+            assert!(runtime.partial_text().is_none());
+            assert!(*cancelled.lock().expect("cancel lock poisoned"));
+            assert_eq!(
+                *events.lock().expect("events lock poisoned"),
+                vec!["begin", "stop"]
+            );
+        }
     }
 
     #[test]
