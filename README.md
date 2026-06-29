@@ -66,10 +66,11 @@ cargo run -q -p vinput-cli -- mock-result '你好'
 cargo run -q -p vinput-daemon -- print-config
 cargo run -q -p vinput-daemon -- asr-state
 cargo run -q -p vinput-daemon -- text-adapters
+cargo run -q -p vinput-daemon -- audio-devices
 cargo run -q -p vinput-daemon -- --once
 ```
 
-Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspect ASR diagnostics for a custom config without starting daemon runtime backends. Use `cargo run -p vinput-cli -- audio-devices` to inspect capture-device config and, when built with the optional PipeWire feature, live source enumeration.
+Use `cargo run -p vinput-cli -- asr-state --config path/to/config.json` to inspect ASR diagnostics for a custom config without starting daemon runtime backends. Use `cargo run -p vinput-cli -- audio-devices` or `cargo run -p vinput-daemon -- audio-devices` to inspect capture-device config and, when built with the optional PipeWire feature, live source enumeration.
 
 `data/default-config.json` and `data/sample-registry-index.json` are stable smoke fixtures for explicit config and registry CLI paths. See [`docs/architecture/config-contract.md`](docs/architecture/config-contract.md) and [`docs/architecture/registry-contract.md`](docs/architecture/registry-contract.md) for their fixture contracts.
 

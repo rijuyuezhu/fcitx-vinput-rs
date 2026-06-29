@@ -36,6 +36,7 @@ smoke:
     cargo run -q -p vinput-daemon -- print-config
     cargo run -q -p vinput-daemon -- asr-state
     cargo run -q -p vinput-daemon -- text-adapters
+    cargo run -q -p vinput-daemon -- audio-devices
     cargo run -q -p vinput-daemon -- --once
 
 # Run a deterministic file-input E2E demo through command ASR and text adapter.
