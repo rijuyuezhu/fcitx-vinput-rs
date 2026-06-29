@@ -264,7 +264,7 @@ Existing Rust smoke commands should stay stable as early CI guards.  Legacy CLI 
 
 ## Must-fill functionality before Rust can replace legacy
 
-1. Exact D-Bus ABI contract tests and implementation parity.
+1. D-Bus behavior parity fixtures beyond current signature/introspection and integration coverage, especially frontend-visible edge cases.
 2. Recognition JSON golden fixtures shared by CLI/daemon/protocol tests.
 3. Runtime state-machine parity for start/stop/busy/error/deferred reload/postprocessing.
 4. Config/default-config compatibility fixtures and normalize-vs-validate policy.
