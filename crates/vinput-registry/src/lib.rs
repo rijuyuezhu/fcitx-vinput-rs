@@ -5,10 +5,14 @@
 //! code can fetch, validate, and install assets behind tested boundaries.
 
 mod error;
+mod fetch;
 mod plan;
 mod schema;
 
 pub use error::RegistryError;
+pub use fetch::{
+    RegistryFetchError, RegistryFetchFailure, RegistryTextSource, fetch_registry_index_from_mirrors,
+};
 pub use plan::{
     AssetPlanSummary, ChecksumPolicy, InstallPlan, InstallPlanSummary, PlannedAsset,
     PlannedInstallAsset, RegistryEntryKind,

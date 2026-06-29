@@ -1,5 +1,38 @@
-use super::{ChecksumPolicy, InstallPlan, RegistryError, RegistryIndex};
+use super::{
+    ChecksumPolicy, InstallPlan, RegistryError, RegistryFetchError, RegistryIndex,
+    RegistryTextSource, fetch_registry_index_from_mirrors,
+};
 use vinput_config::RegistryConfig;
+
+#[derive(Debug, Default)]
+struct StaticRegistryTextSource {
+    responses: std::collections::HashMap<String, Result<String, String>>,
+    attempts: std::sync::Mutex<Vec<String>>,
+}
+
+impl StaticRegistryTextSource {
+    fn with_response(mut self, url: &str, response: Result<&str, &str>) -> Self {
+        self.responses.insert(
+            url.to_owned(),
+            response.map(str::to_owned).map_err(str::to_owned),
+        );
+        self
+    }
+
+    fn attempts(&self) -> Vec<String> {
+        self.attempts.lock().unwrap().clone()
+    }
+}
+
+impl RegistryTextSource for StaticRegistryTextSource {
+    fn fetch_registry_text(&self, url: &str) -> Result<String, String> {
+        self.attempts.lock().unwrap().push(url.to_owned());
+        self.responses
+            .get(url)
+            .cloned()
+            .unwrap_or_else(|| Err("not configured".to_owned()))
+    }
+}
 
 const SAMPLE: &str = r#"
     {
@@ -475,5 +508,83 @@ fn rejects_invalid_sha256() {
     assert_eq!(
         RegistryIndex::from_json_str(json).unwrap_err(),
         RegistryError::InvalidSha256("ABC".to_owned())
+    );
+}
+
+#[test]
+fn fetch_registry_index_uses_first_successful_mirror() {
+    let source = StaticRegistryTextSource::default()
+        .with_response("https://first.invalid/index.json", Err("offline"))
+        .with_response("https://second.invalid/index.json", Ok(SAMPLE));
+    let mirrors = vec![
+        "https://first.invalid/index.json".to_owned(),
+        "https://second.invalid/index.json".to_owned(),
+        "https://third.invalid/index.json".to_owned(),
+    ];
+
+    let index = fetch_registry_index_from_mirrors(&source, &mirrors).unwrap();
+
+    assert_eq!(index.summary().model_count, 1);
+    assert_eq!(
+        source.attempts(),
+        [
+            "https://first.invalid/index.json".to_owned(),
+            "https://second.invalid/index.json".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn fetch_registry_index_reports_all_mirror_failures() {
+    let source = StaticRegistryTextSource::default()
+        .with_response("https://first.invalid/index.json", Err("offline"))
+        .with_response("https://second.invalid/index.json", Err("timeout"));
+    let mirrors = vec![
+        "https://first.invalid/index.json".to_owned(),
+        "https://second.invalid/index.json".to_owned(),
+    ];
+
+    let error = fetch_registry_index_from_mirrors(&source, &mirrors).unwrap_err();
+
+    let RegistryFetchError::AllMirrorsFailed(failures) = error else {
+        panic!("expected all mirrors failed error");
+    };
+    assert_eq!(failures.len(), 2);
+    assert_eq!(failures[0].url, "https://first.invalid/index.json");
+    assert_eq!(failures[0].message, "offline");
+    assert_eq!(failures[1].url, "https://second.invalid/index.json");
+    assert_eq!(failures[1].message, "timeout");
+}
+
+#[test]
+fn fetch_registry_index_rejects_empty_mirror_list() {
+    let source = StaticRegistryTextSource::default();
+
+    assert_eq!(
+        fetch_registry_index_from_mirrors(&source, &[]),
+        Err(RegistryFetchError::NoMirrors)
+    );
+}
+
+#[test]
+fn fetch_registry_index_stops_on_invalid_successful_mirror() {
+    let source = StaticRegistryTextSource::default()
+        .with_response("https://first.invalid/index.json", Ok(r#"{"version":0}"#))
+        .with_response("https://second.invalid/index.json", Ok(SAMPLE));
+    let mirrors = vec![
+        "https://first.invalid/index.json".to_owned(),
+        "https://second.invalid/index.json".to_owned(),
+    ];
+
+    let error = fetch_registry_index_from_mirrors(&source, &mirrors).unwrap_err();
+
+    assert!(matches!(
+        error,
+        RegistryFetchError::InvalidIndex { url, error: RegistryError::InvalidVersion }
+            if url == "https://first.invalid/index.json"
+    ));
+    assert_eq!(
+        source.attempts(),
+        ["https://first.invalid/index.json".to_owned()]
     );
 }

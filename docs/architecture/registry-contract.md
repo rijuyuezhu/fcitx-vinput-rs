@@ -9,6 +9,7 @@ The registry crate is split before any side-effectful installer work lands:
 - `schema.rs`: registry index, model, adapter, asset, summary, validation, and URL resolution helpers;
 - `plan.rs`: planned assets, dry-run install plans, checksum policy planning, and target path calculation;
 - `error.rs`: `RegistryError`;
+- `fetch.rs`: side-effect-free mirror fallback boundary over an injected `RegistryTextSource`;
 - `tests.rs`: behavior-preserving schema, safety, and planning coverage.
 
 Future fetch/cache/checksum/archive extraction/materialization code should use separate modules and must not be hidden inside schema or dry-run planning code.
@@ -33,6 +34,8 @@ cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --su
 ```
 
 These commands parse local JSON only. They do not download assets or touch install directories.
+
+The library also exposes `fetch_registry_index_from_mirrors` as a small testable boundary for future network/cache work. It iterates mirror URLs through an injected `RegistryTextSource`, falls through on transport failures, stops on the first fetched-but-invalid registry body, and performs the same `RegistryIndex` validation as file-backed CLI diagnostics. No concrete HTTP client or cache is wired yet.
 
 ## Fixture
 
