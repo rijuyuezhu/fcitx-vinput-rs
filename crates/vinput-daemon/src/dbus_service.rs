@@ -306,8 +306,61 @@ impl VinputDbusService {
 mod tests {
     use super::VinputDbusService;
     use crate::RuntimeState;
+    use vinput_asr::{
+        AsrBackend, AsrError, BackendDescriptor, MockAsrBackend, RecognitionContext,
+        RecognitionEvent, RecognitionSession,
+    };
     use vinput_config::{AsrProviderConfig, AsrProviderKind, LlmAdapterConfig, VinputConfig};
     use vinput_protocol::{RecognitionPayload, TextAdapterState};
+
+    struct EarlyFinalBackend;
+
+    impl AsrBackend for EarlyFinalBackend {
+        fn describe(&self) -> BackendDescriptor {
+            MockAsrBackend::streaming("early partial", "late final").describe()
+        }
+
+        fn create_session(
+            &self,
+            _context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            Ok(Box::new(EarlyFinalSession { poll_count: 0 }))
+        }
+    }
+
+    struct EarlyFinalSession {
+        poll_count: usize,
+    }
+
+    impl RecognitionSession for EarlyFinalSession {
+        fn push_audio(&mut self, _samples: &[i16]) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn cancel(&mut self) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
+            let poll_index = self.poll_count;
+            self.poll_count += 1;
+            if poll_index == 0 {
+                return Ok(vec![
+                    RecognitionEvent::PartialText {
+                        text: "early partial".to_owned(),
+                    },
+                    RecognitionEvent::FinalText {
+                        text: "early final".to_owned(),
+                    },
+                ]);
+            }
+            Ok(vec![RecognitionEvent::Completed])
+        }
+    }
 
     fn service() -> VinputDbusService {
         let config = VinputConfig::bundled_default().unwrap();
@@ -338,6 +391,25 @@ mod tests {
                 .unwrap();
         assert_eq!(payload.commit_text, "mock recognition result");
         assert_eq!(service.get_status().await, "idle");
+    }
+
+    #[tokio::test]
+    async fn dbus_facade_preserves_early_final_events() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let runtime = RuntimeState::with_asr_backend(config, Box::new(EarlyFinalBackend)).unwrap();
+        let service = VinputDbusService::new(runtime);
+
+        assert_eq!(
+            service.start_recording_state().await.unwrap().0,
+            "recording"
+        );
+        let (payload_json, status, partial_text) =
+            service.stop_recording_payload("").await.unwrap();
+        let payload = RecognitionPayload::from_json_str(&payload_json).unwrap();
+
+        assert_eq!(payload.commit_text, "early final");
+        assert_eq!(partial_text.as_deref(), Some("early partial"));
+        assert_eq!(status, "idle");
     }
 
     #[tokio::test]
