@@ -55,13 +55,16 @@ That test starts the Rust service, builds a `zbus::Proxy`, calls legacy methods 
 
 `vinput-cli protocol` serializes method and signal names from `vinput-protocol`, so smoke commands and service tests read the same member list.
 
-## Known compatibility gaps
+## Compatibility status
 
-These are next-phase refactor/fix items, not optional cleanups:
+The Rust service pins these legacy-visible behaviors with unit and D-Bus integration tests:
 
-- D-Bus errors should preserve the legacy operation failure name `org.fcitx.Vinput.Error.OperationFailed` instead of exposing only generic failure errors.
-- `ReloadAsrBackend` should match legacy busy behavior: return success while recording/inferring, mark reload pending, and apply it when the runtime returns to idle.
-- Status ordering must stay covered by tests, especially when a future real post-processing phase is wired.
+- operation failures use the legacy error name `org.fcitx.Vinput.Error.OperationFailed`;
+- `ReloadAsrBackend` returns success while recording/inferring, marks reload pending, and applies it when the runtime returns to idle;
+- failed deferred reloads keep the previously working backend and surface the deferred error in diagnostics;
+- status strings and core legacy method/signal names remain centralized in `vinput-protocol`.
+
+A real legacy `postprocessing` runtime phase is still not wired; current text finishing runs synchronously inside stop handling. Status ordering must stay covered by tests when that phase becomes real.
 
 ## Compatibility rule
 

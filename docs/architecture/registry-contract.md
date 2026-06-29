@@ -2,6 +2,17 @@
 
 `vinput-registry` owns local registry metadata parsing and planning. It stays separate from download and extraction side effects so CLI validation can run deterministically in tests and smoke checks.
 
+## Module layout
+
+The registry crate is split before any side-effectful installer work lands:
+
+- `schema.rs`: registry index, model, adapter, asset, summary, validation, and URL resolution helpers;
+- `plan.rs`: planned assets, dry-run install plans, checksum policy planning, and target path calculation;
+- `error.rs`: `RegistryError`;
+- `tests.rs`: behavior-preserving schema, safety, and planning coverage.
+
+Future fetch/cache/checksum/archive extraction/materialization code should use separate modules and must not be hidden inside schema or dry-run planning code.
+
 ## Registry shape
 
 A registry index is a JSON object with:

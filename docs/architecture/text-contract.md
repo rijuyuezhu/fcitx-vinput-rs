@@ -18,6 +18,20 @@ StopRecording passes the final ASR payload into `TextProcessor::finish`. Raw or 
 - `OpenAiCompatibleTextProcessor`: selects an OpenAI-compatible provider for a scene and wires the optional recent-input context cache path.
 - `ProcessCommandTextRunner`: process-backed runner using stdin/stdout JSON.
 
+## Module layout
+
+The text crate is split by responsibility so future HTTP transport work can land without growing a monolith:
+
+- `error.rs`: `TextError`;
+- `core.rs`: `TextRequest`, processor/adapter traits, mock and default finishers;
+- `prompt.rs`: prompt context, file URI loading, interpolation, and XML helpers;
+- `context_cache.rs`: recent-input JSONL path, append, truncate, and raw context prefix helpers;
+- `openai.rs`: OpenAI-compatible request building, provider selection, candidate parsing, and injected transport seams;
+- `command.rs`: command text adapter request/response protocol and process runner;
+- `adapter_runtime.rs`: supervised adapter process pid-file lifecycle;
+- `payload.rs`: command-mode payload ordering;
+- `tests.rs`: behavior-preserving unit coverage.
+
 ## Command adapter process contract
 
 A command text adapter helper is configured by `llm.adapters[]` and is executed with the configured command, args, environment, and optional working directory. The runner writes one `CommandTextRequest` JSON object to stdin, appends a newline, closes stdin, waits for the process, and decodes one `CommandTextResponse` JSON object from stdout.

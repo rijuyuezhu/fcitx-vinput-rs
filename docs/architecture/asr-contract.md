@@ -4,24 +4,17 @@
 
 ## Current crate responsibilities
 
-`crates/vinput-asr` currently contains these responsibilities, though the implementation still needs to be split into focused modules during the refactor phase:
+`crates/vinput-asr` is split by responsibility while keeping the public trait boundary stable:
 
-- `AudioDeliveryMode`: buffered vs chunked delivery.
-- `BackendCapabilities`: partial-result support and delivery mode.
-- `BackendDescriptor`: provider/model/label/capability identity.
-- `RecognitionContext`: language, scene id, command-mode flag, and selected text.
-- `RecognitionEvent`: partial text, final text, backend error, and completed markers.
-- `RecognitionSession`: mutable session trait for `push_pcm`/raw `push_audio`/finish/cancel/poll.
-- `AsrBackend`: backend factory trait.
-- `MockAsrBackend`: deterministic backend used by default runtime and tests, including buffered, streaming, and early-final event variants.
-- `CommandAsrSpec`: parsed command-provider executable metadata from config.
-- `CommandAsrRequest`: buffered JSON request passed to command helpers.
-- `CommandAsrResponse`: JSON response decoded from command helpers.
-- `CommandAsrBackend`: command backend that delegates to a runner on finish and exposes buffered or streaming capabilities from the factory.
-- `ProcessCommandAsrRunner`: process-backed runner using stdin/stdout JSON.
-- `events_to_payload`: conversion from final ASR events to the legacy recognition payload JSON model.
+- `traits.rs`: `AudioDeliveryMode`, `BackendCapabilities`, `BackendDescriptor`, `RecognitionContext`, `RecognitionEvent`, `RecognitionSession`, and `AsrBackend`;
+- `error.rs`: `AsrError`;
+- `mock.rs`: deterministic buffered/streaming/early-final `MockAsrBackend`;
+- `command.rs`: command provider specs, JSON request/response types, legacy batch and streaming runners, process runner helpers, and `CommandAsrBackend`;
+- `factory.rs`: config-selected backend factory and config-derived `AsrBackendState`;
+- `payload.rs`: conversion from recognition events to the legacy recognition payload JSON model;
+- `tests.rs`: behavior-preserving coverage for mock, command, factory, and payload contracts.
 
-Command providers now use legacy batch or `.streaming` runners through the factory, while the JSON helper seam remains available for explicit process-runner tests and small helper integrations. Local sherpa-onnx remains future work.
+Command providers use legacy batch or `.streaming` runners through the factory, while the JSON helper seam remains available for explicit process-runner tests and small helper integrations. Local sherpa-onnx remains future work.
 
 ## Daemon integration
 
@@ -78,24 +71,8 @@ Both `vinput-cli asr-state` and `vinput-daemon asr-state` serialize `AsrBackendS
 
 ## Known compatibility gaps
 
-These gaps are tracked by the ignored refactor plan in `docs/plan/review-driven-refactor-plan.md`:
+These gaps remain after the behavior-preserving ASR split:
 
-- `ReloadAsrBackend` should match the legacy daemon by deferring reload requests while busy instead of rejecting them outright.
-- Local sherpa-onnx backend, model path management, hotwords, VAD trimming, warmup, and reload state are not implemented yet.
-- Runtime streaming currently has test seams, but live PipeWire chunk delivery to streaming ASR is not implemented.
-
-## Next ASR refactor steps
-
-Before adding sherpa-onnx, split the monolithic ASR crate into focused modules:
-
-- `error.rs`
-- `traits.rs`
-- `mock.rs`
-- `factory.rs`
-- `payload.rs`
-- `command/mod.rs`
-- `command/batch.rs`
-- `command/streaming.rs`
-- `command/process.rs`
-
-The split should be behavior-preserving and keep existing command ASR tests intact.
+- Local sherpa-onnx backend, model path management, hotwords, VAD trimming, warmup, and concrete reload state are not implemented yet.
+- Runtime streaming has command-helper test seams, but live PipeWire chunk delivery to streaming ASR is not implemented.
+- Command ASR is runtime-wired for configured command providers; local and remote ASR provider kinds other than command/mock remain contract-pinned but unavailable.
