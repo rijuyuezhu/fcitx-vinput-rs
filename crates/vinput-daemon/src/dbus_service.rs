@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use vinput_protocol::{AsrBackendState, ServiceStatus, dbus};
-use zbus::{Connection, fdo, object_server::SignalEmitter};
+use zbus::{Connection, DBusError, object_server::SignalEmitter};
 
 use crate::{RuntimeError, RuntimeState};
 
@@ -33,6 +33,33 @@ fn asr_backend_state_tuple(state: AsrBackendState) -> AsrBackendStateTuple {
     )
 }
 
+type DbusResult<T> = Result<T, VinputDbusError>;
+
+const MAX_ERROR_DESCRIPTION_LEN: usize = 512;
+
+#[derive(Debug, DBusError)]
+#[zbus(prefix = "org.fcitx.Vinput.Error")]
+enum VinputDbusError {
+    OperationFailed(String),
+}
+
+fn sanitize_dbus_error_message(message: &str) -> String {
+    let sanitized = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = sanitized.to_ascii_lowercase();
+    if lower.contains("authorization:") || lower.contains("bearer ") || lower.contains("api_key") {
+        return "operation failed".to_owned();
+    }
+    if sanitized.chars().count() <= MAX_ERROR_DESCRIPTION_LEN {
+        return sanitized;
+    }
+    let mut truncated = sanitized
+        .chars()
+        .take(MAX_ERROR_DESCRIPTION_LEN.saturating_sub(1))
+        .collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
 /// Thread-safe D-Bus facade over the daemon runtime.
 #[derive(Clone)]
 pub struct VinputDbusService {
@@ -59,19 +86,23 @@ impl VinputDbusService {
         Ok(connection)
     }
 
-    fn map_runtime_error(error: &RuntimeError) -> fdo::Error {
-        fdo::Error::Failed(error.to_string())
+    fn operation_failed(message: impl AsRef<str>) -> VinputDbusError {
+        VinputDbusError::OperationFailed(sanitize_dbus_error_message(message.as_ref()))
     }
 
-    fn map_json_error(error: impl std::error::Error) -> fdo::Error {
-        fdo::Error::Failed(format!("failed to serialize response: {error}"))
+    fn map_runtime_error(error: &RuntimeError) -> VinputDbusError {
+        Self::operation_failed(error.to_string())
     }
 
-    fn map_signal_error(error: &zbus::Error) -> fdo::Error {
-        fdo::Error::Failed(format!("failed to emit signal: {error}"))
+    fn map_json_error(error: impl std::error::Error) -> VinputDbusError {
+        Self::operation_failed(format!("failed to serialize response: {error}"))
     }
 
-    async fn start_recording_state(&self) -> fdo::Result<(String, Option<String>)> {
+    fn map_signal_error(error: &zbus::Error) -> VinputDbusError {
+        Self::operation_failed(format!("failed to emit signal: {error}"))
+    }
+
+    async fn start_recording_state(&self) -> DbusResult<(String, Option<String>)> {
         let mut runtime = self.runtime.lock().await;
         runtime
             .start_recording()
@@ -85,7 +116,7 @@ impl VinputDbusService {
     async fn start_command_recording_state(
         &self,
         selected_text: &str,
-    ) -> fdo::Result<(String, Option<String>)> {
+    ) -> DbusResult<(String, Option<String>)> {
         let mut runtime = self.runtime.lock().await;
         runtime
             .start_command_recording(selected_text)
@@ -96,7 +127,7 @@ impl VinputDbusService {
         ))
     }
 
-    async fn ensure_recording_for_stop(&self) -> fdo::Result<()> {
+    async fn ensure_recording_for_stop(&self) -> DbusResult<()> {
         let runtime = self.runtime.lock().await;
         if runtime.status() == ServiceStatus::Recording {
             Ok(())
@@ -110,7 +141,7 @@ impl VinputDbusService {
     async fn stop_recording_payload(
         &self,
         scene_id: &str,
-    ) -> fdo::Result<(String, String, Option<String>)> {
+    ) -> DbusResult<(String, String, Option<String>)> {
         let scene = (!scene_id.is_empty()).then_some(scene_id);
         let mut runtime = self.runtime.lock().await;
         let report = runtime
@@ -136,7 +167,7 @@ impl VinputDbusService {
     async fn start_recording(
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> fdo::Result<()> {
+    ) -> Result<(), VinputDbusError> {
         let (status, partial_text) = self.start_recording_state().await?;
         Self::status_changed(&emitter, &status)
             .await
@@ -155,7 +186,7 @@ impl VinputDbusService {
         &self,
         selected_text: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> fdo::Result<()> {
+    ) -> Result<(), VinputDbusError> {
         let (status, partial_text) = self.start_command_recording_state(selected_text).await?;
         Self::status_changed(&emitter, &status)
             .await
@@ -174,7 +205,7 @@ impl VinputDbusService {
         &self,
         scene_id: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> fdo::Result<String> {
+    ) -> Result<String, VinputDbusError> {
         self.ensure_recording_for_stop().await?;
         Self::status_changed(&emitter, "inferring")
             .await
@@ -233,7 +264,7 @@ impl VinputDbusService {
 
     /// Return text adapter diagnostic state JSON.
     #[zbus(name = "GetTextAdapterState")]
-    async fn get_text_adapter_state(&self) -> fdo::Result<String> {
+    async fn get_text_adapter_state(&self) -> Result<String, VinputDbusError> {
         let mut runtime = self.runtime.lock().await;
         runtime.refresh_text_adapters();
         serde_json::to_string(&runtime.configured_text_adapter_state_for_runtime())
@@ -242,7 +273,7 @@ impl VinputDbusService {
 
     /// Reload ASR backend using the legacy void method signature.
     #[zbus(name = "ReloadAsrBackend")]
-    async fn reload_asr_backend(&self) -> fdo::Result<()> {
+    async fn reload_asr_backend(&self) -> Result<(), VinputDbusError> {
         let mut runtime = self.runtime.lock().await;
         runtime
             .reload_asr_backend()
@@ -252,7 +283,7 @@ impl VinputDbusService {
 
     /// Start a configured adapter using the runtime supervisor.
     #[zbus(name = "StartAdapter")]
-    async fn start_adapter(&self, adapter_id: &str) -> fdo::Result<()> {
+    async fn start_adapter(&self, adapter_id: &str) -> Result<(), VinputDbusError> {
         let mut runtime = self.runtime.lock().await;
         runtime
             .start_text_adapter(adapter_id)
@@ -262,7 +293,7 @@ impl VinputDbusService {
 
     /// Stop a configured adapter using the runtime supervisor.
     #[zbus(name = "StopAdapter")]
-    async fn stop_adapter(&self, adapter_id: &str) -> fdo::Result<()> {
+    async fn stop_adapter(&self, adapter_id: &str) -> Result<(), VinputDbusError> {
         let mut runtime = self.runtime.lock().await;
         runtime
             .stop_text_adapter(adapter_id)

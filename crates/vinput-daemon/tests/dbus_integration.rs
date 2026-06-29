@@ -227,6 +227,19 @@ fn assert_signal_signature(interface_xml: &str, name: &str, signature: &str) -> 
     Ok(())
 }
 
+fn assert_legacy_operation_failed(error: &zbus::Error, expected_message: &str) {
+    match error {
+        zbus::Error::MethodError(name, Some(description), _) => {
+            assert_eq!(name.as_str(), dbus::error::OPERATION_FAILED);
+            assert!(
+                description.contains(expected_message),
+                "unexpected operation failure description: {description}"
+            );
+        }
+        other => panic!("expected legacy operation failure, got: {other}"),
+    }
+}
+
 async fn expect_no_string_signal(stream: &mut zbus::proxy::SignalStream<'_>) -> anyhow::Result<()> {
     match timeout(Duration::from_millis(150), stream.next()).await {
         Err(_) => Ok(()),
@@ -302,12 +315,7 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
 
     let idle_stop: zbus::Result<String> = proxy.call(dbus::method::STOP_RECORDING, &"").await;
     let idle_stop_error = idle_stop.expect_err("idle stop should fail");
-    assert!(
-        idle_stop_error
-            .to_string()
-            .contains("runtime is not recording: idle"),
-        "unexpected idle stop error: {idle_stop_error}"
-    );
+    assert_legacy_operation_failed(&idle_stop_error, "runtime is not recording: idle");
     expect_no_string_signal(&mut status_signals).await?;
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
@@ -323,35 +331,20 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
 
     let duplicate_start: zbus::Result<()> = proxy.call(dbus::method::START_RECORDING, &()).await;
     let duplicate_start_error = duplicate_start.expect_err("duplicate start should fail");
-    assert!(
-        duplicate_start_error
-            .to_string()
-            .contains("runtime is busy"),
-        "unexpected duplicate start error: {duplicate_start_error}"
-    );
+    assert_legacy_operation_failed(&duplicate_start_error, "runtime is busy");
 
     let command_while_recording: zbus::Result<()> = proxy
         .call(dbus::method::START_COMMAND_RECORDING, &"ignored selection")
         .await;
     let command_while_recording_error =
         command_while_recording.expect_err("command start while recording should fail");
-    assert!(
-        command_while_recording_error
-            .to_string()
-            .contains("runtime is busy: recording"),
-        "unexpected command start while recording error: {command_while_recording_error}"
-    );
+    assert_legacy_operation_failed(&command_while_recording_error, "runtime is busy: recording");
 
     let reload_while_recording: zbus::Result<()> =
         proxy.call(dbus::method::RELOAD_ASR_BACKEND, &()).await;
     let reload_while_recording_error =
         reload_while_recording.expect_err("reload while recording should fail");
-    assert!(
-        reload_while_recording_error
-            .to_string()
-            .contains("runtime is busy: recording"),
-        "unexpected reload while recording error: {reload_while_recording_error}"
-    );
+    assert_legacy_operation_failed(&reload_while_recording_error, "runtime is busy: recording");
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "recording");
     expect_no_string_signal(&mut status_signals).await?;
@@ -428,35 +421,25 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         .call(dbus::method::START_ADAPTER, &"mock-adapter")
         .await;
     let adapter_start_error = adapter_start.expect_err("unconfigured adapter start should fail");
-    assert!(
-        adapter_start_error
-            .to_string()
-            .contains("adapter `mock-adapter` is not configured")
+    assert_legacy_operation_failed(
+        &adapter_start_error,
+        "adapter `mock-adapter` is not configured",
     );
     let adapter_stop: zbus::Result<()> = proxy
         .call(dbus::method::STOP_ADAPTER, &"mock-adapter")
         .await;
     let adapter_stop_error = adapter_stop.expect_err("unconfigured adapter stop should fail");
-    assert!(
-        adapter_stop_error
-            .to_string()
-            .contains("adapter `mock-adapter` is not configured")
+    assert_legacy_operation_failed(
+        &adapter_stop_error,
+        "adapter `mock-adapter` is not configured",
     );
     let empty_adapter_start: zbus::Result<()> = proxy.call(dbus::method::START_ADAPTER, &"").await;
     let empty_adapter_start_error =
         empty_adapter_start.expect_err("empty adapter start should fail");
-    assert!(
-        empty_adapter_start_error
-            .to_string()
-            .contains("adapter `` is not configured")
-    );
+    assert_legacy_operation_failed(&empty_adapter_start_error, "adapter `` is not configured");
     let empty_adapter_stop: zbus::Result<()> = proxy.call(dbus::method::STOP_ADAPTER, &"").await;
     let empty_adapter_stop_error = empty_adapter_stop.expect_err("empty adapter stop should fail");
-    assert!(
-        empty_adapter_stop_error
-            .to_string()
-            .contains("adapter `` is not configured")
-    );
+    assert_legacy_operation_failed(&empty_adapter_stop_error, "adapter `` is not configured");
 
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
@@ -646,10 +629,7 @@ async fn configured_adapter_supervision_roundtrips_through_session_bus() -> anyh
         .call(dbus::method::START_ADAPTER, &"cmd-adapter")
         .await;
     let duplicate_error = duplicate_start.expect_err("duplicate adapter start should fail");
-    assert!(
-        duplicate_error.to_string().contains("already running"),
-        "unexpected duplicate adapter start error: {duplicate_error}"
-    );
+    assert_legacy_operation_failed(&duplicate_error, "already running");
 
     proxy
         .call::<_, _, ()>(dbus::method::STOP_ADAPTER, &"cmd-adapter")

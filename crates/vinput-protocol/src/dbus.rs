@@ -42,6 +42,12 @@ pub mod method {
     pub const NOTIFY: &str = "Notify";
 }
 
+/// D-Bus error names that are part of the legacy ABI.
+pub mod error {
+    /// Legacy operation failure error returned by daemon methods.
+    pub const OPERATION_FAILED: &str = "org.fcitx.Vinput.Error.OperationFailed";
+}
+
 /// D-Bus signatures that are part of the legacy ABI.
 pub mod signature {
     /// Legacy error-info tuple: `code`, `subject`, `detail`, `raw_message`.
@@ -95,6 +101,10 @@ mod tests {
         assert_eq!(method::START_RECORDING, "StartRecording");
         assert_eq!(method::GET_TEXT_ADAPTER_STATE, "GetTextAdapterState");
         assert_eq!(method::NOTIFY, "Notify");
+        assert_eq!(
+            error::OPERATION_FAILED,
+            "org.fcitx.Vinput.Error.OperationFailed"
+        );
         assert_eq!(signature::ERROR_INFO, "ssss");
         assert_eq!(signal::RECOGNITION_RESULT, "RecognitionResult");
     }
