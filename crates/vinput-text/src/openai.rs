@@ -330,30 +330,18 @@ pub trait OpenAiCompatibleChatTransport: Send + Sync {
 /// the optional per-scene timeout to the request, and returns the raw response
 /// body for the existing candidate parser. HTTP errors are mapped to
 /// `TextError::AdapterFailed` with the status code and response body included.
-#[derive(Debug, Clone)]
-pub struct ReqwestOpenAiCompatibleChatTransport {
-    client: reqwest::blocking::Client,
-}
+///
+/// The reqwest blocking client is created and dropped inside a dedicated thread
+/// so daemon code can call this synchronous seam from a Tokio runtime without
+/// dropping reqwest's internal blocking runtime in an async context.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReqwestOpenAiCompatibleChatTransport;
 
 impl ReqwestOpenAiCompatibleChatTransport {
     /// Creates a transport with reqwest's default blocking client settings.
     #[must_use]
-    pub fn new() -> Self {
-        Self {
-            client: reqwest::blocking::Client::new(),
-        }
-    }
-
-    /// Creates a transport with a caller-provided reqwest blocking client.
-    #[must_use]
-    pub const fn with_client(client: reqwest::blocking::Client) -> Self {
-        Self { client }
-    }
-}
-
-impl Default for ReqwestOpenAiCompatibleChatTransport {
-    fn default() -> Self {
-        Self::new()
+    pub const fn new() -> Self {
+        Self
     }
 }
 
@@ -363,30 +351,43 @@ impl OpenAiCompatibleChatTransport for ReqwestOpenAiCompatibleChatTransport {
         request: &OpenAiCompatibleChatRequest,
         timeout_ms: Option<u64>,
     ) -> Result<String, TextError> {
-        let mut builder = self.client.post(&request.url).json(&request.body);
-        for (name, value) in &request.headers {
-            builder = builder.header(name, value);
-        }
-        if let Some(timeout_ms) = timeout_ms {
-            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
-        }
-
-        let response = builder.send().map_err(|error| {
-            TextError::AdapterFailed(format!("OpenAI-compatible HTTP request failed: {error}"))
-        })?;
-        let status = response.status();
-        let body = response.text().map_err(|error| {
-            TextError::AdapterFailed(format!(
-                "OpenAI-compatible HTTP response body read failed: {error}"
-            ))
-        })?;
-        if !status.is_success() {
-            return Err(TextError::AdapterFailed(format!(
-                "OpenAI-compatible provider returned HTTP {status}: {body}"
-            )));
-        }
-        Ok(body)
+        let request = request.clone();
+        std::thread::spawn(move || send_openai_compatible_request_blocking(&request, timeout_ms))
+            .join()
+            .map_err(|_| {
+                TextError::AdapterFailed("OpenAI-compatible HTTP worker thread panicked".to_owned())
+            })?
     }
+}
+
+fn send_openai_compatible_request_blocking(
+    request: &OpenAiCompatibleChatRequest,
+    timeout_ms: Option<u64>,
+) -> Result<String, TextError> {
+    let client = reqwest::blocking::Client::new();
+    let mut builder = client.post(&request.url).json(&request.body);
+    for (name, value) in &request.headers {
+        builder = builder.header(name, value);
+    }
+    if let Some(timeout_ms) = timeout_ms {
+        builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+    }
+
+    let response = builder.send().map_err(|error| {
+        TextError::AdapterFailed(format!("OpenAI-compatible HTTP request failed: {error}"))
+    })?;
+    let status = response.status();
+    let body = response.text().map_err(|error| {
+        TextError::AdapterFailed(format!(
+            "OpenAI-compatible HTTP response body read failed: {error}"
+        ))
+    })?;
+    if !status.is_success() {
+        return Err(TextError::AdapterFailed(format!(
+            "OpenAI-compatible provider returned HTTP {status}: {body}"
+        )));
+    }
+    Ok(body)
 }
 
 /// Text adapter backed by an OpenAI-compatible chat transport.

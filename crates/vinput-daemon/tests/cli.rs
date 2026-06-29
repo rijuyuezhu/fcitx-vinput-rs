@@ -175,6 +175,92 @@ fn assert_audio_devices_backend_shape(value: &serde_json::Value) {
     }
 }
 
+#[derive(Debug)]
+struct CapturedHttpRequest {
+    head: String,
+    body: String,
+}
+
+fn serve_single_http_response(
+    response_body: String,
+) -> (String, std::thread::JoinHandle<CapturedHttpRequest>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = Vec::new();
+        let mut chunk = [0_u8; 1024];
+        let header_end = loop {
+            let read = std::io::Read::read(&mut stream, &mut chunk).unwrap();
+            assert_ne!(read, 0, "HTTP client closed before headers were complete");
+            buffer.extend_from_slice(&chunk[..read]);
+            if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+                break position + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&buffer[..header_end]).into_owned();
+        let headers = head
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+            .collect::<std::collections::HashMap<_, _>>();
+        let body = if headers
+            .get("transfer-encoding")
+            .is_some_and(|value| value.eq_ignore_ascii_case("chunked"))
+        {
+            while !buffer[header_end..]
+                .windows(5)
+                .any(|window| window == b"0\r\n\r\n")
+            {
+                let read = std::io::Read::read(&mut stream, &mut chunk).unwrap();
+                assert_ne!(
+                    read, 0,
+                    "HTTP client closed before chunked body was complete"
+                );
+                buffer.extend_from_slice(&chunk[..read]);
+            }
+            decode_chunked_http_body(&buffer[header_end..])
+        } else {
+            let content_length = headers
+                .get("content-length")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(0);
+            while buffer.len() < header_end + content_length {
+                let read = std::io::Read::read(&mut stream, &mut chunk).unwrap();
+                assert_ne!(read, 0, "HTTP client closed before body was complete");
+                buffer.extend_from_slice(&chunk[..read]);
+            }
+            String::from_utf8_lossy(&buffer[header_end..header_end + content_length]).into_owned()
+        };
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+            response_body.len()
+        );
+        std::io::Write::write_all(&mut stream, response.as_bytes()).unwrap();
+        CapturedHttpRequest { head, body }
+    });
+    (base_url, handle)
+}
+
+fn decode_chunked_http_body(input: &[u8]) -> String {
+    let mut position = 0;
+    let mut decoded = Vec::new();
+    while let Some(line_end) = input[position..]
+        .windows(2)
+        .position(|window| window == b"\r\n")
+    {
+        let line = String::from_utf8_lossy(&input[position..position + line_end]);
+        let chunk_len = usize::from_str_radix(line.trim(), 16).unwrap();
+        position += line_end + 2;
+        if chunk_len == 0 {
+            break;
+        }
+        decoded.extend_from_slice(&input[position..position + chunk_len]);
+        position += chunk_len + 2;
+    }
+    String::from_utf8(decoded).unwrap()
+}
+
 #[test]
 fn print_config_accepts_committed_default_fixture() {
     let value = assert_json_success(
@@ -546,6 +632,70 @@ fn once_can_use_configured_backends() {
         "recognition payload",
     );
     assert_eq!(value["commit_text"], "cli configured final");
+}
+
+#[test]
+fn once_can_use_configured_openai_provider_over_http() {
+    let response_body = serde_json::json!({
+        "choices": [{
+            "message": {
+                "content": serde_json::json!({"candidates": ["cli http final"]}).to_string()
+            }
+        }]
+    })
+    .to_string();
+    let (base_url, handle) = serve_single_http_response(response_body);
+    let config_json = serde_json::json!({
+        "version": 1,
+        "asr": {
+            "active_provider": "mock",
+            "providers": [{"id": "mock", "type": "local", "model": "fixture"}]
+        },
+        "llm": {
+            "providers": [{
+                "id": "openai",
+                "base_url": base_url,
+                "api_key": "secret-token",
+                "model": "provider-model"
+            }]
+        },
+        "scenes": {
+            "active_scene": "needs-provider",
+            "definitions": [{
+                "id": "needs-provider",
+                "label": "Needs provider",
+                "prompt": "Polish: {{ asr }}",
+                "provider_id": "openai",
+                "model": "scene-model",
+                "candidate_count": 1,
+                "timeout_ms": 2000
+            }]
+        }
+    });
+    let config = TempConfig::write("configured-openai-once", &config_json.to_string());
+
+    let value = assert_json_success(
+        run_daemon_with_config(
+            &config.path,
+            &["--configured-backends", "--once"],
+            "run vinput-daemon --once with configured OpenAI-compatible provider",
+        ),
+        "recognition payload",
+    );
+
+    assert_eq!(value["commit_text"], "cli http final");
+    let captured = handle.join().unwrap();
+    assert!(captured.head.starts_with("POST /chat/completions HTTP/1.1"));
+    assert!(
+        captured
+            .head
+            .to_ascii_lowercase()
+            .contains("authorization: bearer secret-token")
+    );
+    let posted: serde_json::Value = serde_json::from_str(&captured.body).unwrap();
+    assert_eq!(posted["model"], "scene-model");
+    let content = posted["messages"][0]["content"].as_str().unwrap();
+    assert!(content.contains("mock recognition result"));
 }
 
 #[test]
