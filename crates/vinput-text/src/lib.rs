@@ -906,6 +906,21 @@ pub fn build_openai_compatible_chat_request(
     }))
 }
 
+/// Builds an OpenAI-compatible request using a recent-input context cache file.
+///
+/// The cache is read according to `request.scene.context_lines`; missing cache
+/// files produce an empty context prefix. This keeps filesystem policy out of
+/// HTTP transport while matching the legacy prompt assembly path.
+pub fn build_openai_compatible_chat_request_from_context_cache(
+    request: &TextRequest<'_>,
+    provider: &LlmProviderConfig,
+    context_cache_path: impl AsRef<Path>,
+) -> Result<Option<OpenAiCompatibleChatRequest>, TextError> {
+    let context_prefix =
+        load_recent_input_context_prefix(context_cache_path, request.scene.context_lines)?;
+    build_openai_compatible_chat_request(request, provider, &context_prefix)
+}
+
 /// Synchronous text post-processing seam used by daemon runtime and tests.
 pub trait TextProcessor: Send {
     /// Finishes raw recognition text into a payload suitable for the frontend.
@@ -1475,10 +1490,11 @@ mod tests {
         LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
         UnsupportedTextAdapter, build_openai_compatible_chat_request,
-        build_openai_compatible_chat_url, build_openai_compatible_headers,
-        build_recent_input_context_prefix, command_mode_payload, default_adapter_runtime_dir,
-        extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
-        load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
+        build_openai_compatible_chat_request_from_context_cache, build_openai_compatible_chat_url,
+        build_openai_compatible_headers, build_recent_input_context_prefix, command_mode_payload,
+        default_adapter_runtime_dir, extract_openai_compatible_candidates,
+        has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
+        load_recent_input_context_prefix, merge_openai_compatible_extra_body,
         openai_compatible_candidates_to_payload, openai_compatible_response_to_payload,
         start_adapter_process, stop_adapter_process,
     };
@@ -1735,6 +1751,72 @@ mod tests {
         );
         assert!(!content.contains("<asr>"));
         assert!(!content.contains("## Constraints"));
+    }
+
+    #[test]
+    fn openai_chat_request_from_context_cache_uses_scene_context_lines() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let cache_path = tempdir.path().join("context.jsonl");
+        std::fs::write(
+            &cache_path,
+            "older
+latest
+",
+        )
+        .unwrap();
+        let prompted = SceneDefinition {
+            prompt: Some("Context={{ context }} ASR={{ asr }}".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            context_lines: 1,
+            ..scene("polish", 0)
+        };
+
+        let built = build_openai_compatible_chat_request_from_context_cache(
+            &TextRequest {
+                raw_text: "fix text",
+                scene: &prompted,
+                selected_text: None,
+            },
+            &provider(serde_json::json!({})),
+            &cache_path,
+        )
+        .unwrap()
+        .unwrap();
+
+        let content = built.body["messages"][0]["content"].as_str().unwrap();
+        assert_eq!(
+            content,
+            "Context=Recent input history (use to fix ASR errors):
+latest
+
+ ASR=fix text"
+        );
+    }
+
+    #[test]
+    fn openai_chat_request_from_context_cache_ignores_missing_cache() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let prompted = SceneDefinition {
+            prompt: Some("Context={{ context }} ASR={{ asr }}".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            context_lines: 3,
+            ..scene("polish", 0)
+        };
+
+        let built = build_openai_compatible_chat_request_from_context_cache(
+            &TextRequest {
+                raw_text: "fix text",
+                scene: &prompted,
+                selected_text: None,
+            },
+            &provider(serde_json::json!({})),
+            tempdir.path().join("missing-context.jsonl"),
+        )
+        .unwrap()
+        .unwrap();
+
+        let content = built.body["messages"][0]["content"].as_str().unwrap();
+        assert_eq!(content, "Context= ASR=fix text");
     }
 
     #[test]
