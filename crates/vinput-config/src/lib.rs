@@ -885,6 +885,24 @@ mod tests {
     }
 
     #[test]
+    fn normalization_promotes_legacy_zero_version_to_one() {
+        let config = VinputConfig::from_json_str(
+            r#"{
+              "version": 0,
+              "asr": {
+                "active_provider": "p",
+                "providers": [{"id":"p","type":"local"}]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.version, 1);
+        assert_eq!(config.scenes.active_scene, RAW_SCENE_ID);
+    }
+
+    #[test]
     fn normalization_inserts_legacy_builtin_scenes_for_minimal_configs() {
         let config = VinputConfig::from_json_str(
             r#"{
