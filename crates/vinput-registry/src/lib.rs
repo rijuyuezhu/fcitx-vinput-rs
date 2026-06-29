@@ -855,6 +855,15 @@ mod tests {
     }
 
     #[test]
+    fn rejects_absolute_asset_paths() {
+        let json = r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"/absolute/model.tar"}]}]}"#;
+        assert_eq!(
+            RegistryIndex::from_json_str(json).unwrap_err(),
+            RegistryError::UnsafeAssetPath("/absolute/model.tar".to_owned())
+        );
+    }
+
+    #[test]
     fn rejects_unsafe_asset_paths() {
         let json = r#"{"version":1,"models":[{"id":"m","label":"M","provider":"p","assets":[{"path":"../secret"}]}]}"#;
         assert_eq!(
