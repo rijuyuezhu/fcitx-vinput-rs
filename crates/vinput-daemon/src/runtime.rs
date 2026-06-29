@@ -410,21 +410,24 @@ impl RuntimeState {
                 let _ = session.cancel();
                 return Err(RuntimeError::Asr(error));
             }
-            if let Err(error) = self.capture_partial_events(&mut *session) {
-                let _ = session.cancel();
-                return Err(error);
-            }
+            let mut events = match self.capture_partial_events(&mut *session) {
+                Ok(events) => events,
+                Err(error) => {
+                    let _ = session.cancel();
+                    return Err(error);
+                }
+            };
             if let Err(error) = session.finish() {
                 let _ = session.cancel();
                 return Err(RuntimeError::Asr(error));
             }
-            let events = match session.poll_events() {
-                Ok(events) => events,
+            match session.poll_events() {
+                Ok(new_events) => events.extend(new_events),
                 Err(error) => {
                     let _ = session.cancel();
                     return Err(RuntimeError::Asr(error));
                 }
-            };
+            }
             let partial_text = latest_partial_text(&events).or_else(|| self.partial_text.clone());
             let raw_payload = match events_to_payload(&events) {
                 Ok(payload) => payload,
@@ -525,13 +528,15 @@ impl RuntimeState {
     fn capture_partial_events(
         &mut self,
         session: &mut dyn RecognitionSession,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Vec<RecognitionEvent>, RuntimeError> {
+        let mut events = Vec::new();
         for event in session.poll_events().map_err(RuntimeError::Asr)? {
-            if let vinput_asr::RecognitionEvent::PartialText { text } = event {
-                self.partial_text = Some(text);
+            if let vinput_asr::RecognitionEvent::PartialText { text } = &event {
+                self.partial_text = Some(text.clone());
             }
+            events.push(event);
         }
-        Ok(())
+        Ok(events)
     }
 
     fn recognition_context(
@@ -833,6 +838,55 @@ mod tests {
 
         fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
             Ok(Vec::new())
+        }
+    }
+
+    struct EarlyFinalBackend;
+
+    impl AsrBackend for EarlyFinalBackend {
+        fn describe(&self) -> BackendDescriptor {
+            MockAsrBackend::streaming("early partial", "late final").describe()
+        }
+
+        fn create_session(
+            &self,
+            _context: RecognitionContext,
+        ) -> Result<Box<dyn RecognitionSession>, AsrError> {
+            Ok(Box::new(EarlyFinalSession { poll_count: 0 }))
+        }
+    }
+
+    struct EarlyFinalSession {
+        poll_count: usize,
+    }
+
+    impl RecognitionSession for EarlyFinalSession {
+        fn push_audio(&mut self, _samples: &[i16]) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn cancel(&mut self) -> Result<(), AsrError> {
+            Ok(())
+        }
+
+        fn poll_events(&mut self) -> Result<Vec<RecognitionEvent>, AsrError> {
+            let poll_index = self.poll_count;
+            self.poll_count += 1;
+            if poll_index == 0 {
+                return Ok(vec![
+                    RecognitionEvent::PartialText {
+                        text: "early partial".to_owned(),
+                    },
+                    RecognitionEvent::FinalText {
+                        text: "early final".to_owned(),
+                    },
+                ]);
+            }
+            Ok(vec![RecognitionEvent::Completed])
         }
     }
 
@@ -1694,6 +1748,21 @@ mod tests {
         let report = runtime.stop_recording_report(None).unwrap();
         assert_eq!(report.partial_text.as_deref(), Some("listening"));
         assert_eq!(report.payload.commit_text, "custom final");
+    }
+
+    #[test]
+    fn early_final_event_is_preserved_until_payload_conversion() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let mut runtime =
+            RuntimeState::with_asr_backend(config, Box::new(EarlyFinalBackend)).unwrap();
+
+        runtime.start_recording().unwrap();
+        let report = runtime.stop_recording_report(None).unwrap();
+
+        assert_eq!(report.partial_text.as_deref(), Some("early partial"));
+        assert_eq!(report.payload.commit_text, "early final");
+        assert_eq!(runtime.status(), ServiceStatus::Idle);
+        assert!(runtime.partial_text().is_none());
     }
 
     #[test]
