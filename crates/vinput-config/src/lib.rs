@@ -918,6 +918,44 @@ mod tests {
     }
 
     #[test]
+    fn normalization_defaults_missing_active_scene_to_raw_with_existing_definitions() {
+        let config = VinputConfig::from_json_str(
+            r#"{
+              "version": 1,
+              "asr": {
+                "active_provider": "p",
+                "providers": [{"id":"p","type":"local"}]
+              },
+              "scenes": {
+                "definitions": [
+                  {"id":"__command__","label":"Custom Command","candidate_count":3}
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.scenes.active_scene, RAW_SCENE_ID);
+        assert_eq!(config.scenes.definitions.len(), 2);
+        let command = config
+            .scenes
+            .definitions
+            .iter()
+            .find(|scene| scene.id == COMMAND_SCENE_ID)
+            .unwrap();
+        let raw = config
+            .scenes
+            .definitions
+            .iter()
+            .find(|scene| scene.id == RAW_SCENE_ID)
+            .unwrap();
+        assert_eq!(command.label, "Custom Command");
+        assert_eq!(command.candidate_count, 3);
+        assert_eq!(raw.label, "__label_raw__");
+    }
+
+    #[test]
     fn normalization_inserts_missing_builtin_scene_without_replacing_existing_one() {
         let config = VinputConfig::from_json_str(
             r#"{
