@@ -198,14 +198,28 @@ pub enum RecognitionProtocolError {
 mod tests {
     use super::{Candidate, CandidateSource, RecognitionPayload};
 
+    const RAW_PAYLOAD_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/recognition/raw.json"
+    ));
+    const MENU_PAYLOAD_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/recognition/menu.json"
+    ));
+    const SENTINEL_PAYLOAD_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/recognition/sentinel.json"
+    ));
+
+    fn fixture_json(input: &str) -> &str {
+        input.trim_end()
+    }
+
     #[test]
     fn raw_payload_matches_legacy_json_shape() {
         let payload = RecognitionPayload::raw("hello");
         let json = payload.to_json_string().unwrap();
-        assert_eq!(
-            json,
-            r#"{"commit_text":"hello","candidates":[{"text":"hello","source":"raw"}]}"#
-        );
+        assert_eq!(json, fixture_json(RAW_PAYLOAD_JSON));
         assert_eq!(RecognitionPayload::from_json_str(&json).unwrap(), payload);
     }
 
@@ -214,10 +228,7 @@ mod tests {
         let payload = RecognitionPayload::cancelled();
         let json = payload.to_json_string().unwrap();
 
-        assert_eq!(
-            json,
-            r#"{"commit_text":"","candidates":[{"text":"","source":"cancel"}]}"#
-        );
+        assert_eq!(json, fixture_json(SENTINEL_PAYLOAD_JSON));
         assert_eq!(
             payload.default_candidate().unwrap().source,
             CandidateSource::Cancel
@@ -231,16 +242,13 @@ mod tests {
             candidates: vec![
                 Candidate::new("raw transcript", CandidateSource::Raw),
                 Candidate::new("polished", CandidateSource::Llm),
-                Candidate::new("direct asr", CandidateSource::Asr),
+                Candidate::new("direct output", CandidateSource::Asr),
             ],
         };
 
         let json = payload.to_json_string().unwrap();
 
-        assert_eq!(
-            json,
-            r#"{"commit_text":"polished","candidates":[{"text":"raw transcript","source":"raw"},{"text":"polished","source":"llm"},{"text":"direct asr","source":"asr"}]}"#
-        );
+        assert_eq!(json, fixture_json(MENU_PAYLOAD_JSON));
         assert_eq!(RecognitionPayload::from_json_str(&json).unwrap(), payload);
         assert_eq!(
             payload.default_candidate().unwrap(),
