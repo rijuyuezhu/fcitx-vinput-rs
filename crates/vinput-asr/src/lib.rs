@@ -699,8 +699,22 @@ impl CommandAsrRunner for LegacyCommandStreamingRunner {
 fn parse_legacy_command_streaming_stdout(stdout: &[u8]) -> Result<Vec<RecognitionEvent>, AsrError> {
     let stdout = String::from_utf8_lossy(stdout);
     let mut events = Vec::new();
+    let mut last_partial_text = String::new();
     for line in stdout.lines() {
-        events.extend(parse_legacy_command_streaming_line(line)?);
+        for event in parse_legacy_command_streaming_line(line)? {
+            match &event {
+                RecognitionEvent::PartialText { text } if text == &last_partial_text => {}
+                RecognitionEvent::PartialText { text } => {
+                    last_partial_text.clone_from(text);
+                    events.push(event);
+                }
+                RecognitionEvent::FinalText { .. } => {
+                    last_partial_text.clear();
+                    events.push(event);
+                }
+                _ => events.push(event),
+            }
+        }
     }
     if events.is_empty() {
         return Err(AsrError::Backend(
@@ -2029,6 +2043,59 @@ assert lines[1]['type'] == 'finish'
                 },
                 RecognitionEvent::FinalText {
                     text: "1|-2|258".to_owned()
+                },
+                RecognitionEvent::Completed,
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_command_streaming_runner_deduplicates_repeated_partials() {
+        let script_path = write_temp_script(
+            "vinput-legacy-command-streaming-dedupe",
+            r"
+import json
+import sys
+for _ in sys.stdin:
+    pass
+print(json.dumps({'type':'partial','text':'same'}))
+print(json.dumps({'type':'partial','text':'same'}))
+print(json.dumps({'type':'partial','text':'next'}))
+print(json.dumps({'type':'final','text':'done'}))
+print(json.dumps({'type':'closed'}))
+",
+        );
+        let spec = CommandAsrSpec {
+            provider_id: "cmd.streaming".to_owned(),
+            command: "python3".to_owned(),
+            args: vec![script_path.to_string_lossy().into_owned()],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(1_000),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", Some("zh".to_owned())),
+            vec![1],
+        );
+
+        let events = LegacyCommandStreamingRunner
+            .recognize(&spec, &request)
+            .expect("legacy streaming runner should deduplicate repeated partials");
+        std::fs::remove_file(script_path).unwrap();
+
+        assert_eq!(
+            events,
+            vec![
+                RecognitionEvent::PartialText {
+                    text: "same".to_owned()
+                },
+                RecognitionEvent::PartialText {
+                    text: "next".to_owned()
+                },
+                RecognitionEvent::FinalText {
+                    text: "done".to_owned()
                 },
                 RecognitionEvent::Completed,
             ]
