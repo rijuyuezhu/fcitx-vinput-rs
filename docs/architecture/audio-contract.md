@@ -36,6 +36,8 @@ Desktop recorders should implement the stateful `AudioRecorder` contract instead
 
 `RuntimeState` consumes `AudioRecorder` directly: `StartRecording` begins capture and enters `recording`; `StopRecording` collects the final buffer, applies processing, pushes PCM to the active ASR session, then emits stop-time partial/final results. The existing `AudioSource` trait remains a one-shot source for deterministic tests and file-input demos. `SourceAudioRecorder` adapts those one-shot sources into the stateful runtime path, while `RecorderAudioSource` adapts stateful recorders back into legacy one-shot call sites.
 
+ASR session ownership is explicit across the stop path. If recorder stop, PCM delivery, ASR polling, payload conversion, or text finishing fails, `RuntimeState` calls `RecognitionSession::cancel` before returning the error and resetting to idle. Dropping a runtime with an active recording also cancels the active ASR session before cancelling the recorder.
+
 `PipeWireAudioRecorder` currently exists behind `pipewire-backend` as an explicit skeleton: it stores the selected `CaptureTarget`, links and initializes the PipeWire client library, and returns `RecordingBackendUnavailable` instead of silently falling back to mock capture. The future live implementation should negotiate signed 16-bit 16 kHz mono PCM first, stream chunks through the callback, and materialize `CapturedAudio` with source metadata on stop.
 
 ## Processing order
