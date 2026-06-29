@@ -624,6 +624,10 @@ impl PromptTemplate {
 }
 
 const OPENAI_COMPATIBLE_CHAT_COMPLETIONS_PATH: &str = "/chat/completions";
+const OPENAI_COMPATIBLE_JSON_CONTENT_TYPE_HEADER: (&str, &str) =
+    ("Content-Type", "application/json");
+const OPENAI_COMPATIBLE_AUTHORIZATION_HEADER: &str = "Authorization";
+const OPENAI_COMPATIBLE_BEARER_PREFIX: &str = "Bearer ";
 
 /// Builds the legacy OpenAI-compatible chat-completions endpoint URL.
 ///
@@ -644,6 +648,26 @@ pub fn build_openai_compatible_chat_url(base_url: &str) -> Option<String> {
     }
     url.push_str(OPENAI_COMPATIBLE_CHAT_COMPLETIONS_PATH);
     Some(url)
+}
+
+/// Builds the legacy OpenAI-compatible request headers.
+///
+/// The API key string is used as configured. Legacy CLI/GUI paths trim the value
+/// while editing config, but the daemon request path only checks whether it is
+/// empty before appending the `Authorization: Bearer ...` header.
+#[must_use]
+pub fn build_openai_compatible_headers(api_key: &str) -> Vec<(String, String)> {
+    let mut headers = vec![(
+        OPENAI_COMPATIBLE_JSON_CONTENT_TYPE_HEADER.0.to_owned(),
+        OPENAI_COMPATIBLE_JSON_CONTENT_TYPE_HEADER.1.to_owned(),
+    )];
+    if !api_key.is_empty() {
+        headers.push((
+            OPENAI_COMPATIBLE_AUTHORIZATION_HEADER.to_owned(),
+            format!("{OPENAI_COMPATIBLE_BEARER_PREFIX}{api_key}"),
+        ));
+    }
+    headers
 }
 
 /// Extracts candidate strings from the legacy OpenAI-compatible chat response shape.
@@ -719,6 +743,8 @@ pub fn merge_openai_compatible_extra_body(
 pub struct OpenAiCompatibleChatRequest {
     /// Fully resolved chat-completions endpoint URL.
     pub url: String,
+    /// Request headers for the chat-completions request.
+    pub headers: Vec<(String, String)>,
     /// JSON body for a non-streaming chat-completions request.
     pub body: serde_json::Value,
     /// Protected `extra_body` keys that were ignored while building the body.
@@ -740,6 +766,7 @@ pub fn build_openai_compatible_chat_request(
     let Some(url) = build_openai_compatible_chat_url(&provider.base_url) else {
         return Ok(None);
     };
+    let headers = build_openai_compatible_headers(&provider.api_key);
     let Some(prompt) = request
         .scene
         .prompt
@@ -802,6 +829,7 @@ pub fn build_openai_compatible_chat_request(
 
     Ok(Some(OpenAiCompatibleChatRequest {
         url,
+        headers,
         body,
         ignored_extra_body_keys,
     }))
@@ -1376,10 +1404,10 @@ mod tests {
         LlmTextProcessor, MockTextProcessor, ProcessCommandTextRunner, PromptContext,
         PromptTemplate, TextError, TextFinisher, TextProcessor, TextRequest,
         UnsupportedTextAdapter, build_openai_compatible_chat_request,
-        build_openai_compatible_chat_url, build_recent_input_context_prefix,
-        default_adapter_runtime_dir, extract_openai_compatible_candidates,
-        has_legacy_prompt_interpolation, is_prompt_file_uri, load_prompt_file_uri,
-        load_recent_input_context_prefix, merge_openai_compatible_extra_body,
+        build_openai_compatible_chat_url, build_openai_compatible_headers,
+        build_recent_input_context_prefix, default_adapter_runtime_dir,
+        extract_openai_compatible_candidates, has_legacy_prompt_interpolation, is_prompt_file_uri,
+        load_prompt_file_uri, load_recent_input_context_prefix, merge_openai_compatible_extra_body,
         start_adapter_process, stop_adapter_process,
     };
     use vinput_config::{
@@ -1556,6 +1584,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(built.url, "http://localhost:8080/v1/chat/completions");
+        assert_eq!(
+            built.headers,
+            [("Content-Type".to_owned(), "application/json".to_owned())]
+        );
         assert_eq!(built.ignored_extra_body_keys, ["messages"]);
         assert_eq!(built.body["model"], "scene-model");
         assert_eq!(built.body["stream"], false);
@@ -1613,6 +1645,10 @@ mod tests {
                 .any(|key| key == "response_format")
         );
         assert_eq!(built.url, "http://localhost:8080/v1/chat/completions");
+        assert_eq!(
+            built.headers,
+            [("Content-Type".to_owned(), "application/json".to_owned())]
+        );
         assert_eq!(built.body["model"], "provider-model");
         assert_eq!(built.body["stream"], false);
         assert_eq!(
@@ -1668,6 +1704,52 @@ mod tests {
         .unwrap();
 
         assert!(built.is_none());
+    }
+
+    #[test]
+    fn openai_headers_include_json_content_type_and_optional_bearer() {
+        assert_eq!(
+            build_openai_compatible_headers(""),
+            [("Content-Type".to_owned(), "application/json".to_owned())]
+        );
+        assert_eq!(
+            build_openai_compatible_headers("secret-token"),
+            [
+                ("Content-Type".to_owned(), "application/json".to_owned()),
+                ("Authorization".to_owned(), "Bearer secret-token".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn openai_chat_request_includes_bearer_header_when_api_key_is_set() {
+        let prompted = SceneDefinition {
+            prompt: Some("Polish this.".to_owned()),
+            provider_id: Some("openai-compatible".to_owned()),
+            ..scene("polish", 0)
+        };
+        let mut provider = provider(serde_json::json!({}));
+        provider.api_key = "secret-token".to_owned();
+
+        let built = build_openai_compatible_chat_request(
+            &TextRequest {
+                raw_text: "raw",
+                scene: &prompted,
+                selected_text: None,
+            },
+            &provider,
+            "",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            built.headers,
+            [
+                ("Content-Type".to_owned(), "application/json".to_owned()),
+                ("Authorization".to_owned(), "Bearer secret-token".to_owned()),
+            ]
+        );
     }
 
     #[test]
