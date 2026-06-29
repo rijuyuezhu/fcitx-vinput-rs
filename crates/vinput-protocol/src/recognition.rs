@@ -210,6 +210,30 @@ mod tests {
     }
 
     #[test]
+    fn menu_payload_matches_legacy_json_shape() {
+        let payload = RecognitionPayload {
+            commit_text: "polished".to_owned(),
+            candidates: vec![
+                Candidate::new("raw transcript", CandidateSource::Raw),
+                Candidate::new("polished", CandidateSource::Llm),
+                Candidate::new("direct asr", CandidateSource::Asr),
+            ],
+        };
+
+        let json = payload.to_json_string().unwrap();
+
+        assert_eq!(
+            json,
+            r#"{"commit_text":"polished","candidates":[{"text":"raw transcript","source":"raw"},{"text":"polished","source":"llm"},{"text":"direct asr","source":"asr"}]}"#
+        );
+        assert_eq!(RecognitionPayload::from_json_str(&json).unwrap(), payload);
+        assert_eq!(
+            payload.default_candidate().unwrap(),
+            &Candidate::new("polished", CandidateSource::Llm)
+        );
+    }
+
+    #[test]
     fn parser_fills_commit_text_from_first_candidate() {
         let payload = RecognitionPayload::from_json_str(
             r#"{"commit_text":"","candidates":[{"text":"fallback","source":"asr"}]}"#,
