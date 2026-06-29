@@ -340,13 +340,25 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
         command_while_recording.expect_err("command start while recording should fail");
     assert_legacy_operation_failed(&command_while_recording_error, "runtime is busy: recording");
 
-    let reload_while_recording: zbus::Result<()> =
-        proxy.call(dbus::method::RELOAD_ASR_BACKEND, &()).await;
-    let reload_while_recording_error =
-        reload_while_recording.expect_err("reload while recording should fail");
-    assert_legacy_operation_failed(&reload_while_recording_error, "runtime is busy: recording");
+    proxy
+        .call::<_, _, ()>(dbus::method::RELOAD_ASR_BACKEND, &())
+        .await?;
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "recording");
+    let state: (
+        String,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+        Vec<String>,
+    ) = proxy.call(dbus::method::GET_ASR_BACKEND_STATE, &()).await?;
+    assert!(
+        state.5,
+        "reload while recording should be reported as pending"
+    );
     expect_no_string_signal(&mut status_signals).await?;
 
     let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
@@ -363,6 +375,17 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
     assert_eq!(signal_payload, payload);
     assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
+    let state: (
+        String,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+        Vec<String>,
+    ) = proxy.call(dbus::method::GET_ASR_BACKEND_STATE, &()).await?;
+    assert!(!state.5, "pending reload should be applied once idle");
 
     proxy
         .call::<_, _, ()>(dbus::method::START_COMMAND_RECORDING, &"selected text")

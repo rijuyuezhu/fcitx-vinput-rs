@@ -373,24 +373,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dbus_facade_rejects_reload_while_recording() {
+    async fn dbus_facade_defers_reload_while_recording() {
         let service = service();
 
         assert_eq!(
             service.start_recording_state().await.unwrap().0,
             "recording"
         );
-        let error = service.reload_asr_backend().await.unwrap_err();
+        service.reload_asr_backend().await.unwrap();
 
-        assert!(
-            error.to_string().contains("runtime is busy: recording"),
-            "unexpected reload error: {error}"
-        );
         assert_eq!(service.get_status().await, "recording");
+        assert!(service.get_asr_backend_state().await.5);
         let payload =
             RecognitionPayload::from_json_str(&service.stop_recording_payload("").await.unwrap().0)
                 .unwrap();
         assert_eq!(payload.commit_text, "mock recognition result");
+        assert!(!service.get_asr_backend_state().await.5);
     }
 
     #[tokio::test]

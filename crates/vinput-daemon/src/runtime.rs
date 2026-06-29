@@ -40,6 +40,12 @@ fn text_adapter_summary(adapter: &LlmAdapterConfig, pid: Option<u32>) -> TextAda
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingAsrReload {
+    MetadataOnly,
+    ConfiguredBackend,
+}
+
 /// In-memory runtime state for the first daemon milestone.
 pub struct RuntimeState {
     config: VinputConfig,
@@ -52,6 +58,8 @@ pub struct RuntimeState {
     audio_recorder: Box<dyn AudioRecorder>,
     text_processor: Box<dyn TextProcessor>,
     active_session: Option<Box<dyn RecognitionSession>>,
+    pending_asr_reload: Option<PendingAsrReload>,
+    asr_reload_last_error: Option<String>,
     adapter_runtime_paths: AdapterRuntimePaths,
     adapter_processes: HashMap<String, StartedAdapterProcess>,
 }
@@ -186,6 +194,8 @@ impl RuntimeState {
             audio_recorder,
             text_processor,
             active_session: None,
+            pending_asr_reload: None,
+            asr_reload_last_error: None,
             adapter_runtime_paths: AdapterRuntimePaths::for_current_user(),
             adapter_processes: HashMap::new(),
         })
@@ -207,7 +217,13 @@ impl RuntimeState {
     /// Builds a diagnostic ASR state from this runtime's current config.
     #[must_use]
     pub fn configured_asr_state_for_runtime(&self) -> AsrBackendState {
-        Self::configured_asr_state(&self.config)
+        let mut state = Self::configured_asr_state(&self.config);
+        state.reload_in_progress = self.pending_asr_reload.is_some();
+        state.last_error = self
+            .asr_reload_last_error
+            .clone()
+            .unwrap_or(state.last_error);
+        state
     }
 
     /// Builds a text adapter registry from this runtime's current config.
@@ -477,6 +493,8 @@ impl RuntimeState {
         state.target_provider_id = configured.target_provider_id;
         state.target_model_id = configured.target_model_id;
         state.remote_endpoints = configured.remote_endpoints;
+        state.reload_in_progress = self.pending_asr_reload.is_some();
+        state.last_error = self.asr_reload_last_error.clone().unwrap_or_default();
         state
     }
 
@@ -486,22 +504,68 @@ impl RuntimeState {
     /// state includes the config-selected target provider, model, and remote
     /// endpoint metadata.
     pub fn reload_asr_backend(&mut self) -> Result<AsrBackendState, RuntimeError> {
-        self.ensure_idle()?;
-        self.config
-            .validate()
-            .map_err(RuntimeError::InvalidConfig)?;
-        Ok(self.asr_backend_state())
+        if self.status != ServiceStatus::Idle {
+            return Ok(self.defer_asr_backend_reload(PendingAsrReload::MetadataOnly));
+        }
+        self.reload_asr_backend_now()
     }
 
     /// Rebuilds the runtime ASR backend from the validated active provider.
     pub fn reload_configured_asr_backend(&mut self) -> Result<AsrBackendState, RuntimeError> {
-        self.ensure_idle()?;
+        if self.status != ServiceStatus::Idle {
+            return Ok(self.defer_asr_backend_reload(PendingAsrReload::ConfiguredBackend));
+        }
+        self.reload_configured_asr_backend_now()
+    }
+
+    fn defer_asr_backend_reload(&mut self, pending: PendingAsrReload) -> AsrBackendState {
+        self.pending_asr_reload = Some(pending);
+        self.asr_backend_state()
+    }
+
+    fn reload_asr_backend_now(&mut self) -> Result<AsrBackendState, RuntimeError> {
         self.config
             .validate()
             .map_err(RuntimeError::InvalidConfig)?;
-        self.asr_backend =
-            AsrBackendFactory::build_active(&self.config.asr).map_err(RuntimeError::Asr)?;
+        self.asr_reload_last_error = None;
         Ok(self.asr_backend_state())
+    }
+
+    fn reload_configured_asr_backend_now(&mut self) -> Result<AsrBackendState, RuntimeError> {
+        self.config
+            .validate()
+            .map_err(RuntimeError::InvalidConfig)?;
+        match AsrBackendFactory::build_active(&self.config.asr) {
+            Ok(backend) => {
+                self.asr_backend = backend;
+                self.asr_reload_last_error = None;
+                Ok(self.asr_backend_state())
+            }
+            Err(error) => {
+                let error = RuntimeError::Asr(error);
+                self.asr_reload_last_error = Some(error.to_string());
+                Err(error)
+            }
+        }
+    }
+
+    fn apply_pending_asr_backend_reload(&mut self) {
+        if self.status != ServiceStatus::Idle {
+            return;
+        }
+        let Some(pending) = self.pending_asr_reload.take() else {
+            return;
+        };
+
+        let result = match pending {
+            PendingAsrReload::MetadataOnly => self.reload_asr_backend_now(),
+            PendingAsrReload::ConfiguredBackend => self.reload_configured_asr_backend_now(),
+        };
+        if let Err(error) = result {
+            self.asr_reload_last_error = Some(format!(
+                "Failed to apply deferred ASR backend reload. {error}"
+            ));
+        }
     }
 
     fn start_recording_internal(
@@ -605,6 +669,7 @@ impl RuntimeState {
         self.selected_text = None;
         self.partial_text = None;
         self.active_session = None;
+        self.apply_pending_asr_backend_reload();
     }
 
     fn ensure_idle(&self) -> Result<(), RuntimeError> {
@@ -1368,26 +1433,83 @@ mod tests {
     }
 
     #[test]
-    fn reload_asr_backend_is_rejected_while_recording() {
-        let config = VinputConfig::bundled_default().unwrap();
+    fn reload_asr_backend_is_deferred_while_recording() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("helper".to_owned()),
+            args: Vec::new(),
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
         let mut runtime = RuntimeState::new(config).unwrap();
 
         runtime.start_recording().unwrap();
-        let error = runtime.reload_asr_backend().unwrap_err();
+        let state = runtime.reload_asr_backend().unwrap();
 
-        assert!(matches!(
-            error,
-            super::RuntimeError::Busy(ServiceStatus::Recording)
-        ));
         assert_eq!(runtime.status(), ServiceStatus::Recording);
+        assert!(state.reload_in_progress);
+        assert!(runtime.asr_backend_state().reload_in_progress);
+        assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
         assert!(matches!(
             runtime.stop_recording(None),
             Ok(payload) if payload.commit_text == "mock recognition result"
         ));
+        let state = runtime.asr_backend_state();
+        assert!(!state.reload_in_progress);
+        assert_eq!(state.effective_provider_id, "mock");
+        assert_eq!(state.target_provider_id, "cmd");
+        assert!(state.last_error.is_empty());
     }
 
     #[test]
-    fn reload_configured_asr_backend_is_rejected_while_recording() {
+    fn reload_configured_asr_backend_is_deferred_and_applied_when_idle() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.active_provider = "cmd".to_owned();
+        config.asr.providers.push(AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: Some(1_000),
+            model: Some("cmd-model".to_owned()),
+            hotwords_file: None,
+            command: Some("sh".to_owned()),
+            args: vec![
+                "-c".to_owned(),
+                r"cat >/dev/null; printf '%s\n' 'runtime deferred command final'".to_owned(),
+            ],
+            env: std::collections::HashMap::new(),
+            endpoint: None,
+        });
+        let mut runtime = RuntimeState::new(config).unwrap();
+
+        runtime.start_recording().unwrap();
+        let state = runtime.reload_configured_asr_backend().unwrap();
+
+        assert_eq!(runtime.status(), ServiceStatus::Recording);
+        assert!(state.reload_in_progress);
+        assert_eq!(state.effective_provider_id, "mock");
+        assert!(matches!(
+            runtime.stop_recording(None),
+            Ok(payload) if payload.commit_text == "mock recognition result"
+        ));
+        let state = runtime.asr_backend_state();
+        assert!(!state.reload_in_progress);
+        assert_eq!(state.effective_provider_id, "cmd");
+        assert_eq!(state.effective_model_id, "cmd-model");
+        assert!(state.last_error.is_empty());
+
+        runtime.start_recording().unwrap();
+        let payload = runtime.stop_recording(None).unwrap();
+        assert_eq!(payload.commit_text.trim(), "runtime deferred command final");
+    }
+
+    #[test]
+    fn deferred_configured_asr_reload_failure_keeps_previous_backend() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.active_provider = "mock".to_owned();
         config.asr.providers.push(AsrProviderConfig {
@@ -1404,18 +1526,25 @@ mod tests {
         let mut runtime = RuntimeState::new(config).unwrap();
 
         runtime.start_recording().unwrap();
-        let error = runtime.reload_configured_asr_backend().unwrap_err();
+        runtime.config.asr.active_provider = "missing".to_owned();
+        let state = runtime.reload_configured_asr_backend().unwrap();
 
-        assert!(matches!(
-            error,
-            super::RuntimeError::Busy(ServiceStatus::Recording)
-        ));
-        assert_eq!(runtime.status(), ServiceStatus::Recording);
-        assert_eq!(runtime.asr_backend_state().effective_provider_id, "mock");
+        assert!(state.reload_in_progress);
+        assert_eq!(state.effective_provider_id, "mock");
         assert!(matches!(
             runtime.stop_recording(None),
             Ok(payload) if payload.commit_text == "mock recognition result"
         ));
+        let state = runtime.asr_backend_state();
+        assert!(!state.reload_in_progress);
+        assert_eq!(state.effective_provider_id, "mock");
+        assert!(
+            state
+                .last_error
+                .contains("Failed to apply deferred ASR backend reload."),
+            "unexpected deferred reload error: {}",
+            state.last_error
+        );
     }
 
     #[test]
