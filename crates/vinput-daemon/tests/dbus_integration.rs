@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 use tokio::time::{sleep, timeout};
 use vinput_asr::{AsrBackendFactory, MockAsrBackend};
 use vinput_audio::{CapturedAudio, MockAudioSource, PcmBuffer};
-use vinput_config::VinputConfig;
+use vinput_config::{AsrProviderConfig, AsrProviderKind, VinputConfig};
 use vinput_daemon::{RuntimeState, VinputDbusService};
 use vinput_protocol::{RecognitionPayload, TextAdapterState, dbus};
 use vinput_text::AdapterRuntimePaths;
@@ -60,6 +60,33 @@ fn configured_command_runtime() -> anyhow::Result<RuntimeState> {
     let audio_source = MockAudioSource::once(CapturedAudio::named(
         PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
         "dbus-e2e",
+    ));
+    RuntimeState::with_configured_text(config, backend, Box::new(audio_source)).map_err(Into::into)
+}
+
+fn configured_streaming_command_runtime() -> anyhow::Result<RuntimeState> {
+    let mut config = VinputConfig::bundled_default()?;
+    "cmd.streaming".clone_into(&mut config.asr.active_provider);
+    config.asr.providers.push(AsrProviderConfig {
+        id: "cmd.streaming".to_owned(),
+        kind: AsrProviderKind::Command,
+        timeout_ms: Some(1_000),
+        model: Some("cmd-model".to_owned()),
+        hotwords_file: None,
+        command: Some("sh".to_owned()),
+        args: vec![
+            "-c".to_owned(),
+            r#"cat >/dev/null; printf '%s
+' '{"type":"partial","text":"bus partial"}' '{"type":"final","text":"bus streaming final"}' '{"type":"closed"}'"#.to_owned(),
+        ],
+        env: std::collections::HashMap::new(),
+        endpoint: None,
+    });
+    config.validate()?;
+    let backend = AsrBackendFactory::build_active(&config.asr)?;
+    let audio_source = MockAudioSource::once(CapturedAudio::named(
+        PcmBuffer::at_default_rate(vec![1_000, -1_000, 2_000, -2_000]),
+        "dbus-streaming-command-e2e",
     ));
     RuntimeState::with_configured_text(config, backend, Box::new(audio_source)).map_err(Into::into)
 }
@@ -518,6 +545,48 @@ fn unique_adapter_runtime_dir(name: &str) -> std::path::PathBuf {
             .expect("system clock should be after unix epoch")
             .as_nanos()
     ))
+}
+
+#[tokio::test]
+async fn configured_streaming_command_backend_emits_stop_partial_signal() -> anyhow::Result<()> {
+    let runtime = configured_streaming_command_runtime()?;
+    let (_service_connection, service_name) = spawn_runtime_on_unique_name(runtime).await?;
+    let client_connection = zbus::Connection::session().await?;
+    let proxy = Proxy::new(
+        &client_connection,
+        service_name.as_str(),
+        dbus::SERVICE_OBJECT_PATH,
+        dbus::SERVICE_INTERFACE,
+    )
+    .await?;
+    let mut status_signals = proxy.receive_signal(dbus::signal::STATUS_CHANGED).await?;
+    let mut partial_signals = proxy
+        .receive_signal(dbus::signal::RECOGNITION_PARTIAL)
+        .await?;
+    let mut result_signals = proxy
+        .receive_signal(dbus::signal::RECOGNITION_RESULT)
+        .await?;
+
+    proxy
+        .call::<_, _, ()>(dbus::method::START_RECORDING, &())
+        .await?;
+    assert_eq!(next_string_signal(&mut status_signals).await?, "recording");
+    expect_no_string_signal(&mut partial_signals).await?;
+
+    let payload_json: String = proxy.call(dbus::method::STOP_RECORDING, &"").await?;
+    let payload = RecognitionPayload::from_json_str(&payload_json)?;
+    assert_eq!(payload.commit_text, "bus streaming final");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "inferring");
+    assert_eq!(
+        next_string_signal(&mut partial_signals).await?,
+        "bus partial"
+    );
+    let result_payload_json = next_string_signal(&mut result_signals).await?;
+    let signal_payload = RecognitionPayload::from_json_str(&result_payload_json)?;
+    assert_eq!(signal_payload.commit_text, "bus streaming final");
+    assert_eq!(next_string_signal(&mut status_signals).await?, "idle");
+
+    Ok(())
 }
 
 #[tokio::test]
