@@ -918,6 +918,30 @@ mod tests {
     }
 
     #[test]
+    fn normalization_defaults_blank_active_scene_to_raw() {
+        let config = VinputConfig::from_json_str(
+            r#"{
+              "version": 1,
+              "asr": {
+                "active_provider": "p",
+                "providers": [{"id":"p","type":"local"}]
+              },
+              "scenes": {
+                "active_scene": "",
+                "definitions": [
+                  {"id":"__raw__","label":"Custom Raw","candidate_count":2}
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.scenes.active_scene, RAW_SCENE_ID);
+        assert_eq!(config.active_scene().unwrap().label, "Custom Raw");
+    }
+
+    #[test]
     fn normalization_defaults_missing_active_scene_to_raw_with_existing_definitions() {
         let config = VinputConfig::from_json_str(
             r#"{
