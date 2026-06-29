@@ -1926,6 +1926,38 @@ sys.stdout.write('|'.join(str(sample) for sample in samples))
     }
 
     #[test]
+    fn legacy_command_batch_runner_reports_nonzero_stderr() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "cat >/dev/null; echo batch boom >&2; exit 7".to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(1_000),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", None),
+            vec![1, 2, 3],
+        );
+
+        let error = LegacyCommandBatchRunner
+            .recognize(&spec, &request)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("command ASR provider `cmd`")
+                    && message.contains("exited with")
+                    && message.contains("batch boom")
+        ));
+    }
+
+    #[test]
     fn legacy_command_batch_runner_rejects_empty_stdout() {
         let spec = CommandAsrSpec {
             provider_id: "cmd".to_owned(),
@@ -2148,6 +2180,38 @@ print(json.dumps({'type':'closed'}))
                 RecognitionEvent::Completed,
             ]
         );
+    }
+
+    #[test]
+    fn legacy_command_streaming_runner_reports_nonzero_stderr() {
+        let spec = CommandAsrSpec {
+            provider_id: "cmd.streaming".to_owned(),
+            command: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "cat >/dev/null; echo streaming boom >&2; exit 7".to_owned(),
+            ],
+            env: std::collections::HashMap::default(),
+            model_id: None,
+            hotwords_file: None,
+            timeout_ms: Some(1_000),
+        };
+        let request = CommandAsrRequest::from_spec(
+            &spec,
+            RecognitionContext::normal("raw", None),
+            vec![1, 2, 3],
+        );
+
+        let error = LegacyCommandStreamingRunner
+            .recognize(&spec, &request)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AsrError::Backend(message)
+                if message.contains("cmd.streaming")
+                    && message.contains("exited with")
+                    && message.contains("streaming boom")
+        ));
     }
 
     #[test]
