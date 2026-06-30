@@ -59,5 +59,24 @@ int main() {
   assert(selected_candidates[0].text == "polished 1");
   assert(selected_candidates[0].source == CandidateSource::Llm);
 
+  RecognitionPayload cancel_payload;
+  cancel_payload.candidates = {Candidate{"", CandidateSource::Cancel}};
+  auto cancel_candidates = BuildResultCandidateList(
+      cancel_payload, [&selected_candidates](fcitx::InputContext *input_context,
+                                             const Candidate &candidate) {
+        assert(input_context == nullptr);
+        selected_candidates.push_back(candidate);
+      });
+  assert(cancel_candidates != nullptr);
+  assert(cancel_candidates->totalSize() == 1);
+  assert(cancel_candidates->globalCursorIndex() == 0);
+#ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
+  assert(cancel_candidates->candidateFromAll(0).comment().toString() == "Cancel");
+#endif
+  cancel_candidates->candidateFromAll(0).select(nullptr);
+  assert(selected_candidates.size() == 2);
+  assert(selected_candidates[1].text.empty());
+  assert(selected_candidates[1].source == CandidateSource::Cancel);
+
   return 0;
 }
