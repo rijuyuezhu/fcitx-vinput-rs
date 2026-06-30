@@ -118,6 +118,39 @@ fn sanitize_registry_http_error(error: &reqwest::Error) -> String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FetchedRegistryText {
+    pub(crate) url: String,
+    pub(crate) text: String,
+}
+
+pub(crate) fn fetch_registry_text_from_mirrors(
+    source: &impl RegistryTextSource,
+    mirrors: &[String],
+) -> Result<FetchedRegistryText, RegistryFetchError> {
+    if mirrors.is_empty() {
+        return Err(RegistryFetchError::NoMirrors);
+    }
+
+    let mut failures = Vec::new();
+    for mirror in mirrors {
+        match source.fetch_registry_text(mirror) {
+            Ok(text) => {
+                return Ok(FetchedRegistryText {
+                    url: mirror.clone(),
+                    text,
+                });
+            }
+            Err(message) => failures.push(RegistryFetchFailure {
+                url: mirror.clone(),
+                message,
+            }),
+        }
+    }
+
+    Err(RegistryFetchError::AllMirrorsFailed(failures))
+}
+
 /// Fetches and parses a registry index from ordered mirror URLs.
 ///
 /// Mirrors are attempted in order. Transport-level failures fall through to the
@@ -129,27 +162,9 @@ pub fn fetch_registry_index_from_mirrors(
     source: &impl RegistryTextSource,
     mirrors: &[String],
 ) -> Result<RegistryIndex, RegistryFetchError> {
-    if mirrors.is_empty() {
-        return Err(RegistryFetchError::NoMirrors);
-    }
-
-    let mut failures = Vec::new();
-    for mirror in mirrors {
-        match source.fetch_registry_text(mirror) {
-            Ok(text) => {
-                return RegistryIndex::from_json_str(&text).map_err(|error| {
-                    RegistryFetchError::InvalidIndex {
-                        url: mirror.clone(),
-                        error,
-                    }
-                });
-            }
-            Err(message) => failures.push(RegistryFetchFailure {
-                url: mirror.clone(),
-                message,
-            }),
-        }
-    }
-
-    Err(RegistryFetchError::AllMirrorsFailed(failures))
+    let fetched = fetch_registry_text_from_mirrors(source, mirrors)?;
+    RegistryIndex::from_json_str(&fetched.text).map_err(|error| RegistryFetchError::InvalidIndex {
+        url: fetched.url,
+        error,
+    })
 }

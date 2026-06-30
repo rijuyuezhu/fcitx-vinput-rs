@@ -1,6 +1,7 @@
 use super::{
-    ChecksumPolicy, InstallPlan, RegistryError, RegistryFetchError, RegistryIndex,
-    RegistryTextSource, ReqwestRegistryTextSource, fetch_registry_index_from_mirrors,
+    ChecksumPolicy, InstallPlan, RegistryCacheError, RegistryCachedFetchError, RegistryError,
+    RegistryFetchError, RegistryIndex, RegistryTextCache, RegistryTextSource,
+    ReqwestRegistryTextSource, fetch_registry_index_from_mirrors, fetch_registry_index_with_cache,
 };
 use vinput_config::RegistryConfig;
 
@@ -587,6 +588,109 @@ fn fetch_registry_index_stops_on_invalid_successful_mirror() {
         source.attempts(),
         ["https://first.invalid/index.json".to_owned()]
     );
+}
+
+#[test]
+fn registry_text_cache_writes_fresh_fetch_atomically() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cache = RegistryTextCache::new(temp_dir.path().join("nested/index.json"));
+    let source = StaticRegistryTextSource::default()
+        .with_response("https://mirror.invalid/index.json", Ok(SAMPLE));
+
+    let index = fetch_registry_index_with_cache(
+        &source,
+        &["https://mirror.invalid/index.json".to_owned()],
+        &cache,
+    )
+    .unwrap();
+
+    assert_eq!(index.summary().model_count, 1);
+    assert_eq!(std::fs::read_to_string(cache.path()).unwrap(), SAMPLE);
+    assert_eq!(cache.read_index().unwrap().summary().asset_count, 2);
+    let cache_dir = cache.path().parent().unwrap();
+    let temp_entries = std::fs::read_dir(cache_dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".tmp."))
+        .collect::<Vec<_>>();
+    assert!(
+        temp_entries.is_empty(),
+        "temp cache files left behind: {temp_entries:?}"
+    );
+}
+
+#[test]
+fn registry_text_cache_uses_stale_cache_after_fetch_failure() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cache = RegistryTextCache::new(temp_dir.path().join("index.json"));
+    std::fs::write(cache.path(), SAMPLE).unwrap();
+    let source = StaticRegistryTextSource::default()
+        .with_response("https://mirror.invalid/index.json", Err("offline"));
+
+    let index = fetch_registry_index_with_cache(
+        &source,
+        &["https://mirror.invalid/index.json".to_owned()],
+        &cache,
+    )
+    .unwrap();
+
+    assert_eq!(index.summary().model_count, 1);
+    assert_eq!(
+        source.attempts(),
+        ["https://mirror.invalid/index.json".to_owned()]
+    );
+}
+
+#[test]
+fn registry_text_cache_reports_invalid_stale_cache_after_fetch_failure() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cache = RegistryTextCache::new(temp_dir.path().join("index.json"));
+    std::fs::write(cache.path(), r#"{"version":0}"#).unwrap();
+    let source = StaticRegistryTextSource::default()
+        .with_response("https://mirror.invalid/index.json", Err("offline"));
+
+    let error = fetch_registry_index_with_cache(
+        &source,
+        &["https://mirror.invalid/index.json".to_owned()],
+        &cache,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RegistryCachedFetchError::StaleCacheUnavailable {
+            fetch: RegistryFetchError::AllMirrorsFailed(_),
+            cache: RegistryCacheError::InvalidIndex {
+                error: RegistryError::InvalidVersion,
+                ..
+            },
+        }
+    ));
+}
+
+#[test]
+fn registry_text_cache_does_not_treat_partial_temp_file_as_success() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cache = RegistryTextCache::new(temp_dir.path().join("index.json"));
+    std::fs::write(temp_dir.path().join(".index.json.tmp.manual"), SAMPLE).unwrap();
+    let source = StaticRegistryTextSource::default()
+        .with_response("https://mirror.invalid/index.json", Err("offline"));
+
+    let error = fetch_registry_index_with_cache(
+        &source,
+        &["https://mirror.invalid/index.json".to_owned()],
+        &cache,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RegistryCachedFetchError::StaleCacheUnavailable {
+            fetch: RegistryFetchError::AllMirrorsFailed(_),
+            cache: RegistryCacheError::Read { .. },
+        }
+    ));
 }
 
 #[derive(Debug)]

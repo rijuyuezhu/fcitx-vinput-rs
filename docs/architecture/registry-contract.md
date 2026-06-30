@@ -10,9 +10,10 @@ The registry crate is split before any side-effectful installer work lands:
 - `plan.rs`: planned assets, dry-run install plans, checksum policy planning, and target path calculation;
 - `error.rs`: `RegistryError`;
 - `fetch.rs`: registry text fetch boundary, ordered mirror fallback, and the concrete `ReqwestRegistryTextSource` for HTTP index text fetching;
-- `tests.rs`: behavior-preserving schema, safety, planning, injected-source fetch, and local HTTP fetch coverage.
+- `cache.rs`: text-only registry index cache read/write boundary with same-directory temporary file and rename updates;
+- `tests.rs`: behavior-preserving schema, safety, planning, injected-source fetch, local HTTP fetch, and stale-cache fallback coverage.
 
-Future cache/checksum/archive extraction/materialization code should use separate modules and must not be hidden inside schema, dry-run planning, or concrete HTTP text fetch code.
+Future checksum/archive extraction/materialization code should use separate modules and must not be hidden inside schema, dry-run planning, concrete HTTP text fetch code, or text cache code.
 
 ## Registry shape
 
@@ -35,7 +36,7 @@ cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --su
 
 These commands parse local JSON only. They do not download assets or touch install directories.
 
-The library exposes `fetch_registry_index_from_mirrors` as the shared mirror fallback boundary. It iterates mirror URLs through a `RegistryTextSource`, falls through on transport failures, stops on the first fetched-but-invalid registry body, and performs the same `RegistryIndex` validation as file-backed CLI diagnostics. `ReqwestRegistryTextSource` is the implemented concrete HTTP registry index text source behind that boundary; it fetches JSON text from mirror URLs with sanitized transport/status errors and no auth/header/body leakage. User-facing cache fallback, checksum verification, asset download, archive extraction, install, and config materialization remain future work.
+The library exposes `fetch_registry_index_from_mirrors` as the shared mirror fallback boundary. It iterates mirror URLs through a `RegistryTextSource`, falls through on transport failures, stops on the first fetched-but-invalid registry body, and performs the same `RegistryIndex` validation as file-backed CLI diagnostics. `ReqwestRegistryTextSource` is the implemented concrete HTTP registry index text source behind that boundary; it fetches JSON text from mirror URLs with sanitized transport/status errors and no auth/header/body leakage. `RegistryTextCache` and `fetch_registry_index_with_cache` are implemented as a text-only stale-cache boundary: fresh successful fetches parse before writing cache, write cache through a temporary file plus rename, and fall back to stale cache only when fresh mirror fetch fails. Checksum verification, asset download, archive extraction, install, and config materialization remain future work.
 
 ## Fixture
 
