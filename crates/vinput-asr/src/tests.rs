@@ -1615,7 +1615,7 @@ fn sherpa_onnx_model_paths_resolve_relative_model_and_hotwords() {
     };
     let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
 
-    let paths = spec.resolve_model_paths(&root).unwrap();
+    let paths = spec.resolve_model_paths(root).unwrap();
 
     assert_eq!(paths.model_dir, model_dir);
     assert_eq!(
@@ -1748,7 +1748,7 @@ fn sherpa_onnx_model_paths_reject_file_model_path() {
     };
     let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
 
-    let error = spec.resolve_model_paths(&root).unwrap_err();
+    let error = spec.resolve_model_paths(root).unwrap_err();
 
     assert!(matches!(
         error,
@@ -1775,7 +1775,7 @@ fn sherpa_onnx_model_paths_reject_missing_hotwords_file() {
     };
     let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
 
-    let error = spec.resolve_model_paths(&root).unwrap_err();
+    let error = spec.resolve_model_paths(root).unwrap_err();
 
     assert!(matches!(
         error,
