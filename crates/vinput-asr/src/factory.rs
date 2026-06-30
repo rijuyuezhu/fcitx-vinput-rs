@@ -6,6 +6,7 @@ use vinput_protocol::AsrBackendState;
 use crate::{
     AsrBackend, AsrError, BackendCapabilities, CommandAsrBackend, CommandAsrSpec,
     LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrBackend,
+    SHERPA_ONNX_PROVIDER_ID, SherpaOnnxSpec,
 };
 
 /// Builds ASR backends from typed config entries.
@@ -51,6 +52,10 @@ impl AsrBackendFactory {
                 provider,
                 LegacyCommandBatchRunner,
             )?));
+        }
+        if provider.id == SHERPA_ONNX_PROVIDER_ID && provider.kind == AsrProviderKind::Local {
+            let spec = SherpaOnnxSpec::from_provider(provider)?;
+            return Err(spec.runtime_unavailable_error());
         }
         unsupported_provider(&provider.id, &provider.kind)
     }
@@ -118,7 +123,7 @@ fn unsupported_provider(
     })
 }
 
-fn provider_kind_label(kind: &AsrProviderKind) -> &'static str {
+pub(crate) fn provider_kind_label(kind: &AsrProviderKind) -> &'static str {
     match kind {
         AsrProviderKind::Local => "local",
         AsrProviderKind::Remote => "remote",

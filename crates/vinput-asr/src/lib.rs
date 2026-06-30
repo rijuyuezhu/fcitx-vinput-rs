@@ -9,6 +9,7 @@ mod error;
 mod factory;
 mod mock;
 mod payload;
+mod sherpa;
 mod traits;
 
 pub use command::{
@@ -21,6 +22,7 @@ pub use error::AsrError;
 pub use factory::AsrBackendFactory;
 pub use mock::MockAsrBackend;
 pub use payload::events_to_payload;
+pub use sherpa::{SHERPA_ONNX_PROVIDER_ID, SherpaOnnxSpec};
 pub use traits::{
     AsrBackend, AudioDeliveryMode, BackendCapabilities, BackendDescriptor, RecognitionContext,
     RecognitionEvent, RecognitionSession,

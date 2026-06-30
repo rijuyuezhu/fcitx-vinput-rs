@@ -2,8 +2,8 @@ use super::{
     AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
     CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
     LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrBackend,
-    ProcessCommandAsrRunner, RecognitionContext, RecognitionEvent, events_to_payload,
-    legacy_command_streaming_audio_line, legacy_command_streaming_finish_line,
+    ProcessCommandAsrRunner, RecognitionContext, RecognitionEvent, SherpaOnnxSpec,
+    events_to_payload, legacy_command_streaming_audio_line, legacy_command_streaming_finish_line,
     parse_legacy_command_streaming_line,
 };
 use vinput_audio::{PcmBuffer, PcmSpec};
@@ -1574,9 +1574,55 @@ fn command_asr_backend_with_config_describes_provider() {
 }
 
 #[test]
-fn backend_factory_reports_unimplemented_provider_kind() {
+fn sherpa_onnx_spec_preserves_local_provider_config() {
     let provider = AsrProviderConfig {
         id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: Some(12_000),
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some("hotwords.txt".to_owned()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    assert_eq!(spec.provider_id, "sherpa-onnx");
+    assert_eq!(spec.model.as_deref(), Some("paraformer"));
+    assert_eq!(spec.hotwords_file.as_deref(), Some("hotwords.txt"));
+    assert_eq!(spec.timeout_ms, Some(12_000));
+}
+
+#[test]
+fn backend_factory_reports_sherpa_onnx_runtime_unavailable() {
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: None,
+        hotwords_file: None,
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+
+    let Err(error) = AsrBackendFactory::build_provider(&provider) else {
+        panic!("sherpa-onnx runtime should remain unavailable");
+    };
+    assert!(matches!(
+        error,
+        AsrError::Backend(message)
+            if message == "sherpa-onnx runtime for provider `sherpa-onnx` is not implemented yet"
+    ));
+}
+
+#[test]
+fn backend_factory_reports_unimplemented_provider_kind() {
+    let provider = AsrProviderConfig {
+        id: "local-other".to_owned(),
         kind: AsrProviderKind::Local,
         timeout_ms: None,
         model: None,
@@ -1593,7 +1639,7 @@ fn backend_factory_reports_unimplemented_provider_kind() {
     assert!(matches!(
         error,
         AsrError::UnsupportedProviderKind { provider_id, kind }
-            if provider_id == "sherpa-onnx" && kind == "local"
+            if provider_id == "local-other" && kind == "local"
     ));
 }
 
@@ -1619,7 +1665,7 @@ fn backend_factory_state_reports_unavailable_provider() {
     assert_eq!(state.target_provider_id, "sherpa-onnx");
     assert_eq!(state.target_model_id, "paraformer");
     assert!(!state.has_effective_backend);
-    assert!(state.last_error.contains("not implemented"));
+    assert!(state.last_error.contains("sherpa-onnx runtime"));
 }
 
 #[test]

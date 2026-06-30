@@ -14,7 +14,7 @@
 - `payload.rs`: conversion from recognition events to the legacy recognition payload JSON model;
 - `tests.rs`: behavior-preserving coverage for mock, command, factory, and payload contracts.
 
-Command providers use legacy batch or `.streaming` runners through the factory, while the JSON helper seam remains available for explicit process-runner tests and small helper integrations. Local sherpa-onnx remains future work.
+Command providers use legacy batch or `.streaming` runners through the factory, while the JSON helper seam remains available for explicit process-runner tests and small helper integrations. Local `sherpa-onnx` has an explicit typed config seam, but the runtime remains unavailable until the concrete backend is implemented.
 
 ## Daemon integration
 
@@ -73,6 +73,6 @@ Both `vinput-cli asr-state` and `vinput-daemon asr-state` serialize `AsrBackendS
 
 These gaps remain after the behavior-preserving ASR split:
 
-- Local sherpa-onnx backend, model path management, hotwords, VAD trimming, warmup, and concrete reload state are not implemented yet.
+- Local `sherpa-onnx` typed config parsing exists as a seam; model path management, hotwords runtime use, VAD trimming, warmup, and concrete reload state are not implemented yet.
 - Runtime streaming has command-helper test seams, but live PipeWire chunk delivery to streaming ASR is not implemented.
 - Command ASR is runtime-wired for configured command providers; local and remote ASR provider kinds other than command/mock remain contract-pinned but unavailable.

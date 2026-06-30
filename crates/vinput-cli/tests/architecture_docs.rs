@@ -158,3 +158,21 @@ fn audio_architecture_pins_pipewire_live_test_policy() {
         );
     }
 }
+
+#[test]
+fn asr_architecture_pins_local_sherpa_runtime_gap() {
+    let asr_doc = std::fs::read_to_string(architecture_dir().join("asr-contract.md"))
+        .expect("read asr contract doc");
+
+    for required in [
+        "Local `sherpa-onnx` has an explicit typed config seam",
+        "runtime remains unavailable until the concrete backend is implemented",
+        "Local `sherpa-onnx` typed config parsing exists as a seam",
+        "VAD trimming, warmup, and concrete reload state are not implemented yet",
+    ] {
+        assert!(
+            asr_doc.contains(required),
+            "ASR contract doc should pin local sherpa runtime gap: {required}"
+        );
+    }
+}
