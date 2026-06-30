@@ -1,7 +1,8 @@
 use super::{
     ChecksumPolicy, InstallPlan, RegistryCacheError, RegistryCachedFetchError, RegistryError,
-    RegistryFetchError, RegistryIndex, RegistryTextCache, RegistryTextSource,
+    RegistryFetchError, RegistryIndex, RegistrySha256Error, RegistryTextCache, RegistryTextSource,
     ReqwestRegistryTextSource, fetch_registry_index_from_mirrors, fetch_registry_index_with_cache,
+    sha256_hex, verify_sha256_bytes, verify_sha256_file, verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
 
@@ -691,6 +692,89 @@ fn registry_text_cache_does_not_treat_partial_temp_file_as_success() {
             cache: RegistryCacheError::Read { .. },
         }
     ));
+}
+
+const HELLO_SHA256: &str = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+#[test]
+fn sha256_helper_verifies_bytes() {
+    assert_eq!(sha256_hex(b"hello"), HELLO_SHA256);
+    verify_sha256_bytes(b"hello", HELLO_SHA256).unwrap();
+}
+
+#[test]
+fn sha256_helper_reports_mismatch() {
+    let error = verify_sha256_bytes(
+        b"hello",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RegistrySha256Error::Mismatch {
+            expected: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+            actual: HELLO_SHA256.to_owned(),
+        }
+    );
+}
+
+#[test]
+fn sha256_helper_rejects_invalid_expected_checksum() {
+    assert_eq!(
+        verify_sha256_bytes(b"hello", "ABC").unwrap_err(),
+        RegistrySha256Error::InvalidExpected("ABC".to_owned())
+    );
+    assert_eq!(
+        verify_sha256_bytes(
+            b"hello",
+            "2CF24DBA5FB0A30E26E83B2AC5B9E29E1B161E5C1FA7425E73043362938B9824",
+        )
+        .unwrap_err(),
+        RegistrySha256Error::InvalidExpected(
+            "2CF24DBA5FB0A30E26E83B2AC5B9E29E1B161E5C1FA7425E73043362938B9824".to_owned()
+        )
+    );
+}
+
+#[test]
+fn sha256_helper_verifies_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let path = temp_dir.path().join("asset.bin");
+    std::fs::write(&path, b"hello").unwrap();
+
+    verify_sha256_file(&path, HELLO_SHA256).unwrap();
+}
+
+#[test]
+fn sha256_helper_reports_file_open_error() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let path = temp_dir.path().join("missing.bin");
+
+    let error = verify_sha256_file(&path, HELLO_SHA256).unwrap_err();
+
+    assert!(matches!(error, RegistrySha256Error::OpenFile { .. }));
+}
+
+#[derive(Debug)]
+struct FailingReader;
+
+impl std::io::Read for FailingReader {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("secret-reader-detail"))
+    }
+}
+
+#[test]
+fn sha256_helper_reports_reader_error_without_details() {
+    let error = verify_sha256_reader(FailingReader, HELLO_SHA256).unwrap_err();
+
+    assert_eq!(
+        error,
+        RegistrySha256Error::Read {
+            message: "other error".to_owned(),
+        }
+    );
 }
 
 #[derive(Debug)]
