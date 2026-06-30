@@ -71,14 +71,28 @@ configure_file(vinput-addon.conf.in vinput-addon.conf @ONLY)
 
 
 if(Fcitx5Core_FOUND)
+  add_library(vinput_fcitx_bridge_fcitx STATIC
+    src/fcitx_key_trigger.cpp
+    src/fcitx_outcome.cpp
+  )
+  add_library(vinput_fcitx_bridge::fcitx ALIAS vinput_fcitx_bridge_fcitx)
+  target_link_libraries(vinput_fcitx_bridge_fcitx
+    PUBLIC
+      vinput_fcitx_bridge::core
+      Fcitx5::Core
+  )
+  target_compile_features(vinput_fcitx_bridge_fcitx PUBLIC cxx_std_20)
+  set_target_properties(vinput_fcitx_bridge_fcitx PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  vinput_bridge_apply_warnings(vinput_fcitx_bridge_fcitx)
+
   add_library(fcitx5_vinput_addon MODULE
     src/fcitx_addon.cpp
     src/fcitx_addon_factory.cpp
-    src/fcitx_outcome.cpp
   )
   target_link_libraries(fcitx5_vinput_addon
     PRIVATE
       vinput_fcitx_bridge::sdbus
+      vinput_fcitx_bridge::fcitx
       Fcitx5::Core
   )
   target_compile_features(fcitx5_vinput_addon PRIVATE cxx_std_20)
@@ -93,6 +107,22 @@ if(Fcitx5Core_FOUND)
     OUTPUT_NAME "fcitx5-vinput"
   )
   vinput_bridge_apply_warnings(fcitx5_vinput_addon)
+
+  add_executable(
+    vinput_fcitx_bridge_key_trigger_smoke
+    tests/fcitx_key_trigger_smoke.cpp
+  )
+  target_link_libraries(
+    vinput_fcitx_bridge_key_trigger_smoke
+    PRIVATE
+      vinput_fcitx_bridge::fcitx
+      Fcitx5::Core
+  )
+  vinput_bridge_apply_warnings(vinput_fcitx_bridge_key_trigger_smoke)
+  add_test(
+    NAME vinput_fcitx_bridge_key_trigger_smoke
+    COMMAND vinput_fcitx_bridge_key_trigger_smoke
+  )
 
   vinput_bridge_install_dir(
     VINPUT_FCITX_MODULE_INSTALL_DIR

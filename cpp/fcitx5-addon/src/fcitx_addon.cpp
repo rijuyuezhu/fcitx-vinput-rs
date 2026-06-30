@@ -1,18 +1,12 @@
 #include "vinput_fcitx_bridge/fcitx_addon.h"
 
-#include <fcitx-utils/key.h>
+#include "vinput_fcitx_bridge/fcitx_key_trigger.h"
+
 #include <fcitx/event.h>
 
 #include <utility>
 
 namespace vinput_fcitx_bridge {
-namespace {
-
-bool IsDefaultTriggerKey(const fcitx::KeyEvent &event) {
-  return event.isRelease() && event.key().check(FcitxKey_Control_R);
-}
-
-} // namespace
 
 FcitxVinputAddon::FcitxVinputAddon(fcitx::Instance *instance) : instance_(instance) {
   if (instance_ != nullptr) {
@@ -48,7 +42,8 @@ void FcitxVinputAddon::HandleKeyEvent(fcitx::Event &event) {
   }
 
   auto &key_event = static_cast<fcitx::KeyEvent &>(event);
-  if (!IsDefaultTriggerKey(key_event)) {
+  const FcitxKeyTriggerPolicy trigger_policy;
+  if (!trigger_policy.IsNormalTrigger(key_event)) {
     return;
   }
 
