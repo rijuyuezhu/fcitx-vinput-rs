@@ -1,6 +1,6 @@
 # Architecture contracts
 
-This directory contains tracked architecture and compatibility contracts for the Rust rewrite. Read [`../development.md`](../development.md) first, then use this index to choose the subsystem document relevant to the task.
+This directory contains tracked architecture and compatibility contracts for the Rust rewrite. Read [`../development.md`](../development.md) and [`../migration/e2e-port-plan.md`](../migration/e2e-port-plan.md) first, then use this index to choose the subsystem document relevant to the task.
 
 ## Reading order
 
@@ -12,7 +12,8 @@ This directory contains tracked architecture and compatibility contracts for the
    - [`asr-contract.md`](asr-contract.md): ASR backend/session seams, command ASR behavior, and diagnostics.
    - [`audio-contract.md`](audio-contract.md): PCM layout, WAV/raw byte policy, recorder lifecycle, and PipeWire scaffold.
    - [`text-contract.md`](text-contract.md): text post-processing, prompt/context cache, command adapters, and OpenAI-compatible seams.
-3. `../plan/review-driven-refactor-plan.md`, when present locally, for the current ignored scratch plan and next refactor steps.
+3. [`../migration/e2e-port-plan.md`](../migration/e2e-port-plan.md), for active E2E migration direction.
+4. `../plan/review-driven-refactor-plan.md`, when present locally, for ignored scratch notes only.
 
 ## Maintenance rules
 

@@ -12,7 +12,8 @@
   - `vinput-daemon`: runtime orchestration and D-Bus service facade.
   - `vinput-cli`: diagnostics and user-facing command entry points over library crates.
 - Preserve user-visible legacy behavior before improving internals: D-Bus ABI, status strings, recognition JSON, config semantics, command-mode behavior, and frontend expectations must stay explicit and tested.
-- Prefer test-first refactors. Pin compatibility behavior with tests before moving code across modules or changing runtime logic.
+- Prefer E2E-enabling implementation over generic cleanup. The current phase is to get a usable Fcitx input-method product spine working quickly.
+- Prefer test-first changes. Pin compatibility behavior with tests before moving code across modules or changing runtime logic.
 - Treat mock/seam coverage as contract coverage, not feature parity.
 - Keep public APIs small. Prefer `pub(crate)` for helpers after module splits.
 - Do not log secrets, environment values, or credential-bearing headers.
@@ -89,15 +90,16 @@ For docs-only changes, at least verify paths and git status. Run full checks whe
 
 ## Next work
 
-The next migration phase is refactor-first. Read `docs/plan/review-driven-refactor-plan.md` when it exists locally and follow its execution order:
+The next migration phase is E2E port acceleration. Read `docs/migration/e2e-port-plan.md` first and use it as the tracked source of truth for product direction. The old ignored `docs/plan/review-driven-refactor-plan.md` may contain useful notes, but it is no longer the primary plan.
 
-1. Preserve legacy D-Bus error ABI.
-2. Preserve/defer ASR reload semantics.
-3. Split `vinput-text`.
-4. Split `vinput-daemon::runtime`.
-5. Split `vinput-asr`.
-6. Split `vinput-registry`.
-7. Add config legacy compatibility golden tests.
-8. Refresh stable architecture docs.
+Current priority order:
 
-Feature work such as concrete OpenAI HTTP transport, live PipeWire recording, sherpa-onnx, registry installation, Fcitx frontend work, and packaging should stay blocked until the refactor plan says otherwise or the user explicitly reprioritizes.
+1. Build a retained thin C++ Fcitx5 frontend bridge that talks to the Rust daemon and commits a mock/configured result.
+2. Add local run and dev install documentation for the daemon plus frontend bridge.
+3. Fill in the minimal live audio input path behind the existing optional audio feature.
+4. Use the configured command recognizer path as the fastest first non-mock recognition route.
+5. Keep configured text finishing usable from the frontend flow.
+6. Add registry resource preparation only after the product spine works.
+7. Defer GUI/i18n/release polish until the input method is usable.
+
+Feature work is now allowed when it directly advances the E2E product spine and stays behind explicit seams with focused tests. Do not add broad cleanup that does not move one of the priority items above.

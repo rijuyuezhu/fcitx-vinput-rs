@@ -2,7 +2,7 @@
 
 Rust-oriented rewrite workspace for [`fcitx5-vinput`](https://github.com/xifan2333/fcitx5-vinput).
 
-The first milestones are intentionally small: preserve the public daemon/frontend contract, make the config/protocol types testable, run a mock daemon loop, expose that mock runtime through the legacy D-Bus ABI, and introduce an ASR trait boundary before replacing the original C++ backend pieces one by one.
+The early refactor milestones have produced stable Rust protocol/config/audio/ASR/text/registry/daemon/CLI seams. The current milestone is E2E port acceleration: build a retained thin Fcitx5 frontend bridge, run the Rust daemon as the backend, and get a usable input-method product spine working quickly.
 
 ## Current layout
 
@@ -18,6 +18,8 @@ The first milestones are intentionally small: preserve the public daemon/fronten
 - `AGENT.md`: required short instruction file for coding agents.
 - `docs/README.md`: documentation map and required reading order.
 - `docs/development.md`: project style, commit message style, and `just` command guide.
+- `docs/migration/e2e-port-plan.md`: tracked E2E migration plan and Rust-vs-legacy comparison.
+- `docs/migration/agent-kickoff.md`: copyable context for a fresh implementation agent.
 - `docs/architecture/README.md`: tracked architecture contract index.
 - `docs/legacy/`: tracked original-source annotations.
 
@@ -95,10 +97,10 @@ cargo run -p vinput-daemon -- --dbus
 
 ## Development route
 
-The current route is refactor-first. Start with `AGENT.md`, then read `docs/README.md` and `docs/development.md`. If `docs/plan/review-driven-refactor-plan.md` exists locally, treat it as the single source of truth for next-step planning.
+The current route is E2E port acceleration. Start with `AGENT.md`, then read `docs/README.md`, `docs/development.md`, and `docs/migration/e2e-port-plan.md`.
 
-1. Keep `vinput-protocol` ABI-compatible with the existing C++ Fcitx5 addon.
-2. Pin compatibility behavior with tests before changing runtime logic.
-3. Split oversized modules before adding concrete backends.
-4. Keep the `zbus` daemon service behind the same methods/signals.
-5. OpenAI-compatible HTTP transport is now runtime-wired behind explicit configured-backend paths; do not add live PipeWire, sherpa-onnx, registry install, frontend, or packaging work until the refactor plan allows it or the user explicitly reprioritizes.
+1. Keep `vinput-protocol` ABI-compatible with the legacy Fcitx5 addon contract.
+2. Build a retained thin C++ Fcitx5 frontend bridge over the Rust daemon instead of moving backend logic into C++.
+3. Keep `just e2e-demo`, `just smoke`, and targeted crate tests green while adding product-spine functionality.
+4. Implement the fastest usable path first: daemon launch, frontend trigger/commit, configured command recognition, and configured text finishing.
+5. Defer GUI polish, full registry resource orchestration, and release packaging until the input method is usable end to end.

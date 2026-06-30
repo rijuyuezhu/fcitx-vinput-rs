@@ -78,6 +78,12 @@ Every transition should have a unit test before it is wired to D-Bus or PipeWire
 Any change to this crate must include compatibility tests.
 
 
+## Active E2E acceleration target
+
+The current implementation phase prioritizes a usable product spine over further broad refactor work. The next frontend step is a retained thin C++ Fcitx5 bridge that talks to the Rust daemon over the existing protocol boundary and commits a mock or configured recognition result. Backend logic should stay in Rust crates; the frontend should own only Fcitx API integration, menu/status/preedit/candidate UI, text context, and the bus bridge.
+
+See `docs/migration/e2e-port-plan.md` for the active Rust-vs-legacy gap list and execution phases.
+
 ## Frontend and packaging boundary
 
 T6 should start with a retained C++ Fcitx5 skeleton frontend that talks to the Rust daemon over the existing `vinput-protocol` D-Bus ABI. The skeleton should own only Fcitx API integration, menus, preedit/status presentation, selected-text collection, and frontend-side clipboard/deletion fallbacks. Backend logic, ASR/text processing, registry operations, and runtime state must stay in Rust crates and the daemon.

@@ -1,26 +1,28 @@
 # Documentation map
 
-This directory is intentionally small and task-oriented. New agents should not read every file blindly; follow the reading order below.
+This directory is task-oriented. New agents should follow the reading order instead of scanning every file blindly.
 
 ## Required reading order
 
 1. [`../AGENT.md`](../AGENT.md): short root instruction file for agents.
-2. [`development.md`](development.md): project style, commit message style, and `just`-based checks.
-3. [`architecture/README.md`](architecture/README.md): tracked architecture contract index. Read the contract document for the crate or subsystem you will touch.
-4. `plan/review-driven-refactor-plan.md`: local ignored planning scratch and current single source of truth for the next refactor phase, when present in this working tree.
-5. [`legacy/README.md`](legacy/README.md): legacy C++ source analysis index, when a task requires behavior comparison.
+2. [`development.md`](development.md): project style, commit message style, and test commands.
+3. [`migration/e2e-port-plan.md`](migration/e2e-port-plan.md): current tracked plan for accelerating the Rust port toward a usable E2E Fcitx vinput input method.
+4. [`migration/agent-kickoff.md`](migration/agent-kickoff.md): copyable context for a fresh implementation agent.
+5. [`architecture/README.md`](architecture/README.md): tracked architecture contract index. Read the contract document for the crate or subsystem you will touch.
+6. [`legacy/README.md`](legacy/README.md) and [`legacy/source-annotations.md`](legacy/source-annotations.md): legacy C++ source analysis when behavior comparison is needed.
+7. `plan/review-driven-refactor-plan.md`: ignored local scratch notes, when present. These are no longer the primary plan.
 
 ## Directory roles
 
-- [`architecture/`](architecture/): tracked stable contracts for crate boundaries, D-Bus, config, registry, ASR, audio, and text behavior. These files should describe committed behavior or explicit compatibility targets.
-- [`legacy/`](legacy/): tracked migration record for the original C++ source tree. Use this for source-to-target mapping and behavior lookup.
-- `plan/`: ignored local scratch. This is where the current refactor plan lives, but files under this directory must not be manually tracked.
-
-There is no tracked `docs/review/` directory anymore. Stale review snapshots should be deleted after their conclusions are consolidated into `docs/plan/` or the stable contract documents.
+- [`architecture/`](architecture/): tracked stable contracts for crate boundaries, bus, config, registry, ASR, audio, and text behavior.
+- [`legacy/`](legacy/): tracked migration record for the original C++ source tree.
+- [`migration/`](migration/): tracked execution plans and agent handoff prompts for the active Rust port.
+- `plan/`: ignored local scratch. Do not manually track files under this directory.
 
 ## How to update docs
 
+- Update `migration/e2e-port-plan.md` when the active migration strategy, next phase, or legacy/Rust gap list changes.
+- Update `migration/agent-kickoff.md` when a new agent needs different startup context, checks, or first-task guidance.
 - Update `development.md` when workflow, test commands, or commit conventions change.
 - Update `architecture/*` when a public contract or compatibility rule changes.
 - Update `legacy/*` only when source analysis of the original project changes.
-- Keep next-step planning in `docs/plan/`; do not rely on old review snapshots.
