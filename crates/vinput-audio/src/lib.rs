@@ -511,6 +511,7 @@ pub struct MockAudioRecorder {
     recording: bool,
     target: CaptureTarget,
     chunk_callback: Option<AudioChunkCallback>,
+    chunk_frames: Option<usize>,
 }
 
 impl MockAudioRecorder {
@@ -523,6 +524,7 @@ impl MockAudioRecorder {
             recording: false,
             target: CaptureTarget::default(),
             chunk_callback: None,
+            chunk_frames: None,
         }
     }
 
@@ -530,6 +532,19 @@ impl MockAudioRecorder {
     #[must_use]
     pub fn once(recording: CapturedAudio) -> Self {
         Self::from_recordings(vec![recording])
+    }
+
+    /// Configures deterministic chunk callback delivery by complete PCM frames.
+    ///
+    /// Without this option the mock recorder forwards the full captured buffer as
+    /// one callback chunk. With this option, callback chunks are split through
+    /// `PcmBuffer::chunks_by_frames`, preserving interleaved frame boundaries.
+    pub fn with_chunk_frames(mut self, max_frames_per_chunk: usize) -> Result<Self, AudioError> {
+        if max_frames_per_chunk == 0 {
+            return Err(AudioError::InvalidChunkFrameCount(max_frames_per_chunk));
+        }
+        self.chunk_frames = Some(max_frames_per_chunk);
+        Ok(self)
     }
 
     /// Returns the last target passed to `begin_recording`.
@@ -565,7 +580,13 @@ impl AudioRecorder for MockAudioRecorder {
             .ok_or(AudioError::SourceExhausted)?;
         self.next += 1;
         if let Some(callback) = &mut self.chunk_callback {
-            callback(&recording.pcm);
+            if let Some(chunk_frames) = self.chunk_frames {
+                for chunk in recording.pcm.chunks_by_frames(chunk_frames)? {
+                    callback(&chunk);
+                }
+            } else {
+                callback(&recording.pcm);
+            }
         }
         Ok(recording)
     }
@@ -1327,6 +1348,46 @@ mod tests {
                 .unwrap(),
             Vec::new()
         );
+    }
+
+    #[test]
+    fn mock_audio_recorder_can_emit_configured_frame_chunks() {
+        let recording = CapturedAudio::anonymous(
+            PcmBuffer::with_spec(
+                PcmSpec {
+                    sample_rate_hz: 1_000,
+                    channels: 2,
+                },
+                vec![10, 11, 20, 21, 30, 31],
+            )
+            .unwrap(),
+        );
+        let mut recorder = MockAudioRecorder::once(recording)
+            .with_chunk_frames(2)
+            .unwrap();
+        let chunks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<i16>>::new()));
+        let seen_chunks = chunks.clone();
+        recorder.set_chunk_callback(Some(Box::new(move |chunk| {
+            seen_chunks.lock().unwrap().push(chunk.samples().to_vec());
+        })));
+
+        recorder.begin_recording(CaptureTarget::Default).unwrap();
+        recorder.stop_and_get_buffer().unwrap();
+
+        assert_eq!(
+            *chunks.lock().unwrap(),
+            vec![vec![10, 11, 20, 21], vec![30, 31]]
+        );
+    }
+
+    #[test]
+    fn mock_audio_recorder_rejects_zero_frame_chunk_config() {
+        let recording = CapturedAudio::anonymous(PcmBuffer::at_default_rate(vec![1]));
+
+        assert!(matches!(
+            MockAudioRecorder::once(recording).with_chunk_frames(0),
+            Err(AudioError::InvalidChunkFrameCount(0))
+        ));
     }
 
     #[test]
