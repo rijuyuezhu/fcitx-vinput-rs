@@ -627,6 +627,32 @@ fn configured_text_adapters_index_runtime_config() {
 }
 
 #[test]
+fn text_adapter_state_json_redacts_env_and_working_dir_values() {
+    let mut config = VinputConfig::bundled_default().unwrap();
+    config.llm.adapters.push(vinput_config::LlmAdapterConfig {
+        id: "cmd-adapter".to_owned(),
+        command: "vinput-postprocess".to_owned(),
+        args: vec!["--json".to_owned()],
+        env: std::collections::HashMap::from([(
+            "SECRET_TOKEN".to_owned(),
+            "dummy-secret-token".to_owned(),
+        )]),
+        working_dir: Some("/tmp/vinput-secret-workdir".to_owned()),
+        extra: std::collections::HashMap::default(),
+    });
+    let state = RuntimeState::configured_text_adapter_state(&config);
+
+    let json = serde_json::to_string(&state).unwrap();
+
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["adapters"][0]["env_count"], 1);
+    assert_eq!(value["adapters"][0]["has_working_dir"], true);
+    assert!(!json.contains("SECRET_TOKEN"));
+    assert!(!json.contains("dummy-secret-token"));
+    assert!(!json.contains("/tmp/vinput-secret-workdir"));
+}
+
+#[test]
 fn configured_capture_target_defaults_to_backend_default() {
     let config = VinputConfig::bundled_default().unwrap();
     let runtime = RuntimeState::new(config.clone()).unwrap();
