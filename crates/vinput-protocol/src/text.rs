@@ -133,6 +133,17 @@ mod tests {
     }
 
     #[test]
+    fn adapter_summary_schema_uses_sanitized_shape() {
+        let schema = schemars::schema_for!(TextAdapterSummary);
+        let json = serde_json::to_string(&schema).unwrap();
+
+        assert!(json.contains("args_count"));
+        assert!(!json.contains("\"command\""));
+        assert!(!json.contains("\"args\""));
+        assert!(!json.contains("\"working_dir\""));
+    }
+
+    #[test]
     fn missing_fields_default_for_legacy_tolerance() {
         let state: TextAdapterState = serde_json::from_str(r#"{"adapter_count":0}"#).unwrap();
         assert_eq!(state.adapter_count, 0);
