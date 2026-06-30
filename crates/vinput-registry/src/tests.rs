@@ -1,10 +1,10 @@
 use super::{
-    ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, ArchiveStagingError, AssetChecksumStatus,
-    ChecksumPolicy, InstallPlan, PlannedInstallAsset, RegistryAssetStagingError,
-    RegistryCacheError, RegistryCachedFetchError, RegistryEntryKind, RegistryError,
-    RegistryFetchError, RegistryIndex, RegistryMaterializeError, RegistrySha256Error,
-    RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource, ReqwestRegistryTextSource,
-    checked_archive_entry_target, fetch_registry_index_from_mirrors,
+    ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, ArchiveStagingError,
+    ArchiveStagingPathError, AssetChecksumStatus, ChecksumPolicy, InstallPlan, PlannedInstallAsset,
+    RegistryAssetStagingError, RegistryCacheError, RegistryCachedFetchError, RegistryEntryKind,
+    RegistryError, RegistryFetchError, RegistryIndex, RegistryMaterializeError,
+    RegistrySha256Error, RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource,
+    ReqwestRegistryTextSource, checked_archive_entry_target, fetch_registry_index_from_mirrors,
     fetch_registry_index_with_cache, materialize_staged_tree, sha256_hex, stage_archive_by_format,
     stage_planned_asset, stage_tar_archive, stage_tar_zst_archive, verify_sha256_bytes,
     verify_sha256_file, verify_sha256_reader,
@@ -1364,6 +1364,71 @@ fn archive_format_rejects_unknown_wrappers_without_publishing() {
         ArchiveStagingError::UnsupportedFormat { .. }
     ));
     assert!(!output.exists());
+}
+
+#[test]
+fn archive_staging_paths_plan_asset_archive_tree_and_target_paths() {
+    let asset = PlannedInstallAsset {
+        entry_kind: RegistryEntryKind::Model,
+        entry_id: "m".to_owned(),
+        source_path: "models/m.tar.zst".to_owned(),
+        target_path: "/var/lib/vinput/assets/models/m.tar.zst".to_owned(),
+        urls: vec!["https://example.invalid/models/m.tar.zst".to_owned()],
+        sha256: None,
+        size_bytes: Some(42),
+        checksum_policy: ChecksumPolicy::Missing,
+    };
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let paths = super::plan_archive_staging_paths(&asset, temp_dir.path()).unwrap();
+
+    assert_eq!(paths.source_path, "models/m.tar.zst");
+    assert_eq!(paths.archive_format, ArchiveFormat::TarZst);
+    assert_eq!(
+        paths.staged_asset_path,
+        temp_dir.path().join("assets/models/m.tar.zst")
+    );
+    assert_eq!(
+        paths.archive_extract_path,
+        temp_dir.path().join("trees/models/m")
+    );
+    assert_eq!(
+        paths.materialize_target_path,
+        std::path::PathBuf::from("/var/lib/vinput/assets/models/m.tar.zst")
+    );
+}
+
+#[test]
+fn archive_staging_paths_reject_unknown_archive_wrappers() {
+    let mut asset =
+        planned_install_asset(vec!["https://example.invalid/model.zip".to_owned()], None);
+    asset.source_path = "models/model.zip".to_owned();
+
+    let error = super::plan_archive_staging_paths(&asset, "stage-root").unwrap_err();
+
+    assert_eq!(
+        error,
+        ArchiveStagingPathError::UnsupportedFormat {
+            source_path: "models/model.zip".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn archive_staging_paths_reject_unsafe_source_paths() {
+    let mut asset =
+        planned_install_asset(vec!["https://example.invalid/model.tar".to_owned()], None);
+    asset.source_path = "models\\model.tar".to_owned();
+
+    let error = super::plan_archive_staging_paths(&asset, "stage-root").unwrap_err();
+
+    assert!(matches!(
+        error,
+        ArchiveStagingPathError::UnsafeSourcePath {
+            error: ArchiveSafetyError::Backslash(_),
+            ..
+        }
+    ));
 }
 
 fn materialize_backup_dirs(dir: &std::path::Path) -> Vec<String> {

@@ -14,6 +14,7 @@ mod fetch;
 mod materialize;
 mod plan;
 mod schema;
+mod staging;
 
 pub use archive::{
     ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, ArchiveStagingError, StagedArchiveTree,
@@ -44,6 +45,7 @@ pub use plan::{
     PlannedInstallAsset, RegistryEntryKind,
 };
 pub use schema::{AdapterEntry, AssetEntry, ModelEntry, RegistryIndex, RegistryIndexSummary};
+pub use staging::{ArchiveStagingPathError, ArchiveStagingPaths, plan_archive_staging_paths};
 
 #[cfg(test)]
 mod tests;
