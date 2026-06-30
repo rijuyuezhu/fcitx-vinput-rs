@@ -66,6 +66,21 @@ pub mod signal {
     pub const DAEMON_NOTIFICATION: &str = "DaemonNotification";
 }
 
+/// Legacy method names exported on [`SERVICE_INTERFACE`] in protocol order.
+pub const LEGACY_SERVICE_METHODS: &[&str] = &[
+    method::START_RECORDING,
+    method::START_COMMAND_RECORDING,
+    method::STOP_RECORDING,
+    method::GET_STATUS,
+    method::GET_ASR_BACKEND_STATE,
+    method::RELOAD_ASR_BACKEND,
+    method::START_ADAPTER,
+    method::STOP_ADAPTER,
+];
+
+/// Rust-only diagnostic extension methods exported on [`SERVICE_INTERFACE`].
+pub const DIAGNOSTIC_EXTENSION_METHODS: &[&str] = &[method::GET_TEXT_ADAPTER_STATE];
+
 /// Method names exported on [`SERVICE_INTERFACE`] in protocol order.
 pub const SERVICE_METHODS: &[&str] = &[
     method::START_RECORDING,
@@ -110,8 +125,40 @@ mod tests {
     }
 
     #[test]
+    fn legacy_service_methods_exclude_diagnostic_extensions() {
+        assert_eq!(
+            LEGACY_SERVICE_METHODS,
+            [
+                method::START_RECORDING,
+                method::START_COMMAND_RECORDING,
+                method::STOP_RECORDING,
+                method::GET_STATUS,
+                method::GET_ASR_BACKEND_STATE,
+                method::RELOAD_ASR_BACKEND,
+                method::START_ADAPTER,
+                method::STOP_ADAPTER,
+            ]
+        );
+        assert_eq!(
+            DIAGNOSTIC_EXTENSION_METHODS,
+            [method::GET_TEXT_ADAPTER_STATE]
+        );
+        assert!(!LEGACY_SERVICE_METHODS.contains(&method::GET_TEXT_ADAPTER_STATE));
+    }
+
+    #[test]
     fn service_methods_do_not_include_frontend_notifier_methods() {
         assert!(!SERVICE_METHODS.contains(&method::NOTIFY));
+        assert!(!LEGACY_SERVICE_METHODS.contains(&method::NOTIFY));
+        assert!(!DIAGNOSTIC_EXTENSION_METHODS.contains(&method::NOTIFY));
+    }
+
+    #[test]
+    fn service_method_list_includes_legacy_methods_and_extensions() {
+        let mut combined = LEGACY_SERVICE_METHODS.to_vec();
+        combined.splice(5..5, DIAGNOSTIC_EXTENSION_METHODS.iter().copied());
+
+        assert_eq!(SERVICE_METHODS, combined.as_slice());
     }
 
     #[test]

@@ -75,3 +75,22 @@ fn target_architecture_lists_all_workspace_crates() {
         );
     }
 }
+
+#[test]
+fn dbus_architecture_labels_diagnostic_extension_and_postprocessing_gap() {
+    let dbus_doc = std::fs::read_to_string(architecture_dir().join("dbus-service.md"))
+        .expect("read dbus service doc");
+
+    assert!(
+        dbus_doc.contains("GetTextAdapterState` is a Rust diagnostic extension"),
+        "D-Bus docs must label GetTextAdapterState as a Rust diagnostic extension"
+    );
+    assert!(
+        dbus_doc.contains("not part of the original C++ daemon vtable"),
+        "D-Bus docs must keep the legacy-vs-extension boundary explicit"
+    );
+    assert!(
+        dbus_doc.contains("A real legacy `postprocessing` runtime phase is still not wired"),
+        "D-Bus docs must keep the current postprocessing runtime gap explicit"
+    );
+}

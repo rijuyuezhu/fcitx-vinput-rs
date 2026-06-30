@@ -189,6 +189,8 @@ fn print_protocol() -> anyhow::Result<()> {
         "frontend_notifier_object_path": dbus::FRONTEND_NOTIFIER_OBJECT_PATH,
         "frontend_notifier_interface": dbus::FRONTEND_NOTIFIER_INTERFACE,
         "methods": dbus::SERVICE_METHODS,
+        "legacy_methods": dbus::LEGACY_SERVICE_METHODS,
+        "diagnostic_extension_methods": dbus::DIAGNOSTIC_EXTENSION_METHODS,
         "signals": dbus::SERVICE_SIGNALS,
     });
     println!("{}", serde_json::to_string_pretty(&value)?);
