@@ -4,6 +4,7 @@
 //! yet.  This crate owns the pure data contract for registry indexes so later
 //! code can fetch, validate, and install assets behind tested boundaries.
 
+mod archive;
 mod cache;
 mod checksum;
 mod error;
@@ -11,6 +12,7 @@ mod fetch;
 mod plan;
 mod schema;
 
+pub use archive::{ArchiveEntryKind, ArchiveSafetyError, checked_archive_entry_target};
 pub use cache::{
     RegistryCacheError, RegistryCachedFetchError, RegistryTextCache,
     fetch_registry_index_with_cache,

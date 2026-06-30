@@ -1,8 +1,10 @@
 use super::{
-    ChecksumPolicy, InstallPlan, RegistryCacheError, RegistryCachedFetchError, RegistryError,
-    RegistryFetchError, RegistryIndex, RegistrySha256Error, RegistryTextCache, RegistryTextSource,
-    ReqwestRegistryTextSource, fetch_registry_index_from_mirrors, fetch_registry_index_with_cache,
-    sha256_hex, verify_sha256_bytes, verify_sha256_file, verify_sha256_reader,
+    ArchiveEntryKind, ArchiveSafetyError, ChecksumPolicy, InstallPlan, RegistryCacheError,
+    RegistryCachedFetchError, RegistryError, RegistryFetchError, RegistryIndex,
+    RegistrySha256Error, RegistryTextCache, RegistryTextSource, ReqwestRegistryTextSource,
+    checked_archive_entry_target, fetch_registry_index_from_mirrors,
+    fetch_registry_index_with_cache, sha256_hex, verify_sha256_bytes, verify_sha256_file,
+    verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
 
@@ -774,6 +776,77 @@ fn sha256_helper_reports_reader_error_without_details() {
         RegistrySha256Error::Read {
             message: "other error".to_owned(),
         }
+    );
+}
+
+#[test]
+fn archive_policy_accepts_regular_files_and_directories_under_root() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path().join("extract-root");
+
+    let file_target =
+        checked_archive_entry_target(&root, "models/sherpa/model.bin", ArchiveEntryKind::File)
+            .unwrap();
+    let dir_target =
+        checked_archive_entry_target(&root, "models/sherpa", ArchiveEntryKind::Directory).unwrap();
+
+    assert_eq!(file_target, root.join("models/sherpa/model.bin"));
+    assert_eq!(dir_target, root.join("models/sherpa"));
+}
+
+#[test]
+fn archive_policy_rejects_absolute_paths() {
+    let error =
+        checked_archive_entry_target("root", "/etc/passwd", ArchiveEntryKind::File).unwrap_err();
+
+    assert_eq!(
+        error,
+        ArchiveSafetyError::AbsolutePath("/etc/passwd".to_owned())
+    );
+}
+
+#[test]
+fn archive_policy_rejects_parent_traversal_and_root_escape_attempts() {
+    assert_eq!(
+        checked_archive_entry_target("root", "../escape", ArchiveEntryKind::File).unwrap_err(),
+        ArchiveSafetyError::ParentTraversal("../escape".to_owned())
+    );
+    assert_eq!(
+        checked_archive_entry_target("root", "models/../../escape", ArchiveEntryKind::File)
+            .unwrap_err(),
+        ArchiveSafetyError::ParentTraversal("models/../../escape".to_owned())
+    );
+}
+
+#[test]
+fn archive_policy_rejects_link_and_unknown_entry_types() {
+    assert_eq!(
+        checked_archive_entry_target("root", "link", ArchiveEntryKind::Symlink).unwrap_err(),
+        ArchiveSafetyError::UnsupportedEntryKind("symlink")
+    );
+    assert_eq!(
+        checked_archive_entry_target("root", "link", ArchiveEntryKind::Hardlink).unwrap_err(),
+        ArchiveSafetyError::UnsupportedEntryKind("hardlink")
+    );
+    assert_eq!(
+        checked_archive_entry_target("root", "entry", ArchiveEntryKind::Other).unwrap_err(),
+        ArchiveSafetyError::UnsupportedEntryKind("other")
+    );
+}
+
+#[test]
+fn archive_policy_rejects_backslashes_and_empty_paths() {
+    assert_eq!(
+        checked_archive_entry_target("root", "models\\bad", ArchiveEntryKind::File).unwrap_err(),
+        ArchiveSafetyError::Backslash("models\\bad".to_owned())
+    );
+    assert_eq!(
+        checked_archive_entry_target("root", "   ", ArchiveEntryKind::File).unwrap_err(),
+        ArchiveSafetyError::EmptyPath
+    );
+    assert_eq!(
+        checked_archive_entry_target("root", "./", ArchiveEntryKind::File).unwrap_err(),
+        ArchiveSafetyError::NoSafeComponents("./".to_owned())
     );
 }
 
