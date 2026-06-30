@@ -178,6 +178,7 @@ fn asr_architecture_pins_local_sherpa_runtime_gap() {
         "VAD trimming, warmup, and concrete reload state are not implemented yet",
         "`MockAsrBackend` can attach a shared `MockAsrAudioLog` for deterministic tests",
         "mock-only observation seam for future runtime streaming tests",
+        "`MockAsrAudioPush` is serde/schema-ready",
     ] {
         assert!(
             asr_doc.contains(required),

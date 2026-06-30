@@ -81,3 +81,5 @@ These gaps remain after the behavior-preserving ASR split:
 ## Mock audio push observation
 
 `MockAsrBackend` can attach a shared `MockAsrAudioLog` for deterministic tests. The log records each `push_audio` or `push_pcm` call, including sample length and optional `PcmSpec` metadata. This is a mock-only observation seam for future runtime streaming tests; it does not imply a real ASR runtime or live recorder is wired.
+
+`MockAsrAudioPush` is serde/schema-ready so future diagnostics can expose recorded mock audio pushes without exposing the shared `MockAsrAudioLog` container itself.
