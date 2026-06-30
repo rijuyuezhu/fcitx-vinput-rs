@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace vinput_fcitx_bridge {
 namespace {
@@ -141,11 +142,10 @@ private:
     }
 
     if (*high < 0xD800 || *high > 0xDBFF) {
-      return *high;
+      return high;
     }
 
-    if (pos_ + 1 >= input_.size() || input_[pos_] != '\\' ||
-        input_[pos_ + 1] != 'u') {
+    if (pos_ + 1 >= input_.size() || input_[pos_] != '\\' || input_[pos_ + 1] != 'u') {
       return std::nullopt;
     }
     pos_ += 2;
@@ -340,8 +340,8 @@ private:
     const std::size_t start = pos_;
     while (pos_ < input_.size()) {
       const char ch = input_[pos_];
-      if (std::isspace(static_cast<unsigned char>(ch)) != 0 || ch == ',' ||
-          ch == ']' || ch == '}') {
+      if (std::isspace(static_cast<unsigned char>(ch)) != 0 || ch == ',' || ch == ']' ||
+          ch == '}') {
         break;
       }
       ++pos_;

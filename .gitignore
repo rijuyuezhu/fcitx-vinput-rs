@@ -14,3 +14,6 @@
 
 # Local planning scratch
 /docs/plan/
+
+# C++ tooling
+/compile_commands.json

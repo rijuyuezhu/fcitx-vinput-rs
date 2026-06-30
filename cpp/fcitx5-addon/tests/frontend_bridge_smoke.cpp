@@ -1,0 +1,122 @@
+#include "vinput_fcitx_bridge/frontend_bridge.h"
+
+#include <cassert>
+#include <string>
+#include <string_view>
+
+using vinput_fcitx_bridge::BridgeOutcome;
+using vinput_fcitx_bridge::DaemonClient;
+using vinput_fcitx_bridge::FrontendBridge;
+
+class FakeDaemonClient final : public DaemonClient {
+public:
+  bool StartRecording(std::string *error) override {
+    (void)error;
+    ++start_recording_calls;
+    return start_ok;
+  }
+
+  bool StartCommandRecording(std::string_view selected_text,
+                             std::string *error) override {
+    (void)error;
+    ++start_command_calls;
+    last_selected_text = std::string(selected_text);
+    return start_ok;
+  }
+
+  bool StopRecording(std::string_view scene_id, std::string *payload_json,
+                     std::string *error) override {
+    ++stop_calls;
+    last_scene_id = std::string(scene_id);
+    if (!stop_ok) {
+      if (error) {
+        *error = "stop failed";
+      }
+      return false;
+    }
+    if (payload_json) {
+      *payload_json = next_payload_json;
+    }
+    return true;
+  }
+
+  bool start_ok = true;
+  bool stop_ok = true;
+  std::string next_payload_json =
+      R"({"commit_text":"mock recognition result","candidates":[{"text":"mock recognition result","source":"raw"}]})";
+  int start_recording_calls = 0;
+  int start_command_calls = 0;
+  int stop_calls = 0;
+  std::string last_selected_text;
+  std::string last_scene_id;
+};
+
+int main() {
+  {
+    FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartNormal(&client);
+    assert(start.kind == BridgeOutcome::Kind::Preedit);
+    assert(start.text == "... Recording ...");
+    assert(bridge.recording());
+    assert(!bridge.command_mode());
+    assert(client.start_recording_calls == 1);
+
+    const auto stop = bridge.Stop(&client, "default-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Commit);
+    assert(stop.text == "mock recognition result");
+    assert(stop.payload.commit_text == "mock recognition result");
+    assert(!bridge.recording());
+    assert(client.last_scene_id == "default-scene");
+  }
+
+  {
+    FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartCommand(&client, "selected text");
+    assert(start.kind == BridgeOutcome::Kind::Preedit);
+    assert(start.text == "... Commanding ...");
+    assert(bridge.recording());
+    assert(bridge.command_mode());
+    assert(client.start_command_calls == 1);
+    assert(client.last_selected_text == "selected text");
+  }
+
+  {
+    FakeDaemonClient client;
+    client.next_payload_json =
+        R"({"commit_text":"polished 1","candidates":[{"text":"raw transcript","source":"raw"},{"text":"polished 1","source":"llm"},{"text":"polished 2","source":"llm"}]})";
+    FrontendBridge bridge;
+
+    assert(bridge.StartNormal(&client).kind == BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(&client, "menu-scene");
+    assert(stop.kind == BridgeOutcome::Kind::CandidateMenu);
+    assert(stop.payload.candidates.size() == 3);
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
+    client.start_ok = false;
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartNormal(&client);
+    assert(start.kind == BridgeOutcome::Kind::Error);
+    assert(!start.text.empty());
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartCommand(&client, "");
+    assert(start.kind == BridgeOutcome::Kind::Error);
+    assert(start.text == "Please select text first.");
+    assert(client.start_command_calls == 0);
+  }
+
+  return 0;
+}

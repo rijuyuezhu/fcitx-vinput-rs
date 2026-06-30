@@ -1,0 +1,6 @@
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 88
+AllowShortFunctionsOnASingleLine: Empty
+NamespaceIndentation: None
+SortIncludes: true

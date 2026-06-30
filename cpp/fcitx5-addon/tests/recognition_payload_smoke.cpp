@@ -21,8 +21,8 @@ int main() {
   }
 
   {
-    const auto payload = ParseRecognitionPayload(
-        R"({"candidates":[{"text":"first","source":"asr"}]})");
+    const auto payload =
+        ParseRecognitionPayload(R"({"candidates":[{"text":"first","source":"asr"}]})");
     assert(payload.commit_text == "first");
     assert(payload.candidates.size() == 1);
     assert(payload.candidates[0].source == CandidateSource::Asr);

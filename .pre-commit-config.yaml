@@ -13,3 +13,15 @@ repos:
         language: system
         pass_filenames: false
         types_or: [rust]
+      - id: cpp-addon-format
+        name: C++ addon bridge format
+        entry: just addon-format-check
+        language: system
+        pass_filenames: false
+        files: ^cpp/fcitx5-addon/.*\.(cpp|h)$
+      - id: cpp-addon-lint
+        name: C++ addon bridge lint
+        entry: just addon-lint
+        language: system
+        pass_filenames: false
+        files: ^(cpp/fcitx5-addon/.*\.(cpp|h)|cpp/fcitx5-addon/CMakeLists\.txt|\.clang-tidy|justfile)$

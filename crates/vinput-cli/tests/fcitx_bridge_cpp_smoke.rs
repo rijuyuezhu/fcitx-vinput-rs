@@ -1,4 +1,4 @@
-//! Compile smoke tests for the retained C++ Fcitx5 bridge core.
+//! CMake smoke tests for the retained C++ Fcitx5 bridge core.
 
 mod common;
 
@@ -6,47 +6,47 @@ use std::process::Command;
 
 use common::workspace_file;
 
+fn assert_success(output: std::process::Output, context: &str) {
+    assert!(
+        output.status.success(),
+        "{context} failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
-fn cpp_bridge_recognition_payload_core_compiles_and_runs() {
-    let compiler = std::env::var("CXX").unwrap_or_else(|_| "g++".to_owned());
-    let out_dir = workspace_file("target/tmp");
-    std::fs::create_dir_all(&out_dir).expect("create C++ bridge smoke output dir");
-    let binary = out_dir.join("vinput-fcitx-bridge-smoke");
+fn cpp_bridge_cmake_project_configures_builds_and_tests() {
+    let source_dir = workspace_file("cpp/fcitx5-addon");
+    let build_dir = workspace_file("target/tmp/fcitx5-addon-cmake-smoke");
+    let _ = std::fs::remove_dir_all(&build_dir);
+    std::fs::create_dir_all(&build_dir).expect("create C++ bridge CMake build dir");
 
-    let include_dir = workspace_file("cpp/fcitx5-addon/include");
-    let source = workspace_file("cpp/fcitx5-addon/src/recognition_payload.cpp");
-    let smoke = workspace_file("cpp/fcitx5-addon/tests/recognition_payload_smoke.cpp");
-
-    let compile = Command::new(&compiler)
-        .arg("-std=c++20")
-        .arg("-Wall")
-        .arg("-Wextra")
-        .arg("-Werror")
-        .arg("-I")
-        .arg(&include_dir)
-        .arg(&source)
-        .arg(&smoke)
-        .arg("-o")
-        .arg(&binary)
+    let configure = Command::new("cmake")
+        .arg("-S")
+        .arg(&source_dir)
+        .arg("-B")
+        .arg(&build_dir)
+        .arg("-DCMAKE_BUILD_TYPE=Debug")
+        .arg("-DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF")
         .output()
-        .unwrap_or_else(|error| panic!("failed to start C++ compiler `{compiler}`: {error}"));
+        .expect("run CMake configure for C++ bridge");
+    assert_success(configure, "C++ bridge CMake configure");
 
-    assert!(
-        compile.status.success(),
-        "C++ bridge smoke compile failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
-        compile.status.code(),
-        String::from_utf8_lossy(&compile.stdout),
-        String::from_utf8_lossy(&compile.stderr)
-    );
-
-    let run = Command::new(&binary)
+    let build = Command::new("cmake")
+        .arg("--build")
+        .arg(&build_dir)
+        .arg("--parallel")
         .output()
-        .expect("run C++ bridge smoke binary");
-    assert!(
-        run.status.success(),
-        "C++ bridge smoke binary failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
-        run.status.code(),
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
-    );
+        .expect("run CMake build for C++ bridge");
+    assert_success(build, "C++ bridge CMake build");
+
+    let test = Command::new("ctest")
+        .arg("--test-dir")
+        .arg(&build_dir)
+        .arg("--output-on-failure")
+        .output()
+        .expect("run CTest for C++ bridge");
+    assert_success(test, "C++ bridge CTest");
 }

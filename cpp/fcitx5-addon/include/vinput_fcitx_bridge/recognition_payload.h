@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace vinput_fcitx_bridge {
 
-enum class CandidateSource { Raw, Llm, Asr, Cancel };
+enum class CandidateSource : std::uint8_t { Raw, Llm, Asr, Cancel };
 
 struct Candidate {
   std::string text;

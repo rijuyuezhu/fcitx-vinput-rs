@@ -1,0 +1,13 @@
+[Addon]
+Name=Vinput
+Comment=Voice input engine for Fcitx5 backed by the Rust daemon
+Category=Module
+Library=fcitx5-vinput
+Type=SharedLibrary
+OnDemand=False
+Configurable=False
+Version=@PROJECT_VERSION@
+
+[Addon/Dependencies]
+0=dbus
+1=clipboard

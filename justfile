@@ -1,12 +1,12 @@
 set dotenv-load := false
 
-fmt:
+fmt: addon-format
     cargo fmt --all
 
-fmt-check:
+fmt-check: addon-format-check
     cargo fmt --all -- --check
 
-lint:
+lint: addon-lint
     cargo clippy --workspace --all-targets -- -D warnings
 
 dbus-lint:
@@ -18,10 +18,31 @@ test:
 dbus-test:
     dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
 
-check: fmt-check lint test dbus-test dbus-lint addon-smoke
+check: fmt-check lint test dbus-test dbus-lint addon-test
 
-addon-smoke:
-    cargo test -p vinput-cli --test fcitx_bridge_cpp_smoke
+addon-sources := `find cpp/fcitx5-addon -type f \( -name '*.cpp' -o -name '*.h' \) | sort | tr '\n' ' '`
+addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' | sort | tr '\n' ' '`
+
+addon-format:
+    clang-format -i {{addon-sources}}
+
+addon-format-check:
+    clang-format --dry-run --Werror {{addon-sources}}
+
+addon-configure:
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
+
+addon-build: addon-configure
+    cmake --build target/cpp/fcitx5-addon --parallel
+
+addon-lint: addon-configure
+    clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
+
+addon-test: addon-build
+    ctest --test-dir target/cpp/fcitx5-addon --output-on-failure
+
+addon-smoke: addon-format-check addon-lint addon-test
 
 ci: check
 
