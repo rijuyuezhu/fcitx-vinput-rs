@@ -271,15 +271,20 @@ pub enum ChecksumPolicy {
 }
 
 fn normalize_install_root(root: &str) -> String {
-    root.trim_end_matches('/').to_owned()
+    let normalized = root.trim_end_matches('/');
+    if normalized.is_empty() && root.starts_with('/') {
+        "/".to_owned()
+    } else {
+        normalized.to_owned()
+    }
 }
 
 fn join_install_path(root: &str, path: &str) -> String {
     let root = normalize_install_root(root);
     let path = path.trim_start_matches('/');
-    if root.is_empty() {
-        path.to_owned()
-    } else {
-        format!("{root}/{path}")
+    match root.as_str() {
+        "" => path.to_owned(),
+        "/" => format!("/{path}"),
+        _ => format!("{root}/{path}"),
     }
 }
