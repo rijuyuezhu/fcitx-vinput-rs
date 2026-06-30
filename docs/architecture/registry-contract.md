@@ -14,6 +14,7 @@ The registry crate is split so each side-effectful boundary stays reviewable:
 - `checksum.rs`: SHA-256 verification helpers for in-memory bytes, readers, and files;
 - `asset.rs`: asset download/staging boundary, concrete `ReqwestRegistryAssetSource`, temp-file staging, checksum verification, and final staged-file publication;
 - `archive.rs`: archive extraction safety policy helpers plus plain-tar `stage_tar_archive` and zstd-compressed `stage_tar_zst_archive` extraction-to-staging boundaries;
+- `staging.rs`: side-effect-free archive path planning from dry-run asset actions to staged asset, extraction tree, and materialization target paths;
 - `materialize.rs`: staged-tree materialization boundary using local filesystem renames and explicit rollback errors for replacement failures;
 - `tests.rs`: behavior-preserving schema, safety, planning, injected-source fetch, local HTTP fetch, stale-cache fallback, checksum helper, asset staging, tar/tar.zst archive staging, materialization, and archive safety policy coverage.
 
