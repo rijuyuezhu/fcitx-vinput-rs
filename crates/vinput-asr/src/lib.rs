@@ -22,7 +22,9 @@ pub use error::AsrError;
 pub use factory::AsrBackendFactory;
 pub use mock::MockAsrBackend;
 pub use payload::events_to_payload;
-pub use sherpa::{SHERPA_ONNX_PROVIDER_ID, SherpaOnnxSpec};
+pub use sherpa::{
+    SHERPA_ONNX_PROVIDER_ID, SherpaOnnxModelPathError, SherpaOnnxModelPaths, SherpaOnnxSpec,
+};
 pub use traits::{
     AsrBackend, AudioDeliveryMode, BackendCapabilities, BackendDescriptor, RecognitionContext,
     RecognitionEvent, RecognitionSession,

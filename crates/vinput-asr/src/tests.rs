@@ -2,9 +2,9 @@ use super::{
     AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
     CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
     LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrBackend,
-    ProcessCommandAsrRunner, RecognitionContext, RecognitionEvent, SherpaOnnxSpec,
-    events_to_payload, legacy_command_streaming_audio_line, legacy_command_streaming_finish_line,
-    parse_legacy_command_streaming_line,
+    ProcessCommandAsrRunner, RecognitionContext, RecognitionEvent, SherpaOnnxModelPathError,
+    SherpaOnnxSpec, events_to_payload, legacy_command_streaming_audio_line,
+    legacy_command_streaming_finish_line, parse_legacy_command_streaming_line,
 };
 use vinput_audio::{PcmBuffer, PcmSpec};
 use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
@@ -103,6 +103,21 @@ impl CommandAsrRunner for ConfigEchoCommandRunner {
             RecognitionEvent::Completed,
         ])
     }
+}
+
+fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "{}-{}-{}",
+        prefix,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&path).unwrap();
+    path
 }
 
 #[test]
@@ -1593,6 +1608,164 @@ fn sherpa_onnx_spec_preserves_local_provider_config() {
     assert_eq!(spec.model.as_deref(), Some("paraformer"));
     assert_eq!(spec.hotwords_file.as_deref(), Some("hotwords.txt"));
     assert_eq!(spec.timeout_ms, Some(12_000));
+}
+
+#[test]
+fn sherpa_onnx_model_paths_resolve_relative_model_and_hotwords() {
+    let root = unique_temp_dir("sherpa-model-root");
+    let model_dir = root.join("paraformer");
+    std::fs::create_dir_all(&model_dir).unwrap();
+    std::fs::write(model_dir.join("hotwords.txt"), b"hello 1.0\n").unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some("hotwords.txt".to_owned()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let paths = spec.resolve_model_paths(&root).unwrap();
+
+    assert_eq!(paths.model_dir, model_dir);
+    assert_eq!(
+        paths.hotwords_file,
+        Some(paths.model_dir.join("hotwords.txt"))
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn sherpa_onnx_model_paths_accept_absolute_model_path() {
+    let root = unique_temp_dir("sherpa-model-root");
+    let model_dir = root.join("absolute-model");
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some(model_dir.display().to_string()),
+        hotwords_file: None,
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let paths = spec.resolve_model_paths("ignored-root").unwrap();
+
+    assert_eq!(paths.model_dir, model_dir);
+    assert_eq!(paths.hotwords_file, None);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_missing_model_config() {
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: None,
+        hotwords_file: None,
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths("model-root").unwrap_err();
+
+    assert_eq!(
+        error,
+        SherpaOnnxModelPathError::MissingModel {
+            provider_id: "sherpa-onnx".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_url_like_model_path() {
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("https://example.invalid/model".to_owned()),
+        hotwords_file: None,
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths("model-root").unwrap_err();
+
+    assert_eq!(
+        error,
+        SherpaOnnxModelPathError::UrlLikePath {
+            provider_id: "sherpa-onnx".to_owned(),
+            path: "https://example.invalid/model".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_file_model_path() {
+    let root = unique_temp_dir("sherpa-model-root");
+    std::fs::write(root.join("not-dir"), b"model").unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("not-dir".to_owned()),
+        hotwords_file: None,
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths(&root).unwrap_err();
+
+    assert!(matches!(
+        error,
+        SherpaOnnxModelPathError::ModelPathNotDirectory { .. }
+    ));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_missing_hotwords_file() {
+    let root = unique_temp_dir("sherpa-model-root");
+    let model_dir = root.join("paraformer");
+    std::fs::create_dir_all(&model_dir).unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some("missing.txt".to_owned()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths(&root).unwrap_err();
+
+    assert!(matches!(
+        error,
+        SherpaOnnxModelPathError::MissingHotwordsFile { .. }
+    ));
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

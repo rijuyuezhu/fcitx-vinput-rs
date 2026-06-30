@@ -170,7 +170,7 @@ fn asr_architecture_pins_local_sherpa_runtime_gap() {
     for required in [
         "Local `sherpa-onnx` has an explicit typed config seam",
         "runtime remains unavailable until the concrete backend is implemented",
-        "Local `sherpa-onnx` typed config parsing exists as a seam",
+        "Local `sherpa-onnx` typed config parsing and local model/hotwords path validation exist as seams",
         "VAD trimming, warmup, and concrete reload state are not implemented yet",
     ] {
         assert!(
