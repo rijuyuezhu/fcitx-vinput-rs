@@ -32,6 +32,16 @@ The text crate is split by responsibility so future HTTP transport work can land
 - `payload.rs`: command-mode payload ordering;
 - `tests.rs`: behavior-preserving unit coverage.
 
+## Command-mode payload contract
+
+Command mode preserves the legacy frontend-visible candidate order:
+
+1. selected text as a `raw` candidate when command mode has selected text;
+2. recognized command text as an `asr` candidate;
+3. LLM/post-processing candidates as `llm` candidates when available.
+
+Commit text prefers the first LLM/post-processing candidate when one exists. Without LLM candidates, command mode falls back to the selected text when present, otherwise the ASR command text. Frontend-side selected-text deletion, clipboard fallback, and surrounding input replacement remain future frontend work; the Rust daemon only receives the selected text string over D-Bus or CLI and returns the recognition payload.
+
 ## Command adapter process contract
 
 A command text adapter helper is configured by `llm.adapters[]` and is executed with the configured command, args, environment, and optional working directory. The runner writes one `CommandTextRequest` JSON object to stdin, appends a newline, closes stdin, waits for the process, and decodes one `CommandTextResponse` JSON object from stdout.

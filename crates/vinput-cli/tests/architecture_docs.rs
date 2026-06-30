@@ -94,3 +94,24 @@ fn dbus_architecture_labels_diagnostic_extension_and_postprocessing_gap() {
         "D-Bus docs must keep the current postprocessing runtime gap explicit"
     );
 }
+
+#[test]
+fn text_architecture_pins_command_mode_payload_contract() {
+    let text_doc = std::fs::read_to_string(architecture_dir().join("text-contract.md"))
+        .expect("read text contract doc");
+
+    for required in [
+        "selected text as a `raw` candidate",
+        "recognized command text as an `asr` candidate",
+        "LLM/post-processing candidates as `llm` candidates",
+        "Commit text prefers the first LLM/post-processing candidate",
+        "falls back to the selected text when present",
+        "Frontend-side selected-text deletion, clipboard fallback",
+        "remain future frontend work",
+    ] {
+        assert!(
+            text_doc.contains(required),
+            "text contract doc should pin command-mode rule: {required}"
+        );
+    }
+}
