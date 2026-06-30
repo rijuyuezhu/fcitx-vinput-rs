@@ -11,8 +11,7 @@ fn text_adapter_summary(adapter: &LlmAdapterConfig, pid: Option<u32>) -> TextAda
     TextAdapterSummary {
         id: adapter.id.clone(),
         kind: "command".to_owned(),
-        command: adapter.command.clone(),
-        args: adapter.args.clone(),
+        args_count: adapter.args.len(),
         env_count: adapter.env.len(),
         is_running: pid.is_some(),
         pid,

@@ -685,8 +685,7 @@ mod tests {
         assert_eq!(state.adapter_ids, ["mock-adapter"]);
         assert_eq!(state.single_adapter_id.as_deref(), Some("mock-adapter"));
         assert_eq!(state.adapters[0].kind, "command");
-        assert_eq!(state.adapters[0].command, "vinput-postprocess");
-        assert_eq!(state.adapters[0].args, ["--json"]);
+        assert_eq!(state.adapters[0].args_count, 1);
         assert_eq!(state.adapters[0].env_count, 1);
         assert!(state.adapters[0].has_working_dir);
     }

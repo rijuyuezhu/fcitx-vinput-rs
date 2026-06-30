@@ -131,7 +131,8 @@ fn text_architecture_pins_prompt_file_and_context_cache_rules() {
         "XDG_CACHE_HOME/vinput/context.jsonl",
         "$HOME/.cache/vinput/context.jsonl",
         "without exposing environment keys, environment values, or working directory paths",
-        "never include environment keys, environment values, or the configured working directory path",
+        "sanitized per-adapter summaries with `id`, `kind`, `args_count`, `env_count`, `has_working_dir`, `is_running`, and `pid`",
+        "never include the configured command path, command arguments, environment keys, environment values, configured working directory path, or forward-compatible adapter fields",
         "Request diagnostics redact the HTTP auth header case-insensitively",
         "leaving the transport request intact",
     ] {

@@ -49,13 +49,10 @@ pub struct TextAdapterSummary {
     /// Adapter implementation kind.
     #[serde(default)]
     pub kind: String,
-    /// Adapter executable path or command name.
+    /// Number of configured adapter arguments without exposing values.
     #[serde(default)]
-    pub command: String,
-    /// Arguments passed to the adapter process.
-    #[serde(default)]
-    pub args: Vec<String>,
-    /// Number of configured environment entries without exposing values.
+    pub args_count: usize,
+    /// Number of configured environment entries without exposing keys or values.
     #[serde(default)]
     pub env_count: usize,
     /// Whether the daemon currently supervises this adapter as running.
@@ -78,8 +75,7 @@ mod tests {
         let state = TextAdapterState::from_adapters(vec![TextAdapterSummary {
             id: "cmd".to_owned(),
             kind: "command".to_owned(),
-            command: "helper".to_owned(),
-            args: vec!["--json".to_owned()],
+            args_count: 1,
             env_count: 2,
             is_running: true,
             pid: Some(1234),
@@ -89,7 +85,7 @@ mod tests {
         assert_eq!(state.adapter_count, 1);
         assert_eq!(state.adapter_ids, ["cmd"]);
         assert_eq!(state.single_adapter_id.as_deref(), Some("cmd"));
-        assert_eq!(state.adapters[0].command, "helper");
+        assert_eq!(state.adapters[0].args_count, 1);
         assert_eq!(state.adapters[0].env_count, 2);
         assert!(state.adapters[0].is_running);
         assert_eq!(state.adapters[0].pid, Some(1234));
@@ -106,6 +102,34 @@ mod tests {
         assert_eq!(ambiguous.adapter_count, 2);
         assert_eq!(ambiguous.adapter_ids, ["first", "second"]);
         assert!(ambiguous.single_adapter_id.is_none());
+    }
+
+    #[test]
+    fn adapter_summary_serializes_sanitized_shape() {
+        let summary = TextAdapterSummary {
+            id: "cmd".to_owned(),
+            kind: "command".to_owned(),
+            args_count: 2,
+            env_count: 1,
+            is_running: false,
+            pid: None,
+            has_working_dir: true,
+        };
+
+        let value = serde_json::to_value(summary).unwrap();
+        assert_eq!(value["id"], "cmd");
+        assert_eq!(value["kind"], "command");
+        assert_eq!(value["args_count"], 2);
+        assert_eq!(value["env_count"], 1);
+        assert_eq!(value["has_working_dir"], true);
+
+        let json = serde_json::to_string(&value).unwrap();
+        for forbidden_key in ["command", "args", "env", "working_dir"] {
+            assert!(
+                !json.contains(&format!("\"{forbidden_key}\":")),
+                "text adapter summary must not expose {forbidden_key}"
+            );
+        }
     }
 
     #[test]

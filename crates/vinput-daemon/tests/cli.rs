@@ -676,7 +676,14 @@ fn text_adapters_uses_config_file() {
             "providers": [{"id":"mock","type":"local","model":"fixture"}]
           },
           "llm": {
-            "adapters": [{"id":"cmd-adapter","command":"vinput-postprocess","args":["--json"]}]
+            "adapters": [{
+              "id":"cmd-adapter",
+              "command":"helper-leak-marker",
+              "args":["arg-leak-marker"],
+              "env":{"ADAPTER_FLAG":"env-leak-marker"},
+              "working_dir":"/tmp/workdir-leak-marker",
+              "future_field":"extra-leak-marker"
+            }]
           },
           "scenes": {
             "active_scene": "raw",
@@ -697,6 +704,31 @@ fn text_adapters_uses_config_file() {
     assert_eq!(value["adapter_count"], 1);
     assert_eq!(value["adapter_ids"], serde_json::json!(["cmd-adapter"]));
     assert_eq!(value["single_adapter_id"], "cmd-adapter");
+    assert_eq!(value["adapters"][0]["id"], "cmd-adapter");
+    assert_eq!(value["adapters"][0]["kind"], "command");
+    assert_eq!(value["adapters"][0]["args_count"], 1);
+    assert_eq!(value["adapters"][0]["env_count"], 1);
+    assert_eq!(value["adapters"][0]["has_working_dir"], true);
+
+    let stdout = serde_json::to_string(&value).unwrap();
+    for forbidden_key in ["command", "args", "env", "working_dir", "future_field"] {
+        assert!(
+            !stdout.contains(&format!("\"{forbidden_key}\":")),
+            "text adapter diagnostics must not expose {forbidden_key}"
+        );
+    }
+    for marker in [
+        "helper-leak-marker",
+        "arg-leak-marker",
+        "env-leak-marker",
+        "workdir-leak-marker",
+        "extra-leak-marker",
+    ] {
+        assert!(
+            !stdout.contains(marker),
+            "text adapter diagnostics must not leak {marker}"
+        );
+    }
 }
 
 #[test]
@@ -1059,8 +1091,7 @@ fn text_adapters_reports_configured_adapter_summary() {
     assert_eq!(value["single_adapter_id"], "cmd-adapter");
     assert_eq!(value["adapters"][0]["id"], "cmd-adapter");
     assert_eq!(value["adapters"][0]["kind"], "command");
-    assert_eq!(value["adapters"][0]["command"], "helper");
-    assert_eq!(value["adapters"][0]["args"], serde_json::json!(["--json"]));
+    assert_eq!(value["adapters"][0]["args_count"], 1);
     assert_eq!(value["adapters"][0]["env_count"], 1);
     assert_eq!(value["adapters"][0]["is_running"], false);
     assert!(value["adapters"][0]["pid"].is_null());
@@ -1129,9 +1160,9 @@ fn text_adapters_reports_multiple_adapter_ids() {
     assert_eq!(value["adapter_ids"], serde_json::json!(["first", "second"]));
     assert!(value["single_adapter_id"].is_null());
     assert_eq!(value["adapters"][0]["id"], "first");
-    assert_eq!(value["adapters"][0]["command"], "first-helper");
+    assert_eq!(value["adapters"][0]["args_count"], 0);
     assert_eq!(value["adapters"][1]["id"], "second");
-    assert_eq!(value["adapters"][1]["command"], "second-helper");
+    assert_eq!(value["adapters"][1]["args_count"], 0);
 }
 
 #[test]

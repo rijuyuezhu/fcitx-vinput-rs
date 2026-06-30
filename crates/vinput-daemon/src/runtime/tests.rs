@@ -618,8 +618,7 @@ fn configured_text_adapters_index_runtime_config() {
     assert_eq!(state.adapter_ids, ["cmd-adapter"]);
     assert_eq!(state.single_adapter_id.as_deref(), Some("cmd-adapter"));
     assert_eq!(state.adapters[0].kind, "command");
-    assert_eq!(state.adapters[0].command, "vinput-postprocess");
-    assert_eq!(state.adapters[0].args, ["--json"]);
+    assert_eq!(state.adapters[0].args_count, 1);
     assert_eq!(state.adapters[0].env_count, 1);
     assert!(!state.adapters[0].is_running);
     assert_eq!(state.adapters[0].pid, None);
@@ -705,9 +704,8 @@ fn configured_text_adapter_state_preserves_multiple_config_order() {
     assert_eq!(state.adapter_count, 2);
     assert_eq!(state.adapter_ids, ["first", "second"]);
     assert!(state.single_adapter_id.is_none());
-    assert_eq!(state.adapters[0].command, "first-helper");
-    assert_eq!(state.adapters[1].command, "second-helper");
-    assert_eq!(state.adapters[1].args, ["--json"]);
+    assert_eq!(state.adapters[0].args_count, 0);
+    assert_eq!(state.adapters[1].args_count, 1);
 }
 
 #[test]
