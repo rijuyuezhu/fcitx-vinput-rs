@@ -31,6 +31,9 @@ AppliedOutcome FcitxVinputAddon::TriggerNormal(fcitx::InputContext *ic,
 
   auto outcome = bridge_.recording() ? bridge_.Stop(daemon_client_.get(), scene_id)
                                      : bridge_.StartNormal(daemon_client_.get());
+  if (outcome.kind == BridgeOutcome::Kind::Error) {
+    daemon_client_.reset();
+  }
   return ApplyBridgeOutcomeToInputContext(outcome, ic);
 }
 
