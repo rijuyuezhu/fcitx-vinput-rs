@@ -1,10 +1,22 @@
 #include "vinput_fcitx_bridge/fcitx_addon.h"
 
 #include <fcitx/event.h>
+#include <fcitx/inputcontext.h>
+#include <fcitx/surroundingtext.h>
 
 #include <utility>
 
 namespace vinput_fcitx_bridge {
+namespace {
+
+std::string SelectedTextFromInputContext(fcitx::InputContext *ic) {
+  if (ic == nullptr || !ic->surroundingText().isValid()) {
+    return {};
+  }
+  return ic->surroundingText().selectedText();
+}
+
+} // namespace
 
 FcitxVinputAddon::FcitxVinputAddon(fcitx::Instance *instance) : instance_(instance) {
   if (instance_ != nullptr) {
@@ -70,12 +82,17 @@ void FcitxVinputAddon::HandleKeyEvent(fcitx::Event &event) {
   }
 
   auto &key_event = static_cast<fcitx::KeyEvent &>(event);
-  if (!trigger_policy_.IsNormalTrigger(key_event)) {
+  if (trigger_policy_.IsNormalTrigger(key_event)) {
+    TriggerNormal(key_event.inputContext());
+    key_event.filterAndAccept();
     return;
   }
 
-  TriggerNormal(key_event.inputContext());
-  key_event.filterAndAccept();
+  if (trigger_policy_.IsCommandTrigger(key_event)) {
+    TriggerCommand(key_event.inputContext(),
+                   SelectedTextFromInputContext(key_event.inputContext()));
+    key_event.filterAndAccept();
+  }
 }
 
 } // namespace vinput_fcitx_bridge
