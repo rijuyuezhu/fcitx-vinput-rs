@@ -4,18 +4,19 @@
 
 ## Module layout
 
-The registry crate is split before any side-effectful installer work lands:
+The registry crate is split before install/materialization work lands:
 
 - `schema.rs`: registry index, model, adapter, asset, summary, validation, and URL resolution helpers;
 - `plan.rs`: planned assets, dry-run install plans, checksum policy planning, and target path calculation;
 - `error.rs`: `RegistryError`;
 - `fetch.rs`: registry text fetch boundary, ordered mirror fallback, and the concrete `ReqwestRegistryTextSource` for HTTP index text fetching;
 - `cache.rs`: text-only registry index cache read/write boundary with same-directory temporary file and rename updates;
-- `checksum.rs`: SHA-256 verification helpers for in-memory bytes, readers, and files before any asset materialization exists;
+- `checksum.rs`: SHA-256 verification helpers for in-memory bytes, readers, and files;
+- `asset.rs`: asset download/staging boundary, concrete `ReqwestRegistryAssetSource`, temp-file staging, checksum verification, and final staged-file publication;
 - `archive.rs`: archive extraction safety policy helpers for future extraction code;
-- `tests.rs`: behavior-preserving schema, safety, planning, injected-source fetch, local HTTP fetch, stale-cache fallback, checksum helper, and archive safety policy coverage.
+- `tests.rs`: behavior-preserving schema, safety, planning, injected-source fetch, local HTTP fetch, stale-cache fallback, checksum helper, asset staging, and archive safety policy coverage.
 
-Future archive format readers and materialization code should use separate modules and must not be hidden inside schema, dry-run planning, concrete HTTP text fetch code, text cache code, checksum helper code, or archive policy code.
+Future archive format readers and materialization code should use separate modules and must not be hidden inside schema, dry-run planning, concrete HTTP text fetch code, text cache code, checksum helper code, asset staging code, or archive policy code.
 
 ## Registry shape
 
@@ -38,7 +39,7 @@ cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --su
 
 These commands parse local JSON only. They do not download assets or touch install directories.
 
-The library exposes `fetch_registry_index_from_mirrors` as the shared mirror fallback boundary. It iterates mirror URLs through a `RegistryTextSource`, falls through on transport failures, stops on the first fetched-but-invalid registry body, and performs the same `RegistryIndex` validation as file-backed CLI diagnostics. `ReqwestRegistryTextSource` is the implemented concrete HTTP registry index text source behind that boundary; it fetches JSON text from mirror URLs with sanitized transport/status errors and no auth/header/body leakage. `RegistryTextCache` and `fetch_registry_index_with_cache` are implemented as a text-only stale-cache boundary: fresh successful fetches parse before writing cache, write cache through a temporary file plus rename, and fall back to stale cache only when fresh mirror fetch fails. `sha256_hex`, `verify_sha256_bytes`, `verify_sha256_reader`, and `verify_sha256_file` are implemented checksum helpers; they require lowercase 64-character expected checksums and report mismatch or read/open failures with typed sanitized errors. `checked_archive_entry_target` is implemented as a filesystem-free archive safety policy helper: future extraction code must accept only regular file/directory entries under a controlled extraction root and reject absolute paths, parent traversal/root escape attempts, backslashes, symlinks, hardlinks, and unknown entry types. Asset download, archive format reading, extraction, install, and config materialization remain future work.
+The library exposes `fetch_registry_index_from_mirrors` as the shared mirror fallback boundary. It iterates mirror URLs through a `RegistryTextSource`, falls through on transport failures, stops on the first fetched-but-invalid registry body, and performs the same `RegistryIndex` validation as file-backed CLI diagnostics. `ReqwestRegistryTextSource` is the implemented concrete HTTP registry index text source behind that boundary; it fetches JSON text from mirror URLs with sanitized transport/status errors and no auth/header/body leakage. `RegistryTextCache` and `fetch_registry_index_with_cache` are implemented as a text-only stale-cache boundary: fresh successful fetches parse before writing cache, write cache through a temporary file plus rename, and fall back to stale cache only when fresh mirror fetch fails. `sha256_hex`, `verify_sha256_bytes`, `verify_sha256_reader`, and `verify_sha256_file` are implemented checksum helpers; they require lowercase 64-character expected checksums and report mismatch or read/open failures with typed sanitized errors. `stage_planned_asset` and `ReqwestRegistryAssetSource` are implemented as an asset download/staging boundary: candidate asset URLs are local/test-injectable through `RegistryAssetSource`, downloaded bytes are written to a temp file, declared SHA-256 checksums are verified before publication, missing checksums are reported as an explicit `AssetChecksumStatus::Missing`, and final staged output is published only after validation. `checked_archive_entry_target` is implemented as a filesystem-free archive safety policy helper: future extraction code must accept only regular file/directory entries under a controlled extraction root and reject absolute paths, parent traversal/root escape attempts, backslashes, symlinks, hardlinks, and unknown entry types. Archive format reading, extraction, install/materialization, and config mutation remain future work.
 
 ## Fixture
 

@@ -1,10 +1,12 @@
-//! Registry manifest models and URL resolution helpers.
+//! Registry manifest models, URL resolution helpers, and staged asset boundaries.
 //!
-//! Network download and archive handling are intentionally not implemented here
-//! yet.  This crate owns the pure data contract for registry indexes so later
-//! code can fetch, validate, and install assets behind tested boundaries.
+//! Asset staging can download and verify one planned asset into a caller-owned
+//! staging file. Archive extraction, install root materialization, configuration
+//! mutation, and user-facing install commands are intentionally still outside
+//! this crate boundary.
 
 mod archive;
+mod asset;
 mod cache;
 mod checksum;
 mod error;
@@ -13,6 +15,10 @@ mod plan;
 mod schema;
 
 pub use archive::{ArchiveEntryKind, ArchiveSafetyError, checked_archive_entry_target};
+pub use asset::{
+    AssetChecksumStatus, RegistryAssetFetchFailure, RegistryAssetSource, RegistryAssetStagingError,
+    ReqwestRegistryAssetSource, StagedRegistryAsset, stage_planned_asset,
+};
 pub use cache::{
     RegistryCacheError, RegistryCachedFetchError, RegistryTextCache,
     fetch_registry_index_with_cache,

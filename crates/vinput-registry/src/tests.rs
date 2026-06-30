@@ -1,10 +1,11 @@
 use super::{
-    ArchiveEntryKind, ArchiveSafetyError, ChecksumPolicy, InstallPlan, RegistryCacheError,
-    RegistryCachedFetchError, RegistryError, RegistryFetchError, RegistryIndex,
-    RegistrySha256Error, RegistryTextCache, RegistryTextSource, ReqwestRegistryTextSource,
+    ArchiveEntryKind, ArchiveSafetyError, AssetChecksumStatus, ChecksumPolicy, InstallPlan,
+    PlannedInstallAsset, RegistryAssetStagingError, RegistryCacheError, RegistryCachedFetchError,
+    RegistryEntryKind, RegistryError, RegistryFetchError, RegistryIndex, RegistrySha256Error,
+    RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource, ReqwestRegistryTextSource,
     checked_archive_entry_target, fetch_registry_index_from_mirrors,
-    fetch_registry_index_with_cache, sha256_hex, verify_sha256_bytes, verify_sha256_file,
-    verify_sha256_reader,
+    fetch_registry_index_with_cache, sha256_hex, stage_planned_asset, verify_sha256_bytes,
+    verify_sha256_file, verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
 
@@ -697,6 +698,147 @@ fn registry_text_cache_does_not_treat_partial_temp_file_as_success() {
 }
 
 const HELLO_SHA256: &str = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+fn planned_install_asset(urls: Vec<String>, sha256: Option<&str>) -> PlannedInstallAsset {
+    PlannedInstallAsset {
+        entry_kind: RegistryEntryKind::Model,
+        entry_id: "sherpa-zh-small".to_owned(),
+        source_path: "models/sherpa-zh-small.tar.zst".to_owned(),
+        target_path: "unused".to_owned(),
+        urls,
+        sha256: sha256.map(str::to_owned),
+        size_bytes: None,
+        checksum_policy: if sha256.is_some() {
+            ChecksumPolicy::Sha256
+        } else {
+            ChecksumPolicy::Missing
+        },
+    }
+}
+
+fn temp_asset_files(dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".tmp."))
+        .collect()
+}
+
+#[test]
+fn registry_asset_staging_fetches_local_http_asset_with_checksum() {
+    let (url, handle) = serve_registry_http_response("200 OK", "hello");
+    let source = ReqwestRegistryAssetSource::new();
+    let asset = planned_install_asset(vec![url], Some(HELLO_SHA256));
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("nested/asset.bin");
+
+    let staged = stage_planned_asset(&source, &asset, &output).unwrap();
+
+    assert_eq!(std::fs::read(&output).unwrap(), b"hello");
+    assert_eq!(staged.source_path, "models/sherpa-zh-small.tar.zst");
+    assert_eq!(staged.path, output);
+    assert_eq!(
+        staged.checksum,
+        AssetChecksumStatus::VerifiedSha256(HELLO_SHA256.to_owned())
+    );
+    assert!(temp_asset_files(temp_dir.path().join("nested").as_path()).is_empty());
+    let request = handle.join().unwrap();
+    assert!(request.head.starts_with("GET / HTTP/1.1"));
+    assert!(!request.head.to_ascii_lowercase().contains("authorization"));
+}
+
+#[test]
+fn registry_asset_staging_marks_missing_checksum_explicitly() {
+    let (url, handle) = serve_registry_http_response("200 OK", "hello");
+    let source = ReqwestRegistryAssetSource::new();
+    let asset = planned_install_asset(vec![url], None);
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("asset.bin");
+
+    let staged = stage_planned_asset(&source, &asset, &output).unwrap();
+
+    assert_eq!(std::fs::read(&output).unwrap(), b"hello");
+    assert_eq!(staged.checksum, AssetChecksumStatus::Missing);
+    handle.join().unwrap();
+}
+
+#[test]
+fn registry_asset_staging_rejects_checksum_mismatch_without_publishing() {
+    let (url, handle) = serve_registry_http_response("200 OK", "hello");
+    let source = ReqwestRegistryAssetSource::new();
+    let asset = planned_install_asset(
+        vec![url],
+        Some("0000000000000000000000000000000000000000000000000000000000000000"),
+    );
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("asset.bin");
+
+    let error = stage_planned_asset(&source, &asset, &output).unwrap_err();
+
+    assert!(matches!(
+        error,
+        RegistryAssetStagingError::Checksum {
+            error: RegistrySha256Error::Mismatch { .. },
+            ..
+        }
+    ));
+    assert!(!output.exists());
+    assert!(temp_asset_files(temp_dir.path()).is_empty());
+    handle.join().unwrap();
+}
+
+#[test]
+fn registry_asset_staging_sanitizes_non_success_http_status() {
+    let (url, handle) = serve_registry_http_response("500 Internal Server Error", "private-body");
+    let source = ReqwestRegistryAssetSource::new();
+    let asset = planned_install_asset(vec![url.clone()], Some(HELLO_SHA256));
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("asset.bin");
+
+    let error = stage_planned_asset(&source, &asset, &output).unwrap_err();
+
+    let RegistryAssetStagingError::AllAssetUrlsFailed { failures, .. } = error else {
+        panic!("expected all asset urls failed");
+    };
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].url, url);
+    assert!(
+        failures[0]
+            .message
+            .contains("HTTP 500 Internal Server Error")
+    );
+    assert!(!failures[0].message.contains("private-body"));
+    assert!(!failures[0].message.contains(&failures[0].url));
+    assert!(!output.exists());
+    handle.join().unwrap();
+}
+
+#[test]
+fn registry_asset_staging_sanitizes_connection_failure() {
+    let url = closed_local_http_url();
+    let source = ReqwestRegistryAssetSource::with_timeout(std::time::Duration::from_millis(250));
+    let asset = planned_install_asset(vec![url.clone()], Some(HELLO_SHA256));
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("asset.bin");
+
+    let error = stage_planned_asset(&source, &asset, &output).unwrap_err();
+
+    let RegistryAssetStagingError::AllAssetUrlsFailed { failures, .. } = error else {
+        panic!("expected all asset urls failed");
+    };
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].url, url);
+    assert!(
+        [
+            "registry asset HTTP connection failed",
+            "registry asset HTTP request timed out",
+        ]
+        .contains(&failures[0].message.as_str())
+    );
+    assert!(!failures[0].message.contains(&failures[0].url));
+    assert!(!output.exists());
+}
 
 #[test]
 fn sha256_helper_verifies_bytes() {
