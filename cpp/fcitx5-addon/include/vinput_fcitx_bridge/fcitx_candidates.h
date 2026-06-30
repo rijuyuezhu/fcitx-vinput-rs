@@ -15,6 +15,8 @@ using ResultCandidateSelectCallback =
 
 std::string ResultCandidateComment(const Candidate &candidate, std::size_t llm_index);
 
+std::string ResultCandidateMenuTitle(std::size_t count);
+
 void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
                                    const Candidate &candidate);
 

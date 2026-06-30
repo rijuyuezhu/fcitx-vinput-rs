@@ -38,6 +38,9 @@ bool ShowCandidateMenu(fcitx::InputContext *ic, const RecognitionPayload &payloa
     return false;
   }
   ClearPreedit(ic);
+  fcitx::Text aux_up;
+  aux_up.append(ResultCandidateMenuTitle(payload.candidates.size()));
+  ic->inputPanel().setAuxUp(aux_up);
   ic->inputPanel().setCandidateList(std::move(candidate_list));
   ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
   return true;

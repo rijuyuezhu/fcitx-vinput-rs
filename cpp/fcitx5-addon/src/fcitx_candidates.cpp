@@ -41,6 +41,10 @@ private:
 
 } // namespace
 
+std::string ResultCandidateMenuTitle(std::size_t count) {
+  return "Choose Result (" + std::to_string(count) + ")";
+}
+
 std::string ResultCandidateComment(const Candidate &candidate, std::size_t llm_index) {
   switch (candidate.source) {
   case CandidateSource::Raw:
@@ -62,6 +66,7 @@ void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
   }
 
   fcitx::Text empty;
+  input_context->inputPanel().setAuxUp(empty);
   input_context->inputPanel().setPreedit(empty);
   input_context->inputPanel().setCandidateList({});
   input_context->updatePreedit();

@@ -11,10 +11,13 @@ using vinput_fcitx_bridge::Candidate;
 using vinput_fcitx_bridge::CandidateSource;
 using vinput_fcitx_bridge::RecognitionPayload;
 using vinput_fcitx_bridge::ResultCandidateComment;
+using vinput_fcitx_bridge::ResultCandidateMenuTitle;
 
 int main() {
   RecognitionPayload empty;
   assert(BuildResultCandidateList(empty) == nullptr);
+
+  assert(ResultCandidateMenuTitle(3) == "Choose Result (3)");
 
   assert(ResultCandidateComment({"raw", CandidateSource::Raw}, 0) == "ASR raw");
   assert(ResultCandidateComment({"asr", CandidateSource::Asr}, 0) == "ASR");
