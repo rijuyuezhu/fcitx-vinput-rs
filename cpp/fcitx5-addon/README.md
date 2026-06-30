@@ -5,10 +5,13 @@ This directory is the retained thin C++ Fcitx5 frontend bridge for the Rust port
 The bridge owns only Fcitx API integration and user interaction:
 
 - addon registration and metadata;
-- trigger key/menu handling;
+- trigger key handling: `Control_R` release for normal recording and `F10` release for command-mode recording;
+- command-mode selection capture via `InputContext::surroundingText().selectedText()`;
 - a small D-Bus client wrapper over the Rust daemon ABI;
 - minimal preedit/status/candidate presentation;
 - committing final recognition text to Fcitx.
+
+Command-mode starts require a non-empty selection. Empty selections return the local `Please select text first.` error outcome without connecting to the daemon.
 
 Backend logic must stay in Rust crates and `vinput-daemon`. The first E2E slice should call the daemon over the legacy D-Bus contract, then commit the mock or configured recognition result returned by `StopRecording`.
 
