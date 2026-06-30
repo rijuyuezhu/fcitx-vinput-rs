@@ -1,6 +1,12 @@
 #pragma once
 
+#include "vinput_fcitx_bridge/fcitx_outcome.h"
 #include "vinput_fcitx_bridge/frontend_bridge.h"
+#include "vinput_fcitx_bridge/sd_bus_daemon_client.h"
+
+#include <memory>
+#include <string>
+#include <string_view>
 
 #include <fcitx/addoninstance.h>
 #include <fcitx/instance.h>
@@ -23,10 +29,13 @@ public:
   const FrontendBridge &bridge() const {
     return bridge_;
   }
+  AppliedOutcome TriggerNormal(fcitx::InputContext *ic,
+                               std::string_view scene_id = "raw");
 
 private:
   fcitx::Instance *instance_ = nullptr;
   FrontendBridge bridge_;
+  std::unique_ptr<SdBusDaemonClient> daemon_client_;
 };
 
 } // namespace vinput_fcitx_bridge
