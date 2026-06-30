@@ -132,6 +132,8 @@ fn text_architecture_pins_prompt_file_and_context_cache_rules() {
         "$HOME/.cache/vinput/context.jsonl",
         "without exposing environment keys, environment values, or working directory paths",
         "never include environment keys, environment values, or the configured working directory path",
+        "Request diagnostics redact the HTTP auth header case-insensitively",
+        "leaving the transport request intact",
     ] {
         assert!(
             text_doc.contains(required),
