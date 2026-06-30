@@ -5,7 +5,10 @@
 //! mutation. It does not download, extract, materialize, mutate configuration, or
 //! expose user-facing install commands.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -47,6 +50,14 @@ pub enum ArchiveStagingPathError {
     UnsupportedFormat {
         /// Registry-relative source path from the dry-run asset action.
         source_path: String,
+    },
+    /// Two planned archive assets would use the same extraction tree.
+    #[error("duplicate archive extraction path for planned asset `{source_path}`: `{archive_extract_path}`")]
+    DuplicateExtractPath {
+        /// Registry-relative source path from the dry-run asset action.
+        source_path: String,
+        /// Extraction path that would collide with an earlier planned archive.
+        archive_extract_path: PathBuf,
     },
 }
 
@@ -105,10 +116,19 @@ pub fn plan_archive_staging_paths_for_plan(
     staging_root: impl AsRef<Path>,
 ) -> Result<Vec<ArchiveStagingPaths>, ArchiveStagingPathError> {
     let staging_root = staging_root.as_ref();
-    plan.assets
-        .iter()
-        .map(|asset| plan_archive_staging_paths(asset, staging_root))
-        .collect()
+    let mut seen_extract_paths = HashSet::new();
+    let mut planned_paths = Vec::with_capacity(plan.assets.len());
+    for asset in &plan.assets {
+        let paths = plan_archive_staging_paths(asset, staging_root)?;
+        if !seen_extract_paths.insert(paths.archive_extract_path.clone()) {
+            return Err(ArchiveStagingPathError::DuplicateExtractPath {
+                source_path: asset.source_path.clone(),
+                archive_extract_path: paths.archive_extract_path,
+            });
+        }
+        planned_paths.push(paths);
+    }
+    Ok(planned_paths)
 }
 
 fn archive_tree_name(source_path: &str, format: ArchiveFormat) -> &str {
