@@ -1140,6 +1140,87 @@ mod tests {
     }
 
     #[test]
+    fn summary_serialization_omits_secret_bearing_fields() {
+        let mut config = VinputConfig::bundled_default().unwrap();
+        config.asr.providers.push(super::AsrProviderConfig {
+            id: "cmd".to_owned(),
+            kind: AsrProviderKind::Command,
+            timeout_ms: None,
+            model: None,
+            hotwords_file: None,
+            command: Some("vinput-asr-helper".to_owned()),
+            args: vec!["--token".to_owned(), "asr-arg-secret".to_owned()],
+            env: std::collections::HashMap::from([(
+                "ASR_TOKEN".to_owned(),
+                "asr-env-secret".to_owned(),
+            )]),
+            endpoint: None,
+        });
+        config.llm.providers.push(super::LlmProviderConfig {
+            id: "openai".to_owned(),
+            base_url: "https://secret.example.invalid/v1".to_owned(),
+            api_key: "llm-secret-token".to_owned(),
+            model: Some("gpt-test".to_owned()),
+            extra_body: serde_json::json!({"trace": "extra-body-secret"}),
+            extra: std::collections::HashMap::from([(
+                "future_secret".to_owned(),
+                serde_json::json!("provider-extra-secret"),
+            )]),
+        });
+        config.llm.adapters.push(super::LlmAdapterConfig {
+            id: "adapter".to_owned(),
+            command: "vinput-adapter".to_owned(),
+            args: vec!["--token".to_owned(), "adapter-arg-secret".to_owned()],
+            env: std::collections::HashMap::from([(
+                "ADAPTER_TOKEN".to_owned(),
+                "adapter-env-secret".to_owned(),
+            )]),
+            working_dir: Some("/tmp/vinput-secret-workdir".to_owned()),
+            extra: std::collections::HashMap::from([(
+                "adapter_secret".to_owned(),
+                serde_json::json!("adapter-extra-secret"),
+            )]),
+        });
+
+        let json = serde_json::to_string(&config.summary()).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value["provider_count"], config.asr.providers.len());
+        for forbidden_key in [
+            "api_key",
+            "base_url",
+            "env",
+            "args",
+            "command",
+            "working_dir",
+            "extra_body",
+            "extra",
+        ] {
+            assert!(
+                !json.contains(&format!("\"{forbidden_key}\"")),
+                "summary JSON must not expose {forbidden_key}"
+            );
+        }
+        for secret in [
+            "asr-arg-secret",
+            "asr-env-secret",
+            "https://secret.example.invalid/v1",
+            "llm-secret-token",
+            "extra-body-secret",
+            "provider-extra-secret",
+            "adapter-arg-secret",
+            "adapter-env-secret",
+            "/tmp/vinput-secret-workdir",
+            "adapter-extra-secret",
+        ] {
+            assert!(
+                !json.contains(secret),
+                "summary JSON must not leak {secret}"
+            );
+        }
+    }
+
+    #[test]
     fn validation_rejects_duplicate_registry_base_urls() {
         let mut config = VinputConfig::bundled_default().unwrap();
         let duplicate = config.registry.base_urls[0].clone();
