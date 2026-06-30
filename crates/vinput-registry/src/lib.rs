@@ -45,7 +45,10 @@ pub use plan::{
     PlannedInstallAsset, RegistryEntryKind,
 };
 pub use schema::{AdapterEntry, AssetEntry, ModelEntry, RegistryIndex, RegistryIndexSummary};
-pub use staging::{ArchiveStagingPathError, ArchiveStagingPaths, plan_archive_staging_paths};
+pub use staging::{
+    ArchiveStagingPathError, ArchiveStagingPaths, plan_archive_staging_paths,
+    plan_archive_staging_paths_for_plan,
+};
 
 #[cfg(test)]
 mod tests;

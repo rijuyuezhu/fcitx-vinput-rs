@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::{
-    ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, PlannedInstallAsset,
+    ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, InstallPlan, PlannedInstallAsset,
     checked_archive_entry_target,
 };
 
@@ -92,6 +92,21 @@ pub fn plan_archive_staging_paths(
         archive_extract_path,
         materialize_target_path: PathBuf::from(&asset.target_path),
     })
+}
+
+/// Builds side-effect-free staging paths for every archive asset in a dry-run plan.
+///
+/// This is a batch helper over `plan_archive_staging_paths`. It preserves plan
+/// asset order and stops on the first unsupported or unsafe archive source path.
+pub fn plan_archive_staging_paths_for_plan(
+    plan: &InstallPlan,
+    staging_root: impl AsRef<Path>,
+) -> Result<Vec<ArchiveStagingPaths>, ArchiveStagingPathError> {
+    let staging_root = staging_root.as_ref();
+    plan.assets
+        .iter()
+        .map(|asset| plan_archive_staging_paths(asset, staging_root))
+        .collect()
 }
 
 fn archive_tree_name(source_path: &str, format: ArchiveFormat) -> &str {

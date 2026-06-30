@@ -1,13 +1,14 @@
 use super::{
     ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, ArchiveStagingError,
-    ArchiveStagingPathError, AssetChecksumStatus, ChecksumPolicy, InstallPlan, PlannedInstallAsset,
-    RegistryAssetStagingError, RegistryCacheError, RegistryCachedFetchError, RegistryEntryKind,
-    RegistryError, RegistryFetchError, RegistryIndex, RegistryMaterializeError,
+    ArchiveStagingPathError, AssetChecksumStatus, ChecksumPolicy, InstallPlan, PlannedAsset,
+    PlannedInstallAsset, RegistryAssetStagingError, RegistryCacheError, RegistryCachedFetchError,
+    RegistryEntryKind, RegistryError, RegistryFetchError, RegistryIndex, RegistryMaterializeError,
     RegistrySha256Error, RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource,
     ReqwestRegistryTextSource, checked_archive_entry_target, fetch_registry_index_from_mirrors,
-    fetch_registry_index_with_cache, materialize_staged_tree, sha256_hex, stage_archive_by_format,
-    stage_planned_asset, stage_tar_archive, stage_tar_zst_archive, verify_sha256_bytes,
-    verify_sha256_file, verify_sha256_reader,
+    fetch_registry_index_with_cache, materialize_staged_tree, plan_archive_staging_paths,
+    plan_archive_staging_paths_for_plan, sha256_hex, stage_archive_by_format, stage_planned_asset,
+    stage_tar_archive, stage_tar_zst_archive, verify_sha256_bytes, verify_sha256_file,
+    verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
 
@@ -1380,7 +1381,7 @@ fn archive_staging_paths_plan_asset_archive_tree_and_target_paths() {
     };
     let temp_dir = tempfile::tempdir().unwrap();
 
-    let paths = super::plan_archive_staging_paths(&asset, temp_dir.path()).unwrap();
+    let paths = plan_archive_staging_paths(&asset, temp_dir.path()).unwrap();
 
     assert_eq!(paths.source_path, "models/m.tar.zst");
     assert_eq!(paths.archive_format, ArchiveFormat::TarZst);
@@ -1404,7 +1405,7 @@ fn archive_staging_paths_reject_unknown_archive_wrappers() {
         planned_install_asset(vec!["https://example.invalid/model.zip".to_owned()], None);
     asset.source_path = "models/model.zip".to_owned();
 
-    let error = super::plan_archive_staging_paths(&asset, "stage-root").unwrap_err();
+    let error = plan_archive_staging_paths(&asset, "stage-root").unwrap_err();
 
     assert_eq!(
         error,
@@ -1420,7 +1421,7 @@ fn archive_staging_paths_reject_unsafe_source_paths() {
         planned_install_asset(vec!["https://example.invalid/model.tar".to_owned()], None);
     asset.source_path = "models\\model.tar".to_owned();
 
-    let error = super::plan_archive_staging_paths(&asset, "stage-root").unwrap_err();
+    let error = plan_archive_staging_paths(&asset, "stage-root").unwrap_err();
 
     assert!(matches!(
         error,
@@ -1439,6 +1440,70 @@ fn materialize_backup_dirs(dir: &std::path::Path) -> Vec<String> {
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|name| name.contains(".backup."))
         .collect()
+}
+
+#[test]
+fn archive_staging_paths_batch_preserves_plan_order() {
+    let assets = vec![
+        PlannedAsset {
+            entry_kind: RegistryEntryKind::Model,
+            entry_id: "m1".to_owned(),
+            path: "models/m1.tar.zst".to_owned(),
+            urls: vec!["https://example.invalid/models/m1.tar.zst".to_owned()],
+            sha256: None,
+            size_bytes: None,
+        },
+        PlannedAsset {
+            entry_kind: RegistryEntryKind::Adapter,
+            entry_id: "a1".to_owned(),
+            path: "adapters/a1.tar".to_owned(),
+            urls: vec!["https://example.invalid/adapters/a1.tar".to_owned()],
+            sha256: None,
+            size_bytes: None,
+        },
+    ];
+    let plan = InstallPlan::from_assets(&assets, "/var/lib/vinput/assets");
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let paths = plan_archive_staging_paths_for_plan(&plan, temp_dir.path()).unwrap();
+
+    assert_eq!(paths.len(), 2);
+    assert_eq!(paths[0].source_path, "models/m1.tar.zst");
+    assert_eq!(paths[0].archive_format, ArchiveFormat::TarZst);
+    assert_eq!(paths[1].source_path, "adapters/a1.tar");
+    assert_eq!(paths[1].archive_format, ArchiveFormat::Tar);
+}
+
+#[test]
+fn archive_staging_paths_batch_stops_on_first_invalid_asset() {
+    let assets = vec![
+        PlannedAsset {
+            entry_kind: RegistryEntryKind::Model,
+            entry_id: "m1".to_owned(),
+            path: "models/m1.tar".to_owned(),
+            urls: vec!["https://example.invalid/models/m1.tar".to_owned()],
+            sha256: None,
+            size_bytes: None,
+        },
+        PlannedAsset {
+            entry_kind: RegistryEntryKind::Model,
+            entry_id: "bad".to_owned(),
+            path: "models/bad.zip".to_owned(),
+            urls: vec!["https://example.invalid/models/bad.zip".to_owned()],
+            sha256: None,
+            size_bytes: None,
+        },
+    ];
+    let plan = InstallPlan::from_assets(&assets, "/var/lib/vinput/assets");
+
+    let error = plan_archive_staging_paths_for_plan(&plan, "stage-root").unwrap_err();
+
+    assert_eq!(
+        error,
+        ArchiveStagingPathError::UnsupportedFormat {
+            source_path: "models/bad.zip".to_owned(),
+        }
+    );
 }
 
 #[test]
