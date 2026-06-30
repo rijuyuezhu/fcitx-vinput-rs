@@ -144,6 +144,39 @@ mod tests {
     }
 
     #[test]
+    fn legacy_adapter_detail_fields_are_ignored_on_read() {
+        let state: TextAdapterState = serde_json::from_str(
+            r#"
+            {
+              "adapter_count": 1,
+              "adapter_ids": ["cmd"],
+              "single_adapter_id": "cmd",
+              "adapters": [{
+                "id": "cmd",
+                "kind": "command",
+                "command": "legacy-helper",
+                "args": ["--legacy"],
+                "env": {"KEY":"VALUE"},
+                "working_dir": "/tmp/legacy",
+                "env_count": 2,
+                "has_working_dir": true
+              }]
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(state.adapter_count, 1);
+        assert_eq!(state.adapter_ids, ["cmd"]);
+        assert_eq!(state.single_adapter_id.as_deref(), Some("cmd"));
+        assert_eq!(state.adapters[0].id, "cmd");
+        assert_eq!(state.adapters[0].kind, "command");
+        assert_eq!(state.adapters[0].args_count, 0);
+        assert_eq!(state.adapters[0].env_count, 2);
+        assert!(state.adapters[0].has_working_dir);
+    }
+
+    #[test]
     fn missing_fields_default_for_legacy_tolerance() {
         let state: TextAdapterState = serde_json::from_str(r#"{"adapter_count":0}"#).unwrap();
         assert_eq!(state.adapter_count, 0);
