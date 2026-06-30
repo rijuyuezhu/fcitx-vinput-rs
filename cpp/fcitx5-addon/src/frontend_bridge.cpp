@@ -19,6 +19,10 @@ BridgeOutcome Error(std::string_view text) {
   return BridgeOutcome{BridgeOutcome::Kind::Error, std::string(text), {}};
 }
 
+BridgeOutcome Clear(bool command_mode) {
+  return BridgeOutcome{BridgeOutcome::Kind::Clear, {}, {}, command_mode};
+}
+
 BridgeOutcome Commit(std::string text, RecognitionPayload payload, bool command_mode) {
   return BridgeOutcome{BridgeOutcome::Kind::Commit, std::move(text), std::move(payload),
                        command_mode};
@@ -97,7 +101,7 @@ BridgeOutcome FrontendBridge::Stop(DaemonClient *client, std::string_view scene_
   auto plan = MakeCommitPlan(payload_json);
   Reset();
   if (plan.payload.commit_text.empty()) {
-    return BridgeOutcome{};
+    return Clear(was_command_mode);
   }
   if (plan.show_candidate_menu) {
     return CandidateMenu(std::move(plan.payload), was_command_mode);

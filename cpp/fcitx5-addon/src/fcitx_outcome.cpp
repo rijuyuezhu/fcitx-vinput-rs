@@ -79,6 +79,9 @@ AppliedOutcome ApplyBridgeOutcomeToInputContext(const BridgeOutcome &outcome,
   case BridgeOutcome::Kind::Error:
     SetPreedit(ic, outcome.text);
     return AppliedOutcome::Preedit;
+  case BridgeOutcome::Kind::Clear:
+    ClearPreedit(ic);
+    return AppliedOutcome::Clear;
   case BridgeOutcome::Kind::Commit: {
     const auto text = CommitText(outcome);
     if (text.empty()) {

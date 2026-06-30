@@ -20,7 +20,7 @@ public:
 };
 
 struct BridgeOutcome {
-  enum class Kind : std::uint8_t { None, Preedit, Commit, CandidateMenu, Error };
+  enum class Kind : std::uint8_t { None, Preedit, Clear, Commit, CandidateMenu, Error };
 
   Kind kind = Kind::None;
   std::string text;
