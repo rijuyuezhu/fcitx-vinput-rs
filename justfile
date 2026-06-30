@@ -42,6 +42,8 @@ smoke:
 # Compile and test optional PipeWire feature paths without requiring a live daemon.
 pipewire-check:
     cargo test -p vinput-audio --features pipewire-backend
+    cargo test -p vinput-cli --features pipewire-backend --test audio_devices
+    cargo test -p vinput-daemon --features pipewire-backend --test cli
     cargo clippy -p vinput-audio --all-targets --features pipewire-backend -- -D warnings
 
 # Run explicit local PipeWire probes. Requires a live user PipeWire session.

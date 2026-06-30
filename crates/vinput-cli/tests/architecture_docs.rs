@@ -191,6 +191,7 @@ fn development_doc_pins_optional_pipewire_recipes() {
         "VINPUT_TEST_PIPEWIRE_ENUMERATE=1",
         "intentionally excluded from `just ci`",
         "without live daemon",
+        "CLI/daemon audio-device diagnostics",
     ] {
         assert!(
             development.contains(required),
