@@ -62,6 +62,9 @@ addon-smoke:
     cmake --build target/cpp/fcitx5-addon --parallel
     ctest --test-dir target/cpp/fcitx5-addon --output-on-failure
 
+addon-dbus-smoke:
+    scripts/run-cpp-dbus-smoke.sh
+
 ci: check
 
 smoke:

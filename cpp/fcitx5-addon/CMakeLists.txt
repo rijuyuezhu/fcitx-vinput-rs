@@ -80,4 +80,15 @@ if(BUILD_TESTING AND VINPUT_FCITX_BRIDGE_ENABLE_TESTS)
     vinput_fcitx_bridge_frontend_smoke
     tests/frontend_bridge_smoke.cpp
   )
+
+  add_executable(
+    vinput_fcitx_bridge_dbus_smoke
+    tests/sd_bus_daemon_client_smoke.cpp
+  )
+  target_link_libraries(
+    vinput_fcitx_bridge_dbus_smoke
+    PRIVATE
+      vinput_fcitx_bridge::sdbus
+  )
+  vinput_bridge_apply_warnings(vinput_fcitx_bridge_dbus_smoke)
 endif()

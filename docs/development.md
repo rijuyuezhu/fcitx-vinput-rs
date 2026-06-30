@@ -75,6 +75,7 @@ just addon-build  # build the C++ Fcitx bridge core and smoke tests
 just addon-lint   # lint the C++ Fcitx bridge with clang-tidy
 just addon-test   # run CTest for the C++ Fcitx bridge core
 just addon-smoke  # addon-format-check plus addon-lint plus addon-test
+just addon-dbus-smoke # run C++ bridge against Rust daemon over DBus
 just check        # fmt-check plus lint plus test plus dbus-test plus dbus-lint plus addon-test
 just ci           # alias for check
 just smoke        # CLI/daemon smoke commands
