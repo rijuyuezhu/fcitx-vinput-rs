@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use super::RuntimeState;
 use vinput_asr::{
-    AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, MockAsrBackend, RecognitionContext,
-    RecognitionEvent, RecognitionSession,
+    AsrBackend, AsrBackendFactory, AsrError, BackendDescriptor, MockAsrAudioLog, MockAsrAudioPush,
+    MockAsrBackend, RecognitionContext, RecognitionEvent, RecognitionSession,
 };
 use vinput_audio::{
     AudioChunkCallback, AudioError, AudioRecorder, CaptureTarget, CapturedAudio, MockAudioSource,
@@ -1309,6 +1309,41 @@ fn early_final_event_is_preserved_until_payload_conversion() {
     assert_eq!(report.payload.commit_text, "early final");
     assert_eq!(runtime.status(), ServiceStatus::Idle);
     assert!(runtime.partial_text().is_none());
+}
+
+#[test]
+fn runtime_pushes_processed_pcm_with_metadata_to_asr_session() {
+    let config = VinputConfig::bundled_default().unwrap();
+    let audio_log = MockAsrAudioLog::new();
+    let backend =
+        MockAsrBackend::streaming("listening", "custom final").with_audio_log(audio_log.clone());
+    let source = MockAudioSource::once(CapturedAudio::anonymous(
+        PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 48_000,
+                channels: 2,
+            },
+            vec![0, 0, 12, -12, 20, -20, 0, 0],
+        )
+        .unwrap(),
+    ));
+    let mut runtime =
+        RuntimeState::with_backends(config, Box::new(backend), Box::new(source)).unwrap();
+
+    runtime.start_recording().unwrap();
+    let payload = runtime.stop_recording(None).unwrap();
+
+    assert_eq!(payload.commit_text, "custom final");
+    assert_eq!(
+        audio_log.records(),
+        vec![MockAsrAudioPush {
+            sample_len: 4,
+            pcm_spec: Some(PcmSpec {
+                sample_rate_hz: 48_000,
+                channels: 2,
+            }),
+        }]
+    );
 }
 
 #[test]
