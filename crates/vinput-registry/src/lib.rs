@@ -14,7 +14,10 @@ mod fetch;
 mod plan;
 mod schema;
 
-pub use archive::{ArchiveEntryKind, ArchiveSafetyError, checked_archive_entry_target};
+pub use archive::{
+    ArchiveEntryKind, ArchiveSafetyError, ArchiveStagingError, StagedArchiveTree,
+    checked_archive_entry_target, stage_tar_archive,
+};
 pub use asset::{
     AssetChecksumStatus, RegistryAssetFetchFailure, RegistryAssetSource, RegistryAssetStagingError,
     ReqwestRegistryAssetSource, StagedRegistryAsset, stage_planned_asset,

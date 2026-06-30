@@ -1,11 +1,11 @@
 use super::{
-    ArchiveEntryKind, ArchiveSafetyError, AssetChecksumStatus, ChecksumPolicy, InstallPlan,
-    PlannedInstallAsset, RegistryAssetStagingError, RegistryCacheError, RegistryCachedFetchError,
-    RegistryEntryKind, RegistryError, RegistryFetchError, RegistryIndex, RegistrySha256Error,
-    RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource, ReqwestRegistryTextSource,
-    checked_archive_entry_target, fetch_registry_index_from_mirrors,
-    fetch_registry_index_with_cache, sha256_hex, stage_planned_asset, verify_sha256_bytes,
-    verify_sha256_file, verify_sha256_reader,
+    ArchiveEntryKind, ArchiveSafetyError, ArchiveStagingError, AssetChecksumStatus, ChecksumPolicy,
+    InstallPlan, PlannedInstallAsset, RegistryAssetStagingError, RegistryCacheError,
+    RegistryCachedFetchError, RegistryEntryKind, RegistryError, RegistryFetchError, RegistryIndex,
+    RegistrySha256Error, RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource,
+    ReqwestRegistryTextSource, checked_archive_entry_target, fetch_registry_index_from_mirrors,
+    fetch_registry_index_with_cache, sha256_hex, stage_planned_asset, stage_tar_archive,
+    verify_sha256_bytes, verify_sha256_file, verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
 
@@ -990,6 +990,238 @@ fn archive_policy_rejects_backslashes_and_empty_paths() {
         checked_archive_entry_target("root", "./", ArchiveEntryKind::File).unwrap_err(),
         ArchiveSafetyError::NoSafeComponents("./".to_owned())
     );
+}
+
+#[derive(Debug)]
+enum TestTarEntry<'a> {
+    File(&'a str, &'a [u8]),
+    Directory(&'a str),
+    Symlink(&'a str, &'a str),
+    Hardlink(&'a str, &'a str),
+}
+
+fn write_test_tar_archive(path: &std::path::Path, entries: &[TestTarEntry<'_>]) {
+    let mut file = std::fs::File::create(path).unwrap();
+    for entry in entries {
+        match entry {
+            TestTarEntry::File(path, bytes) => {
+                write_raw_tar_entry(&mut file, path, b'0', bytes, None);
+            }
+            TestTarEntry::Directory(path) => {
+                write_raw_tar_entry(&mut file, path, b'5', &[], None);
+            }
+            TestTarEntry::Symlink(path, target) => {
+                write_raw_tar_entry(&mut file, path, b'2', &[], Some(target));
+            }
+            TestTarEntry::Hardlink(path, target) => {
+                write_raw_tar_entry(&mut file, path, b'1', &[], Some(target));
+            }
+        }
+    }
+    std::io::Write::write_all(&mut file, &[0_u8; 1024]).unwrap();
+}
+
+fn write_raw_tar_entry(
+    writer: &mut std::fs::File,
+    path: &str,
+    entry_type: u8,
+    data: &[u8],
+    link_name: Option<&str>,
+) {
+    assert!(path.len() <= 100, "test tar path is too long");
+    let mut header = [0_u8; 512];
+    header[..path.len()].copy_from_slice(path.as_bytes());
+    write_tar_octal(&mut header[100..108], 0o644);
+    write_tar_octal(&mut header[108..116], 0);
+    write_tar_octal(&mut header[116..124], 0);
+    write_tar_octal(&mut header[124..136], data.len() as u64);
+    write_tar_octal(&mut header[136..148], 0);
+    header[148..156].fill(b' ');
+    header[156] = entry_type;
+    if let Some(link_name) = link_name {
+        assert!(link_name.len() <= 100, "test tar link name is too long");
+        header[157..157 + link_name.len()].copy_from_slice(link_name.as_bytes());
+    }
+    header[257..263].copy_from_slice(b"ustar\0");
+    header[263..265].copy_from_slice(b"00");
+    let checksum = header.iter().map(|byte| u32::from(*byte)).sum::<u32>();
+    let checksum_text = format!("{checksum:06o}\0 ");
+    header[148..156].copy_from_slice(checksum_text.as_bytes());
+
+    std::io::Write::write_all(writer, &header).unwrap();
+    std::io::Write::write_all(writer, data).unwrap();
+    let padding = (512 - (data.len() % 512)) % 512;
+    if padding > 0 {
+        std::io::Write::write_all(writer, &vec![0_u8; padding]).unwrap();
+    }
+}
+
+fn write_tar_octal(field: &mut [u8], value: u64) {
+    let width = field.len() - 1;
+    let text = format!("{value:0width$o}\0");
+    field.copy_from_slice(text.as_bytes());
+}
+
+fn temp_archive_dirs(dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_dir()))
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".tmp."))
+        .collect()
+}
+
+#[test]
+fn tar_archive_staging_extracts_regular_files_to_staged_tree() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar");
+    write_test_tar_archive(
+        &archive,
+        &[
+            TestTarEntry::Directory("models/sherpa"),
+            TestTarEntry::File("models/sherpa/model.bin", b"model"),
+            TestTarEntry::File("models/sherpa/tokens.txt", b"tokens"),
+        ],
+    );
+    let output = temp_dir.path().join("extracted");
+
+    let staged = stage_tar_archive(&archive, &output).unwrap();
+
+    assert_eq!(staged.archive_path, archive);
+    assert_eq!(staged.path, output);
+    assert_eq!(staged.file_count, 2);
+    assert_eq!(staged.directory_count, 1);
+    assert_eq!(
+        std::fs::read_to_string(staged.path.join("models/sherpa/model.bin")).unwrap(),
+        "model"
+    );
+    assert_eq!(
+        std::fs::read_to_string(staged.path.join("models/sherpa/tokens.txt")).unwrap(),
+        "tokens"
+    );
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn tar_archive_staging_rejects_parent_traversal_without_publishing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar");
+    write_test_tar_archive(&archive, &[TestTarEntry::File("../escape", b"no")]);
+    let output = temp_dir.path().join("extracted");
+
+    let error = stage_tar_archive(&archive, &output).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ArchiveStagingError::UnsafeEntry {
+            error: ArchiveSafetyError::ParentTraversal(_),
+            ..
+        }
+    ));
+    assert!(!output.exists());
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn tar_archive_staging_rejects_absolute_paths_without_publishing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar");
+    write_test_tar_archive(&archive, &[TestTarEntry::File("/absolute", b"no")]);
+    let output = temp_dir.path().join("extracted");
+
+    let error = stage_tar_archive(&archive, &output).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ArchiveStagingError::UnsafeEntry {
+            error: ArchiveSafetyError::AbsolutePath(_),
+            ..
+        }
+    ));
+    assert!(!output.exists());
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn tar_archive_staging_rejects_backslash_paths_without_publishing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar");
+    write_test_tar_archive(&archive, &[TestTarEntry::File("models\\bad", b"no")]);
+    let output = temp_dir.path().join("extracted");
+
+    let error = stage_tar_archive(&archive, &output).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ArchiveStagingError::UnsafeEntry {
+            error: ArchiveSafetyError::Backslash(_),
+            ..
+        }
+    ));
+    assert!(!output.exists());
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn tar_archive_staging_rejects_links_without_publishing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let symlink_archive = temp_dir.path().join("symlink.tar");
+    write_test_tar_archive(
+        &symlink_archive,
+        &[TestTarEntry::Symlink("models/link", "model.bin")],
+    );
+    let symlink_output = temp_dir.path().join("symlink-output");
+
+    let symlink_error = stage_tar_archive(&symlink_archive, &symlink_output).unwrap_err();
+
+    assert!(matches!(
+        symlink_error,
+        ArchiveStagingError::UnsafeEntry {
+            error: ArchiveSafetyError::UnsupportedEntryKind("symlink"),
+            ..
+        }
+    ));
+    assert!(!symlink_output.exists());
+
+    let hardlink_archive = temp_dir.path().join("hardlink.tar");
+    write_test_tar_archive(
+        &hardlink_archive,
+        &[
+            TestTarEntry::File("models/model.bin", b"model"),
+            TestTarEntry::Hardlink("models/link", "models/model.bin"),
+        ],
+    );
+    let hardlink_output = temp_dir.path().join("hardlink-output");
+
+    let hardlink_error = stage_tar_archive(&hardlink_archive, &hardlink_output).unwrap_err();
+
+    assert!(matches!(
+        hardlink_error,
+        ArchiveStagingError::UnsafeEntry {
+            error: ArchiveSafetyError::UnsupportedEntryKind("hardlink"),
+            ..
+        }
+    ));
+    assert!(!hardlink_output.exists());
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn tar_archive_staging_rejects_existing_output_without_mutation() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar");
+    write_test_tar_archive(
+        &archive,
+        &[TestTarEntry::File("models/model.bin", b"model")],
+    );
+    let output = temp_dir.path().join("extracted");
+    std::fs::create_dir(&output).unwrap();
+
+    let error = stage_tar_archive(&archive, &output).unwrap_err();
+
+    assert!(matches!(error, ArchiveStagingError::OutputExists { .. }));
+    assert!(std::fs::read_dir(&output).unwrap().next().is_none());
 }
 
 #[derive(Debug)]
