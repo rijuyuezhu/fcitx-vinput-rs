@@ -271,8 +271,11 @@ fn print_config_accepts_committed_default_fixture() {
         ),
         "print-config output",
     );
-    assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
-    assert_eq!(value["scenes"]["active_scene"], "__raw__");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["active_provider"], "sherpa-onnx");
+    assert_eq!(value["active_scene"], "__raw__");
+    assert_eq!(value["provider_count"], 1);
+    assert_eq!(value["scene_count"], 2);
 }
 
 #[test]
@@ -286,7 +289,107 @@ fn print_config_with_default_fixture_ignores_configured_backend_runtime_init() {
         "config",
     );
     assert_eq!(value["version"], 1);
-    assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
+    assert_eq!(value["active_provider"], "sherpa-onnx");
+}
+
+#[test]
+fn print_config_summary_omits_sensitive_config_details() {
+    let config = TempConfig::write(
+        "print-config-summary-redaction",
+        r#"
+        {
+          "version": 1,
+          "registry": {"base_urls": ["https://registry-leak-marker.example.invalid/index.json"]},
+          "asr": {
+            "active_provider": "cmd",
+            "providers": [{
+              "id":"cmd",
+              "type":"command",
+              "command":"vinput-asr-helper",
+              "args":["--flag", "asr-arg-leak-marker"],
+              "env":{"ASR_KEY":"asr-env-leak-marker"},
+              "model":"asr-model-leak-marker",
+              "hotwords_file":"/tmp/asr-hotwords-leak-marker.txt"
+            }]
+          },
+          "llm": {
+            "providers": [{
+              "id":"llm",
+              "base_url":"https://llm-leak-marker.example.invalid/v1",
+              "api_key":"llm-key-leak-marker",
+              "model":"llm-model-leak-marker",
+              "extra_body":{"trace":"llm-extra-leak-marker"},
+              "future_field":"provider-extra-leak-marker"
+            }],
+            "adapters": [{
+              "id":"adapter",
+              "command":"vinput-text-helper",
+              "args":["--flag", "adapter-arg-leak-marker"],
+              "env":{"ADAPTER_KEY":"adapter-env-leak-marker"},
+              "working_dir":"/tmp/adapter-workdir-leak-marker",
+              "adapter_field":"adapter-extra-leak-marker"
+            }]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let stdout = assert_success_stdout(
+        run_daemon_with_config(
+            &config.path,
+            &["--configured-backends", "print-config"],
+            "run vinput-daemon print-config",
+        ),
+        "print-config output",
+    );
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["active_provider"], "cmd");
+    assert_eq!(value["active_scene"], "raw");
+    assert_eq!(value["provider_count"], 1);
+    assert_eq!(value["registry_mirror_count"], 1);
+
+    for forbidden_key in [
+        "api_key",
+        "base_url",
+        "env",
+        "args",
+        "command",
+        "working_dir",
+        "extra_body",
+        "future_field",
+        "adapter_field",
+    ] {
+        assert!(
+            !stdout.contains(&format!("\"{forbidden_key}\"")),
+            "print-config summary must not expose {forbidden_key}"
+        );
+    }
+    for marker in [
+        "registry-leak-marker",
+        "asr-arg-leak-marker",
+        "asr-env-leak-marker",
+        "asr-model-leak-marker",
+        "asr-hotwords-leak-marker",
+        "llm-leak-marker",
+        "llm-key-leak-marker",
+        "llm-model-leak-marker",
+        "llm-extra-leak-marker",
+        "provider-extra-leak-marker",
+        "adapter-arg-leak-marker",
+        "adapter-env-leak-marker",
+        "adapter-workdir-leak-marker",
+        "adapter-extra-leak-marker",
+    ] {
+        assert!(
+            !stdout.contains(marker),
+            "print-config summary must not leak {marker}"
+        );
+    }
 }
 
 #[test]
@@ -516,7 +619,7 @@ fn print_config_ignores_configured_backend_runtime_init() {
         "config",
     );
     assert_eq!(value["version"], 1);
-    assert_eq!(value["asr"]["active_provider"], "sherpa-onnx");
+    assert_eq!(value["active_provider"], "sherpa-onnx");
 }
 
 #[test]

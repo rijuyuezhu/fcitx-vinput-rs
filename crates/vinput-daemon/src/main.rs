@@ -58,7 +58,7 @@ struct Args {
 /// One-shot utility commands useful while bootstrapping the daemon.
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Print the parsed config as normalized JSON.
+    /// Print the sanitized config summary as JSON.
     PrintConfig,
     /// Print configured ASR backend diagnostics as JSON.
     AsrState,
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(command) = &args.command {
         match command {
             Command::PrintConfig => {
-                println!("{}", serde_json::to_string_pretty(&config)?);
+                println!("{}", serde_json::to_string_pretty(&config.summary())?);
             }
             Command::AsrState => {
                 println!(
