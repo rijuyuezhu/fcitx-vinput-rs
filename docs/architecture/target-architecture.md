@@ -77,6 +77,13 @@ Every transition should have a unit test before it is wired to D-Bus or PipeWire
 
 Any change to this crate must include compatibility tests.
 
+
+## Frontend and packaging boundary
+
+T6 should start with a retained C++ Fcitx5 skeleton frontend that talks to the Rust daemon over the existing `vinput-protocol` D-Bus ABI. The skeleton should own only Fcitx API integration, menus, preedit/status presentation, selected-text collection, and frontend-side clipboard/deletion fallbacks. Backend logic, ASR/text processing, registry operations, and runtime state must stay in Rust crates and the daemon.
+
+Do not replace the Fcitx5 addon with a Rust addon until mature Rust bindings and deployment integration have been verified separately. Packaging/service install artifacts remain future work and must not be hidden inside daemon, registry, or frontend logic.
+
 ## TDD migration order
 
 1. **Protocol/config locked baseline**

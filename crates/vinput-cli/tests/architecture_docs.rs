@@ -209,3 +209,25 @@ fn development_doc_pins_optional_pipewire_recipes() {
         .expect("justfile should define check recipe");
     assert!(!check_line.contains("pipewire-live"));
 }
+
+#[test]
+fn target_architecture_pins_frontend_packaging_boundary() {
+    let target = std::fs::read_to_string(architecture_dir().join("target-architecture.md"))
+        .expect("read target architecture doc");
+
+    for required in [
+        "retained C++ Fcitx5 skeleton frontend",
+        "existing `vinput-protocol` D-Bus ABI",
+        "Fcitx API integration, menus, preedit/status presentation",
+        "selected-text collection",
+        "frontend-side clipboard/deletion fallbacks",
+        "Backend logic, ASR/text processing, registry operations, and runtime state must stay in Rust crates",
+        "Do not replace the Fcitx5 addon with a Rust addon",
+        "Packaging/service install artifacts remain future work",
+    ] {
+        assert!(
+            target.contains(required),
+            "target architecture should pin T6 frontend/packaging boundary: {required}"
+        );
+    }
+}
