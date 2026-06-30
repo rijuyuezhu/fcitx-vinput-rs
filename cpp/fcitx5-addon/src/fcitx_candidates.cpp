@@ -1,5 +1,7 @@
 #include "vinput_fcitx_bridge/fcitx_candidates.h"
 
+#include "vinput_fcitx_bridge/fcitx_selection.h"
+
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/text.h>
@@ -12,6 +14,17 @@ namespace vinput_fcitx_bridge {
 namespace {
 
 constexpr int kResultMenuPageSize = 5;
+
+void DeleteSelectedTextIfAny(fcitx::InputContext *input_context) {
+  if (input_context == nullptr) {
+    return;
+  }
+  auto range = SelectedTextDeletionRange(input_context->surroundingText());
+  if (!range.has_value()) {
+    return;
+  }
+  input_context->deleteSurroundingText(range->offset, range->size);
+}
 
 class ResultCandidateWord final : public fcitx::CandidateWord {
 public:
@@ -45,6 +58,14 @@ std::string ResultCandidateMenuTitle(std::size_t count) {
   return "Choose Result (" + std::to_string(count) + ")";
 }
 
+const ResultCandidateSelectCallback &DefaultResultCandidateSelectCallback() {
+  static const ResultCandidateSelectCallback kCallback =
+      [](fcitx::InputContext *input_context, const Candidate &candidate) {
+        ApplyResultCandidateSelection(input_context, candidate);
+      };
+  return kCallback;
+}
+
 std::string ResultCandidateComment(const Candidate &candidate, std::size_t llm_index) {
   switch (candidate.source) {
   case CandidateSource::Raw:
@@ -72,6 +93,11 @@ void ClearResultCandidateMenu(fcitx::InputContext *input_context) {
 
 void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
                                    const Candidate &candidate) {
+  ApplyResultCandidateSelection(input_context, candidate, false);
+}
+
+void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
+                                   const Candidate &candidate, bool replace_selection) {
   if (input_context == nullptr) {
     return;
   }
@@ -83,6 +109,9 @@ void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
 
   if (candidate.source == CandidateSource::Cancel || candidate.text.empty()) {
     return;
+  }
+  if (replace_selection) {
+    DeleteSelectedTextIfAny(input_context);
   }
 
   input_context->commitString(candidate.text);

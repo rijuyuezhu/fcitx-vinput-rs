@@ -19,13 +19,14 @@ BridgeOutcome Error(std::string_view text) {
   return BridgeOutcome{BridgeOutcome::Kind::Error, std::string(text), {}};
 }
 
-BridgeOutcome Commit(std::string text, RecognitionPayload payload) {
-  return BridgeOutcome{BridgeOutcome::Kind::Commit, std::move(text),
-                       std::move(payload)};
+BridgeOutcome Commit(std::string text, RecognitionPayload payload, bool command_mode) {
+  return BridgeOutcome{BridgeOutcome::Kind::Commit, std::move(text), std::move(payload),
+                       command_mode};
 }
 
-BridgeOutcome CandidateMenu(RecognitionPayload payload) {
-  return BridgeOutcome{BridgeOutcome::Kind::CandidateMenu, {}, std::move(payload)};
+BridgeOutcome CandidateMenu(RecognitionPayload payload, bool command_mode) {
+  return BridgeOutcome{
+      BridgeOutcome::Kind::CandidateMenu, {}, std::move(payload), command_mode};
 }
 
 std::string FallbackError(const std::string &error) {
@@ -84,6 +85,8 @@ BridgeOutcome FrontendBridge::Stop(DaemonClient *client, std::string_view scene_
     return Error(kDaemonUnavailableError);
   }
 
+  const bool was_command_mode = command_mode_;
+
   std::string payload_json;
   std::string error;
   if (!client->StopRecording(scene_id, &payload_json, &error)) {
@@ -97,10 +100,10 @@ BridgeOutcome FrontendBridge::Stop(DaemonClient *client, std::string_view scene_
     return BridgeOutcome{};
   }
   if (plan.show_candidate_menu) {
-    return CandidateMenu(std::move(plan.payload));
+    return CandidateMenu(std::move(plan.payload), was_command_mode);
   }
   auto commit_text = plan.payload.commit_text;
-  return Commit(std::move(commit_text), std::move(plan.payload));
+  return Commit(std::move(commit_text), std::move(plan.payload), was_command_mode);
 }
 
 void FrontendBridge::Reset() {

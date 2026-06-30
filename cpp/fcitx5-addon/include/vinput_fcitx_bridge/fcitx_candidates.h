@@ -21,9 +21,14 @@ void ClearResultCandidateMenu(fcitx::InputContext *input_context);
 
 void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
                                    const Candidate &candidate);
+void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
+                                   const Candidate &candidate, bool replace_selection);
 
-std::unique_ptr<fcitx::CommonCandidateList> BuildResultCandidateList(
-    const RecognitionPayload &payload,
-    const ResultCandidateSelectCallback &on_select = ApplyResultCandidateSelection);
+const ResultCandidateSelectCallback &DefaultResultCandidateSelectCallback();
+
+std::unique_ptr<fcitx::CommonCandidateList>
+BuildResultCandidateList(const RecognitionPayload &payload,
+                         const ResultCandidateSelectCallback &on_select =
+                             DefaultResultCandidateSelectCallback());
 
 } // namespace vinput_fcitx_bridge

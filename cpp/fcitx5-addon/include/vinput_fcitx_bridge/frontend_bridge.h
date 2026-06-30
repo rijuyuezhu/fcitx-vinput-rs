@@ -25,6 +25,7 @@ struct BridgeOutcome {
   Kind kind = Kind::None;
   std::string text;
   RecognitionPayload payload;
+  bool command_mode = false;
 };
 
 class FrontendBridge {

@@ -67,6 +67,7 @@ int main() {
     assert(stop.kind == BridgeOutcome::Kind::Commit);
     assert(stop.text == "mock recognition result");
     assert(stop.payload.commit_text == "mock recognition result");
+    assert(!stop.command_mode);
     assert(!bridge.recording());
     assert(client.last_scene_id == "default-scene");
   }
@@ -82,6 +83,11 @@ int main() {
     assert(bridge.command_mode());
     assert(client.start_command_calls == 1);
     assert(client.last_selected_text == "selected text");
+
+    const auto stop = bridge.Stop(&client, "command-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Commit);
+    assert(stop.command_mode);
+    assert(!bridge.recording());
   }
 
   {
@@ -94,6 +100,21 @@ int main() {
     const auto stop = bridge.Stop(&client, "menu-scene");
     assert(stop.kind == BridgeOutcome::Kind::CandidateMenu);
     assert(stop.payload.candidates.size() == 3);
+    assert(!stop.command_mode);
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
+    client.next_payload_json =
+        R"({"commit_text":"polished 1","candidates":[{"text":"raw transcript","source":"raw"},{"text":"polished 1","source":"llm"},{"text":"polished 2","source":"llm"}]})";
+    FrontendBridge bridge;
+
+    assert(bridge.StartCommand(&client, "selected text").kind ==
+           BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(&client, "command-menu-scene");
+    assert(stop.kind == BridgeOutcome::Kind::CandidateMenu);
+    assert(stop.command_mode);
     assert(!bridge.recording());
   }
 

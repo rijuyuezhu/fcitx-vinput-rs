@@ -1,6 +1,7 @@
 #include "vinput_fcitx_bridge/fcitx_outcome.h"
 
 #include "vinput_fcitx_bridge/fcitx_candidates.h"
+#include "vinput_fcitx_bridge/fcitx_selection.h"
 
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputpanel.h>
@@ -26,6 +27,17 @@ void ClearPreedit(fcitx::InputContext *ic) {
   SetPreedit(ic, "");
 }
 
+void DeleteSelectedTextIfAny(fcitx::InputContext *ic) {
+  if (ic == nullptr) {
+    return;
+  }
+  auto range = SelectedTextDeletionRange(ic->surroundingText());
+  if (!range.has_value()) {
+    return;
+  }
+  ic->deleteSurroundingText(range->offset, range->size);
+}
+
 std::string_view CommitText(const BridgeOutcome &outcome) {
   if (!outcome.text.empty()) {
     return outcome.text;
@@ -33,8 +45,13 @@ std::string_view CommitText(const BridgeOutcome &outcome) {
   return outcome.payload.commit_text;
 }
 
-bool ShowCandidateMenu(fcitx::InputContext *ic, const RecognitionPayload &payload) {
-  auto candidate_list = BuildResultCandidateList(payload);
+bool ShowCandidateMenu(fcitx::InputContext *ic, const RecognitionPayload &payload,
+                       bool command_mode) {
+  auto candidate_list = BuildResultCandidateList(
+      payload,
+      [command_mode](fcitx::InputContext *input_context, const Candidate &candidate) {
+        ApplyResultCandidateSelection(input_context, candidate, command_mode);
+      });
   if (candidate_list == nullptr) {
     return false;
   }
@@ -67,18 +84,24 @@ AppliedOutcome ApplyBridgeOutcomeToInputContext(const BridgeOutcome &outcome,
     if (text.empty()) {
       return AppliedOutcome::None;
     }
+    if (outcome.command_mode) {
+      DeleteSelectedTextIfAny(ic);
+    }
     ClearResultCandidateMenu(ic);
     ClearPreedit(ic);
     ic->commitString(std::string(text));
     return AppliedOutcome::Commit;
   }
   case BridgeOutcome::Kind::CandidateMenu:
-    if (ShowCandidateMenu(ic, outcome.payload)) {
+    if (ShowCandidateMenu(ic, outcome.payload, outcome.command_mode)) {
       return AppliedOutcome::CandidateMenu;
     }
     const auto text = CommitText(outcome);
     if (text.empty()) {
       return AppliedOutcome::None;
+    }
+    if (outcome.command_mode) {
+      DeleteSelectedTextIfAny(ic);
     }
     ClearResultCandidateMenu(ic);
     ClearPreedit(ic);
