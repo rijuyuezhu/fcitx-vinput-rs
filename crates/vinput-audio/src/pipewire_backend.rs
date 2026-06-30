@@ -9,13 +9,31 @@ use std::{cell::Cell, cell::RefCell, rc::Rc};
 
 use crate::{
     AudioChunkCallback, AudioDeviceEnumerator, AudioDeviceInfo, AudioError, AudioRecorder,
-    CaptureTarget, CapturedAudio,
+    CaptureTarget, CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ, PcmSpec,
 };
 
 const MEDIA_CLASS_AUDIO_SOURCE: &str = "Audio/Source";
 const PW_KEY_MEDIA_CLASS: &str = "media.class";
 const PW_KEY_NODE_NAME: &str = "node.name";
 const PW_KEY_NODE_DESCRIPTION: &str = "node.description";
+
+/// `PipeWire` stream sample format requested by the future live recorder.
+pub const RECORDING_FORMAT: &str = "S16LE";
+
+/// `PipeWire` stream sample rate requested by the future live recorder.
+pub const RECORDING_SAMPLE_RATE_HZ: u32 = DEFAULT_SAMPLE_RATE_HZ;
+
+/// `PipeWire` stream channel count requested by the future live recorder.
+pub const RECORDING_CHANNELS: u16 = DEFAULT_CHANNELS;
+
+/// Returns the PCM spec that future `PipeWire` capture must deliver to ASR.
+#[must_use]
+pub const fn recording_pcm_spec() -> PcmSpec {
+    PcmSpec {
+        sample_rate_hz: RECORDING_SAMPLE_RATE_HZ,
+        channels: RECORDING_CHANNELS,
+    }
+}
 
 /// Enables live `PipeWire` source enumeration tests when set in the environment.
 pub const TEST_PIPEWIRE_ENUMERATE_ENV: &str = "VINPUT_TEST_PIPEWIRE_ENUMERATE";
@@ -258,6 +276,20 @@ mod tests {
         );
         assert!(!super::TEST_PIPEWIRE_ENUMERATE_ENV.is_empty());
         assert!(!super::TEST_PIPEWIRE_CONTEXT_ENV.is_empty());
+    }
+
+    #[test]
+    fn pipewire_recording_pcm_policy_matches_asr_default() {
+        assert_eq!(super::RECORDING_FORMAT, "S16LE");
+        assert_eq!(
+            super::RECORDING_SAMPLE_RATE_HZ,
+            super::DEFAULT_SAMPLE_RATE_HZ
+        );
+        assert_eq!(super::RECORDING_CHANNELS, super::DEFAULT_CHANNELS);
+        assert_eq!(
+            super::recording_pcm_spec(),
+            super::PcmSpec::mono_i16(super::DEFAULT_SAMPLE_RATE_HZ)
+        );
     }
 
     #[test]

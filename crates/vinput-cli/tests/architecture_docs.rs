@@ -151,6 +151,7 @@ fn audio_architecture_pins_pipewire_live_test_policy() {
         "live probes must only run when those environment variables are set explicitly",
         "`PipeWireAudioRecorder` currently exists behind `pipewire-backend` as an explicit skeleton",
         "returns `RecordingBackendUnavailable` instead of silently falling back to mock capture",
+        "future live implementation should negotiate signed 16-bit 16 kHz mono PCM first",
     ] {
         assert!(
             audio_doc.contains(required),
