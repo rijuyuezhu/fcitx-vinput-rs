@@ -35,6 +35,29 @@ pub const fn recording_pcm_spec() -> PcmSpec {
     }
 }
 
+/// Planned `PipeWire` stream settings for a capture target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PipeWireStreamConfig {
+    /// Capture target selected by config or UI.
+    pub target: CaptureTarget,
+    /// Signed PCM format requested from `PipeWire`.
+    pub format: &'static str,
+    /// PCM layout delivered to ASR.
+    pub pcm_spec: PcmSpec,
+}
+
+impl PipeWireStreamConfig {
+    /// Builds the default live stream configuration for a target.
+    #[must_use]
+    pub fn for_target(target: CaptureTarget) -> Self {
+        Self {
+            target,
+            format: RECORDING_FORMAT,
+            pcm_spec: recording_pcm_spec(),
+        }
+    }
+}
+
 /// Enables live `PipeWire` source enumeration tests when set in the environment.
 pub const TEST_PIPEWIRE_ENUMERATE_ENV: &str = "VINPUT_TEST_PIPEWIRE_ENUMERATE";
 
@@ -290,6 +313,20 @@ mod tests {
             super::recording_pcm_spec(),
             super::PcmSpec::mono_i16(super::DEFAULT_SAMPLE_RATE_HZ)
         );
+    }
+
+    #[test]
+    fn pipewire_stream_config_preserves_target_and_pcm_policy() {
+        let config = super::PipeWireStreamConfig::for_target(super::CaptureTarget::Object(
+            "alsa_input.test".to_owned(),
+        ));
+
+        assert_eq!(
+            config.target,
+            super::CaptureTarget::Object("alsa_input.test".to_owned())
+        );
+        assert_eq!(config.format, super::RECORDING_FORMAT);
+        assert_eq!(config.pcm_spec, super::recording_pcm_spec());
     }
 
     #[test]
