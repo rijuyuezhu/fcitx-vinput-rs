@@ -1,5 +1,7 @@
 #include "vinput_fcitx_bridge/fcitx_addon.h"
 
+#include "vinput_fcitx_bridge/fcitx_selection.h"
+
 #include <fcitx/event.h>
 #include <fcitx/inputcontext.h>
 #include <fcitx/surroundingtext.h>
@@ -10,10 +12,10 @@ namespace vinput_fcitx_bridge {
 namespace {
 
 std::string SelectedTextFromInputContext(fcitx::InputContext *ic) {
-  if (ic == nullptr || !ic->surroundingText().isValid()) {
+  if (ic == nullptr) {
     return {};
   }
-  return ic->surroundingText().selectedText();
+  return SelectedTextFromSurroundingText(ic->surroundingText());
 }
 
 } // namespace

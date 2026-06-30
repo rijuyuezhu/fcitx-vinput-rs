@@ -74,6 +74,7 @@ if(Fcitx5Core_FOUND)
   add_library(vinput_fcitx_bridge_fcitx STATIC
     src/fcitx_key_trigger.cpp
     src/fcitx_outcome.cpp
+    src/fcitx_selection.cpp
   )
   add_library(vinput_fcitx_bridge::fcitx ALIAS vinput_fcitx_bridge_fcitx)
   target_link_libraries(vinput_fcitx_bridge_fcitx
@@ -122,6 +123,22 @@ if(Fcitx5Core_FOUND)
   add_test(
     NAME vinput_fcitx_bridge_key_trigger_smoke
     COMMAND vinput_fcitx_bridge_key_trigger_smoke
+  )
+
+  add_executable(
+    vinput_fcitx_bridge_selection_smoke
+    tests/fcitx_selection_smoke.cpp
+  )
+  target_link_libraries(
+    vinput_fcitx_bridge_selection_smoke
+    PRIVATE
+      vinput_fcitx_bridge::fcitx
+      Fcitx5::Core
+  )
+  vinput_bridge_apply_warnings(vinput_fcitx_bridge_selection_smoke)
+  add_test(
+    NAME vinput_fcitx_bridge_selection_smoke
+    COMMAND vinput_fcitx_bridge_selection_smoke
   )
 
   vinput_bridge_install_dir(
