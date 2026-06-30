@@ -29,6 +29,15 @@ pub enum ArchiveEntryKind {
     Other,
 }
 
+/// Supported staged archive wrapper formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveFormat {
+    /// Plain tar archive.
+    Tar,
+    /// Zstd-compressed tar archive.
+    TarZst,
+}
+
 /// Archive entry safety policy errors.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ArchiveSafetyError {
@@ -88,6 +97,12 @@ pub enum ArchiveStagingError {
     #[error("archive staging output `{path}` already exists")]
     OutputExists {
         /// Requested final staged output path.
+        path: String,
+    },
+    /// Archive wrapper format is not supported by the staging boundary.
+    #[error("unsupported archive format for `{path}`")]
+    UnsupportedFormat {
+        /// Archive path.
         path: String,
     },
     /// Parent directory for staged output could not be created.
@@ -186,6 +201,43 @@ pub fn checked_archive_entry_target(
         });
     }
     Ok(target)
+}
+
+impl ArchiveFormat {
+    /// Detects the archive format from a source path.
+    ///
+    /// Detection is intentionally suffix-based and side-effect free. It accepts
+    /// `.tar` and `.tar.zst` paths only; callers remain responsible for
+    /// checksum verification before staging.
+    pub fn from_path(path: impl AsRef<Path>) -> Option<Self> {
+        let path = path.as_ref().to_string_lossy();
+        if path.ends_with(".tar.zst") {
+            Some(Self::TarZst)
+        } else if path.ends_with(".tar") {
+            Some(Self::Tar)
+        } else {
+            None
+        }
+    }
+}
+
+/// Extracts an already-staged local archive using suffix-based format selection.
+///
+/// This dispatches only to the currently supported archive readers and returns a
+/// typed error for unknown wrappers. It does not download assets, infer trust, or
+/// mutate configuration.
+pub fn stage_archive_by_format(
+    archive_path: impl AsRef<Path>,
+    output_root: impl AsRef<Path>,
+) -> Result<StagedArchiveTree, ArchiveStagingError> {
+    let archive_path = archive_path.as_ref();
+    match ArchiveFormat::from_path(archive_path) {
+        Some(ArchiveFormat::Tar) => stage_tar_archive(archive_path, output_root),
+        Some(ArchiveFormat::TarZst) => stage_tar_zst_archive(archive_path, output_root),
+        None => Err(ArchiveStagingError::UnsupportedFormat {
+            path: display_path(archive_path),
+        }),
+    }
 }
 
 /// Extracts an already-staged local plain tar archive into a staged directory.

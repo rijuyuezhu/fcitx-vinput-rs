@@ -16,8 +16,9 @@ mod plan;
 mod schema;
 
 pub use archive::{
-    ArchiveEntryKind, ArchiveSafetyError, ArchiveStagingError, StagedArchiveTree,
-    checked_archive_entry_target, stage_tar_archive, stage_tar_zst_archive,
+    ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, ArchiveStagingError, StagedArchiveTree,
+    checked_archive_entry_target, stage_archive_by_format, stage_tar_archive,
+    stage_tar_zst_archive,
 };
 pub use asset::{
     AssetChecksumStatus, RegistryAssetFetchFailure, RegistryAssetSource, RegistryAssetStagingError,

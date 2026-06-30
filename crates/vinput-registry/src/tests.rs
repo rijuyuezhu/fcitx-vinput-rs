@@ -1,11 +1,12 @@
 use super::{
-    ArchiveEntryKind, ArchiveSafetyError, ArchiveStagingError, AssetChecksumStatus, ChecksumPolicy,
-    InstallPlan, PlannedInstallAsset, RegistryAssetStagingError, RegistryCacheError,
-    RegistryCachedFetchError, RegistryEntryKind, RegistryError, RegistryFetchError, RegistryIndex,
-    RegistryMaterializeError, RegistrySha256Error, RegistryTextCache, RegistryTextSource,
-    ReqwestRegistryAssetSource, ReqwestRegistryTextSource, checked_archive_entry_target,
-    fetch_registry_index_from_mirrors, fetch_registry_index_with_cache, materialize_staged_tree,
-    sha256_hex, stage_planned_asset, stage_tar_archive, stage_tar_zst_archive, verify_sha256_bytes,
+    ArchiveEntryKind, ArchiveFormat, ArchiveSafetyError, ArchiveStagingError, AssetChecksumStatus,
+    ChecksumPolicy, InstallPlan, PlannedInstallAsset, RegistryAssetStagingError,
+    RegistryCacheError, RegistryCachedFetchError, RegistryEntryKind, RegistryError,
+    RegistryFetchError, RegistryIndex, RegistryMaterializeError, RegistrySha256Error,
+    RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource, ReqwestRegistryTextSource,
+    checked_archive_entry_target, fetch_registry_index_from_mirrors,
+    fetch_registry_index_with_cache, materialize_staged_tree, sha256_hex, stage_archive_by_format,
+    stage_planned_asset, stage_tar_archive, stage_tar_zst_archive, verify_sha256_bytes,
     verify_sha256_file, verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
@@ -1296,6 +1297,73 @@ fn tar_zst_archive_staging_rejects_invalid_compressed_input_without_publishing()
     ));
     assert!(!output.exists());
     assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn archive_format_detects_supported_wrappers_from_paths() {
+    assert_eq!(
+        ArchiveFormat::from_path("models/model.tar"),
+        Some(ArchiveFormat::Tar)
+    );
+    assert_eq!(
+        ArchiveFormat::from_path("models/model.tar.zst"),
+        Some(ArchiveFormat::TarZst)
+    );
+    assert_eq!(ArchiveFormat::from_path("models/model.zip"), None);
+}
+
+#[test]
+fn archive_format_dispatches_plain_tar_staging() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar");
+    write_test_tar_archive(
+        &archive,
+        &[TestTarEntry::File("models/model.bin", b"model")],
+    );
+    let output = temp_dir.path().join("selected-tar");
+
+    let staged = stage_archive_by_format(&archive, &output).unwrap();
+
+    assert_eq!(staged.file_count, 1);
+    assert_eq!(
+        std::fs::read(output.join("models/model.bin")).unwrap(),
+        b"model"
+    );
+}
+
+#[test]
+fn archive_format_dispatches_tar_zst_staging() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar.zst");
+    write_test_tar_zst_archive(
+        &archive,
+        &[TestTarEntry::File("models/model.bin", b"model")],
+    );
+    let output = temp_dir.path().join("selected-tar-zst");
+
+    let staged = stage_archive_by_format(&archive, &output).unwrap();
+
+    assert_eq!(staged.file_count, 1);
+    assert_eq!(
+        std::fs::read(output.join("models/model.bin")).unwrap(),
+        b"model"
+    );
+}
+
+#[test]
+fn archive_format_rejects_unknown_wrappers_without_publishing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.zip");
+    std::fs::write(&archive, b"not supported").unwrap();
+    let output = temp_dir.path().join("selected-unknown");
+
+    let error = stage_archive_by_format(&archive, &output).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ArchiveStagingError::UnsupportedFormat { .. }
+    ));
+    assert!(!output.exists());
 }
 
 fn materialize_backup_dirs(dir: &std::path::Path) -> Vec<String> {
