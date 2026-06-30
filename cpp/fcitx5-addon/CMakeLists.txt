@@ -72,6 +72,7 @@ configure_file(vinput-addon.conf.in vinput-addon.conf @ONLY)
 
 if(Fcitx5Core_FOUND)
   add_library(vinput_fcitx_bridge_fcitx STATIC
+    src/fcitx_candidates.cpp
     src/fcitx_key_trigger.cpp
     src/fcitx_outcome.cpp
     src/fcitx_selection.cpp
@@ -108,6 +109,23 @@ if(Fcitx5Core_FOUND)
     OUTPUT_NAME "fcitx5-vinput"
   )
   vinput_bridge_apply_warnings(fcitx5_vinput_addon)
+
+
+  add_executable(
+    vinput_fcitx_bridge_candidates_smoke
+    tests/fcitx_candidates_smoke.cpp
+  )
+  target_link_libraries(
+    vinput_fcitx_bridge_candidates_smoke
+    PRIVATE
+      vinput_fcitx_bridge::fcitx
+      Fcitx5::Core
+  )
+  vinput_bridge_apply_warnings(vinput_fcitx_bridge_candidates_smoke)
+  add_test(
+    NAME vinput_fcitx_bridge_candidates_smoke
+    COMMAND vinput_fcitx_bridge_candidates_smoke
+  )
 
   add_executable(
     vinput_fcitx_bridge_key_trigger_smoke
