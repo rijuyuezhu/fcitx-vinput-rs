@@ -1031,6 +1031,38 @@ mod tests {
     }
 
     #[test]
+    fn chunk_ranges_count_multi_channel_frames() {
+        let pcm = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 1_000,
+                channels: 2,
+            },
+            vec![10, 11, 20, 21, 30, 31],
+        )
+        .unwrap();
+
+        let ranges = pcm.chunk_ranges_by_frames(1).unwrap();
+
+        assert_eq!(
+            ranges,
+            vec![
+                PcmChunkRange {
+                    start_frame: 0,
+                    frame_len: 1,
+                },
+                PcmChunkRange {
+                    start_frame: 1,
+                    frame_len: 1,
+                },
+                PcmChunkRange {
+                    start_frame: 2,
+                    frame_len: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn pcm_chunk_range_serializes_stable_fields() {
         let range = PcmChunkRange {
             start_frame: 4,
