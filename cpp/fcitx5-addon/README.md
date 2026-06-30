@@ -34,14 +34,15 @@ Fcitx trigger action
 
 ## Build
 
-The C++ bridge has its own CMake project, following the retained legacy addon build boundary. It currently builds the bridge core, the concrete `sd-bus` daemon client, and CTest smoke binaries without requiring a live Fcitx desktop session:
+The C++ bridge has its own CMake project, following the retained legacy addon build boundary. It builds the bridge core, the concrete `sd-bus` daemon client, and CTest smoke binaries without requiring a live Fcitx desktop session. When `Fcitx5Core` development files are available, it also builds the retained `fcitx5-vinput.so` module skeleton.
 
 ```sh
 just addon-configure
 just addon-build
 just addon-smoke
+just addon-fcitx-build
 ```
 
 Run `just addon-dbus-smoke` to start the Rust daemon under `dbus-run-session` and exercise the C++ `SdBusDaemonClient` through the real legacy D-Bus ABI.
 
-The CMake project also configures `vinput-addon.conf.in` and probes the legacy Fcitx addon dependencies (`Fcitx5Core`, `Fcitx5ModuleDBus`, `Fcitx5ModuleClipboard`, and `Fcitx5ModuleNotifications`) so the future shared-library addon target can follow the original C++ project's module/install shape when adapter sources land.
+The CMake project also configures `vinput-addon.conf.in` and probes the legacy Fcitx addon dependencies (`Fcitx5Core`, `Fcitx5ModuleDBus`, `Fcitx5ModuleClipboard`, and `Fcitx5ModuleNotifications`) so the future adapter sources can follow the original C++ project's module/install shape when they land.

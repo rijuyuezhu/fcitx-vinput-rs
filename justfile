@@ -1,7 +1,7 @@
 set dotenv-load := false
 
 addon-sources := `find cpp/fcitx5-addon -type f \( -name '*.cpp' -o -name '*.h' \) | sort | tr '\n' ' '`
-addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' | sort | tr '\n' ' '`
+addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' ! -name 'fcitx_addon.cpp' ! -name 'fcitx_addon_factory.cpp' | sort | tr '\n' ' '`
 
 fmt:
     clang-format -i {{addon-sources}}
@@ -42,6 +42,10 @@ addon-build:
     cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
     ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
     cmake --build target/cpp/fcitx5-addon --parallel
+
+addon-fcitx-build:
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon-fcitx -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
+    cmake --build target/cpp/fcitx5-addon-fcitx --parallel
 
 addon-lint:
     cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF

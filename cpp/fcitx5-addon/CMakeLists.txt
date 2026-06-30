@@ -6,11 +6,14 @@ include(CTest)
 include(GNUInstallDirs)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SYSTEMD REQUIRED libsystemd)
+find_package(Fcitx5Core QUIET)
 
 option(VINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS
        "Probe Fcitx5 dependencies for the future addon module target" ON)
 option(VINPUT_FCITX_BRIDGE_ENABLE_TESTS
        "Build pure C++ bridge smoke tests" ON)
+option(VINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE
+       "Fail configure if Fcitx5Core is unavailable" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,6 +36,7 @@ target_include_directories(vinput_fcitx_bridge_core
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_compile_features(vinput_fcitx_bridge_core PUBLIC cxx_std_20)
+set_target_properties(vinput_fcitx_bridge_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 vinput_bridge_apply_warnings(vinput_fcitx_bridge_core)
 
 add_library(vinput_fcitx_bridge_sdbus STATIC src/sd_bus_daemon_client.cpp)
@@ -46,19 +50,58 @@ target_link_libraries(vinput_fcitx_bridge_sdbus
 target_include_directories(vinput_fcitx_bridge_sdbus PRIVATE ${SYSTEMD_INCLUDE_DIRS})
 target_compile_options(vinput_fcitx_bridge_sdbus PRIVATE ${SYSTEMD_CFLAGS_OTHER})
 target_compile_features(vinput_fcitx_bridge_sdbus PUBLIC cxx_std_20)
+set_target_properties(vinput_fcitx_bridge_sdbus PROPERTIES POSITION_INDEPENDENT_CODE ON)
 vinput_bridge_apply_warnings(vinput_fcitx_bridge_sdbus)
 
 configure_file(vinput-addon.conf.in vinput-addon.conf @ONLY)
 
+
+if(Fcitx5Core_FOUND)
+  add_library(fcitx5_vinput_addon MODULE
+    src/fcitx_addon.cpp
+    src/fcitx_addon_factory.cpp
+  )
+  target_link_libraries(fcitx5_vinput_addon
+    PRIVATE
+      vinput_fcitx_bridge::sdbus
+      Fcitx5::Core
+  )
+  target_compile_features(fcitx5_vinput_addon PRIVATE cxx_std_20)
+  if(Fcitx5Core_VERSION VERSION_GREATER_EQUAL "5.1.12")
+    target_compile_definitions(
+      fcitx5_vinput_addon
+      PRIVATE VINPUT_FCITX5_CORE_HAVE_ADDON_FACTORY_V2
+    )
+  endif()
+  set_target_properties(fcitx5_vinput_addon PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "fcitx5-vinput"
+  )
+  vinput_bridge_apply_warnings(fcitx5_vinput_addon)
+
+  if(DEFINED FCITX_INSTALL_LIBDIR AND DEFINED FCITX_INSTALL_PKGDATADIR)
+    install(TARGETS fcitx5_vinput_addon DESTINATION "${FCITX_INSTALL_LIBDIR}/fcitx5")
+    install(
+      FILES "${CMAKE_CURRENT_BINARY_DIR}/vinput-addon.conf"
+      DESTINATION "${FCITX_INSTALL_PKGDATADIR}/addon"
+      RENAME vinput.conf
+    )
+  endif()
+else()
+  if(VINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE)
+    message(FATAL_ERROR "Fcitx5Core is required for the addon module target")
+  endif()
+  message(STATUS "Fcitx5Core not found; skipping fcitx5-vinput module target")
+endif()
+
 if(VINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS)
-  find_package(Fcitx5Core QUIET)
   find_package(Fcitx5ModuleDBus QUIET)
   find_package(Fcitx5ModuleClipboard QUIET)
   find_package(Fcitx5ModuleNotifications QUIET)
 
   if(Fcitx5Core_FOUND AND Fcitx5ModuleDBus_FOUND AND
      Fcitx5ModuleClipboard_FOUND AND Fcitx5ModuleNotifications_FOUND)
-    message(STATUS "Fcitx5 addon dependencies found; the module target will be enabled when adapter sources land")
+    message(STATUS "Fcitx5 addon dependencies found; future adapter sources can link module helpers")
   else()
     message(STATUS "Fcitx5 addon dependencies incomplete; building bridge core and sd-bus client only")
   endif()
