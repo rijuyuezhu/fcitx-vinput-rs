@@ -55,7 +55,7 @@ Equivalent raw commands:
 ```sh
 clang-format --dry-run --Werror {{addon-sources}}
 cargo fmt --all -- --check
-cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
 ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
 clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
 cargo clippy --workspace --all-targets -- -D warnings

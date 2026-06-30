@@ -59,6 +59,14 @@ Rules:
 
 Use `just` as the primary local interface. The recipes mirror CI and make command intent explicit.
 
+Arch Linux local native dependencies for the current C++ addon slice:
+
+```sh
+sudo pacman -S --needed base-devel cmake clang just pkgconf fcitx5
+```
+
+`fcitx5` provides the Fcitx5 Core/Utils headers and CMake/pkg-config metadata used by `addon-lint` and `addon-fcitx-build`. Extra Fcitx module development packages are not required for the current thin addon slice.
+
 Common commands:
 
 ```sh
@@ -74,7 +82,7 @@ just addon-configure # configure the C++ Fcitx bridge CMake project
 just addon-build  # build the C++ bridge and optional Fcitx module target
 just addon-fcitx-build # require Fcitx5Core and build fcitx5-vinput.so
 just addon-install-smoke # stage-install fcitx5-vinput.so and vinput.conf
-just addon-lint   # lint the C++ Fcitx bridge with clang-tidy
+just addon-lint   # require Fcitx5Core and lint all C++ addon sources with clang-tidy
 just addon-test   # run CTest for the C++ Fcitx bridge core
 just addon-smoke  # addon-format-check plus addon-lint plus addon-test
 just addon-dbus-smoke # run C++ bridge against Rust daemon over DBus

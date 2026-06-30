@@ -1,7 +1,7 @@
 set dotenv-load := false
 
 addon-sources := `find cpp/fcitx5-addon -type f \( -name '*.cpp' -o -name '*.h' \) | sort | tr '\n' ' '`
-addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' ! -name 'fcitx_addon.cpp' ! -name 'fcitx_addon_factory.cpp' ! -name 'fcitx_key_trigger.cpp' ! -name 'fcitx_outcome.cpp' ! -name 'fcitx_key_trigger_smoke.cpp' | sort | tr '\n' ' '`
+addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' | sort | tr '\n' ' '`
 
 fmt:
     clang-format -i {{addon-sources}}
@@ -12,7 +12,7 @@ fmt-check:
     cargo fmt --all -- --check
 
 lint:
-    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
     ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
     clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
     cargo clippy --workspace --all-targets -- -D warnings
@@ -54,7 +54,7 @@ addon-install-smoke: addon-fcitx-build
     test -f target/tmp/fcitx-addon-install-smoke/usr/local/share/fcitx5/addon/vinput.conf
 
 addon-lint:
-    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
     ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
     clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
 
@@ -66,7 +66,7 @@ addon-test:
 
 addon-smoke:
     clang-format --dry-run --Werror {{addon-sources}}
-    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
     ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
     clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
     cmake --build target/cpp/fcitx5-addon --parallel
