@@ -15,7 +15,7 @@
 - `payload.rs`: conversion from recognition events to the legacy recognition payload JSON model;
 - `tests.rs`: behavior-preserving coverage for mock, command, factory, and payload contracts.
 
-Command providers use legacy batch or `.streaming` runners through the factory, while the JSON helper seam remains available for explicit process-runner tests and small helper integrations. Local `sherpa-onnx` has an explicit typed config seam and a pre-runtime local model/hotwords path validation seam, but the runtime remains unavailable until the concrete backend is implemented.
+Command providers use legacy batch or `.streaming` runners through the factory, while the JSON helper seam remains available for explicit process-runner tests and small helper integrations. Local `sherpa-onnx` has an explicit typed config seam and a pre-runtime local model/hotwords path validation seam, but the runtime remains unavailable until the concrete backend is implemented. The validation seam accepts relative or absolute local model and hotwords paths, rejects empty values and URL-like paths, and verifies model directories plus regular hotwords files before any runtime is constructed.
 
 ## Daemon integration
 
