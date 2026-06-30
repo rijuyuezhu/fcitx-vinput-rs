@@ -7,8 +7,11 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include <fcitx-utils/handlertable.h>
 #include <fcitx/addoninstance.h>
+#include <fcitx/event.h>
 #include <fcitx/instance.h>
 
 namespace vinput_fcitx_bridge {
@@ -33,9 +36,13 @@ public:
                                std::string_view scene_id = "raw");
 
 private:
+  void HandleKeyEvent(fcitx::Event &event);
+
   fcitx::Instance *instance_ = nullptr;
   FrontendBridge bridge_;
   std::unique_ptr<SdBusDaemonClient> daemon_client_;
+  std::vector<std::unique_ptr<fcitx::HandlerTableEntry<fcitx::EventHandler>>>
+      event_handlers_;
 };
 
 } // namespace vinput_fcitx_bridge

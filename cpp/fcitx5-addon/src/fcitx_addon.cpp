@@ -1,5 +1,8 @@
 #include "vinput_fcitx_bridge/fcitx_addon.h"
 
+#include <fcitx-utils/key.h>
+#include <fcitx/event.h>
+
 #include <utility>
 
 namespace vinput_fcitx_bridge {
@@ -23,6 +26,20 @@ AppliedOutcome FcitxVinputAddon::TriggerNormal(fcitx::InputContext *ic,
   auto outcome = bridge_.recording() ? bridge_.Stop(daemon_client_.get(), scene_id)
                                      : bridge_.StartNormal(daemon_client_.get());
   return ApplyBridgeOutcomeToInputContext(outcome, ic);
+}
+
+void FcitxVinputAddon::HandleKeyEvent(fcitx::Event &event) {
+  if (event.type() != fcitx::EventType::InputContextKeyEvent) {
+    return;
+  }
+
+  auto &key_event = static_cast<fcitx::KeyEvent &>(event);
+  if (!key_event.isRelease() || !key_event.key().check(FcitxKey_Control_R)) {
+    return;
+  }
+
+  TriggerNormal(key_event.inputContext());
+  key_event.filterAndAccept();
 }
 
 } // namespace vinput_fcitx_bridge
