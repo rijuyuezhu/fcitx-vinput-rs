@@ -1140,6 +1140,28 @@ mod tests {
     }
 
     #[test]
+    fn summary_json_shape_is_stable() {
+        let config = VinputConfig::bundled_default().unwrap();
+        let value = serde_json::to_value(config.summary()).unwrap();
+        let object = value
+            .as_object()
+            .expect("summary should serialize as object");
+        let keys = object.keys().map(String::as_str).collect::<Vec<_>>();
+
+        assert_eq!(
+            keys,
+            [
+                "active_provider",
+                "active_scene",
+                "ok",
+                "provider_count",
+                "registry_mirror_count",
+                "scene_count",
+                "version",
+            ]
+        );
+    }
+    #[test]
     fn summary_serialization_omits_secret_bearing_fields() {
         let mut config = VinputConfig::bundled_default().unwrap();
         config.asr.providers.push(super::AsrProviderConfig {
