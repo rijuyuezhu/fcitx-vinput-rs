@@ -270,3 +270,13 @@ fn target_architecture_pins_frontend_packaging_boundary() {
         );
     }
 }
+
+#[test]
+fn registry_architecture_mentions_root_planning() {
+    let registry_doc = std::fs::read_to_string(architecture_dir().join("registry-contract.md"))
+        .expect("read registry contract doc");
+
+    assert!(registry_doc.contains("Dry-run install plans keep install roots explicit"));
+    assert!(registry_doc.contains("filesystem root stays absolute"));
+    assert!(registry_doc.contains("without touching the filesystem"));
+}
