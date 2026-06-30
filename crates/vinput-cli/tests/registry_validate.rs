@@ -338,6 +338,33 @@ fn registry_install_plan_prints_targets_and_checksum_policy() {
 }
 
 #[test]
+fn registry_install_plan_preserves_filesystem_root_target() {
+    let path = write_temp_registry(
+        r#"
+        {
+          "version": 1,
+          "models": [
+            {"id":"m","label":"M","provider":"p","assets":[{"path":"models/m.tar"}]}
+          ]
+        }
+        "#,
+    );
+
+    let output = vinput_command()
+        .args(["registry", "install-plan"])
+        .arg(&path)
+        .args(["--target-root", "/"])
+        .output()
+        .expect("run vinput registry install-plan");
+    fs::remove_file(&path).expect("remove temporary registry fixture");
+
+    let value = assert_json_success(output, "registry install plan");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["target_root"], "/");
+    assert_eq!(value["assets"][0]["target_path"], "/models/m.tar");
+}
+
+#[test]
 fn registry_install_plan_summary_only_can_select_one_model() {
     let path = write_temp_registry(
         r#"
