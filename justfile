@@ -18,7 +18,10 @@ test:
 dbus-test:
     dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
 
-check: fmt-check lint test dbus-test dbus-lint
+check: fmt-check lint test dbus-test dbus-lint addon-smoke
+
+addon-smoke:
+    cargo test -p vinput-cli --test fcitx_bridge_cpp_smoke
 
 ci: check
 

@@ -68,7 +68,8 @@ just lint         # clippy for the workspace
 just test         # cargo test --workspace --all-targets
 just dbus-test    # D-Bus integration tests under dbus-run-session
 just dbus-lint    # clippy with dbus-integration feature
-just check        # fmt-check + lint + test + dbus-test + dbus-lint
+just addon-smoke  # pure C++ Fcitx bridge core compile/run smoke
+just check        # fmt-check + lint + test + dbus-test + dbus-lint + addon-smoke
 just ci           # alias for check
 just smoke        # CLI/daemon smoke commands
 just e2e-demo     # deterministic file-input command ASR/text demo

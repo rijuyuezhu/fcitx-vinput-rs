@@ -25,3 +25,5 @@ Fcitx trigger action
 ```
 
 `include/vinput_fcitx_bridge/dbus_contract.h` mirrors `vinput-protocol::dbus` constants used by the C++ bridge. Keep it synchronized with focused tests before adding the actual addon implementation.
+
+`include/vinput_fcitx_bridge/recognition_payload.h` and `src/recognition_payload.cpp` are pure C++ bridge-core code for parsing the legacy recognition payload and deciding whether the frontend should commit immediately or show a result candidate menu. Run `just addon-smoke` to compile and execute this core without requiring a live Fcitx desktop session or Fcitx module development packages.
