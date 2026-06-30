@@ -52,7 +52,9 @@ pub enum ArchiveStagingPathError {
         source_path: String,
     },
     /// Two planned archive assets would use the same extraction tree.
-    #[error("duplicate archive extraction path for planned asset `{source_path}`: `{archive_extract_path}`")]
+    #[error(
+        "duplicate archive extraction path for planned asset `{source_path}`: `{archive_extract_path}`"
+    )]
     DuplicateExtractPath {
         /// Registry-relative source path from the dry-run asset action.
         source_path: String,
