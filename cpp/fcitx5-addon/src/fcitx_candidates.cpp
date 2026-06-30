@@ -59,18 +59,27 @@ std::string ResultCandidateComment(const Candidate &candidate, std::size_t llm_i
   return {};
 }
 
-void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
-                                   const Candidate &candidate) {
+void ClearResultCandidateMenu(fcitx::InputContext *input_context) {
   if (input_context == nullptr) {
     return;
   }
 
   fcitx::Text empty;
   input_context->inputPanel().setAuxUp(empty);
-  input_context->inputPanel().setPreedit(empty);
   input_context->inputPanel().setCandidateList({});
-  input_context->updatePreedit();
   input_context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+}
+
+void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
+                                   const Candidate &candidate) {
+  if (input_context == nullptr) {
+    return;
+  }
+
+  ClearResultCandidateMenu(input_context);
+  fcitx::Text empty;
+  input_context->inputPanel().setPreedit(empty);
+  input_context->updatePreedit();
 
   if (candidate.source == CandidateSource::Cancel || candidate.text.empty()) {
     return;

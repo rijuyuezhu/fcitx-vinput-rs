@@ -14,6 +14,7 @@ namespace vinput_fcitx_bridge {
 namespace {
 
 void SetPreedit(fcitx::InputContext *ic, std::string_view text) {
+  ClearResultCandidateMenu(ic);
   fcitx::Text preedit;
   preedit.append(std::string(text));
   ic->inputPanel().setPreedit(preedit);
@@ -66,6 +67,7 @@ AppliedOutcome ApplyBridgeOutcomeToInputContext(const BridgeOutcome &outcome,
     if (text.empty()) {
       return AppliedOutcome::None;
     }
+    ClearResultCandidateMenu(ic);
     ClearPreedit(ic);
     ic->commitString(std::string(text));
     return AppliedOutcome::Commit;
@@ -78,6 +80,7 @@ AppliedOutcome ApplyBridgeOutcomeToInputContext(const BridgeOutcome &outcome,
     if (text.empty()) {
       return AppliedOutcome::None;
     }
+    ClearResultCandidateMenu(ic);
     ClearPreedit(ic);
     ic->commitString(std::string(text));
     return AppliedOutcome::Commit;

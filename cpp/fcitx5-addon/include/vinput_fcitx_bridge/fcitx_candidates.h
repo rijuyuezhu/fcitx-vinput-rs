@@ -17,6 +17,8 @@ std::string ResultCandidateComment(const Candidate &candidate, std::size_t llm_i
 
 std::string ResultCandidateMenuTitle(std::size_t count);
 
+void ClearResultCandidateMenu(fcitx::InputContext *input_context);
+
 void ApplyResultCandidateSelection(fcitx::InputContext *input_context,
                                    const Candidate &candidate);
 
