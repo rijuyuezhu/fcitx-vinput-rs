@@ -84,6 +84,12 @@ if(Fcitx5Core_FOUND)
       Fcitx5::Core
   )
   target_compile_features(vinput_fcitx_bridge_fcitx PUBLIC cxx_std_20)
+  if(Fcitx5Core_VERSION VERSION_GREATER_EQUAL "5.1.9")
+    target_compile_definitions(
+      vinput_fcitx_bridge_fcitx
+      PUBLIC VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
+    )
+  endif()
   set_target_properties(vinput_fcitx_bridge_fcitx PROPERTIES POSITION_INDEPENDENT_CODE ON)
   vinput_bridge_apply_warnings(vinput_fcitx_bridge_fcitx)
 

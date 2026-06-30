@@ -36,9 +36,13 @@ int main() {
   assert(candidates->layoutHint() == fcitx::CandidateLayoutHint::Vertical);
   assert(candidates->globalCursorIndex() == 2);
   assert(candidates->candidateFromAll(0).text().toString() == "raw transcript");
+#ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
   assert(candidates->candidateFromAll(1).comment().toString() == "LLM 1");
+#endif
   assert(candidates->candidateFromAll(2).text().toString() == "polished 2");
+#ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
   assert(candidates->candidateFromAll(2).comment().toString() == "LLM 2");
+#endif
 
   return 0;
 }

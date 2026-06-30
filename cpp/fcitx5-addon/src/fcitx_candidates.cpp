@@ -13,9 +13,13 @@ class ResultCandidateWord final : public fcitx::CandidateWord {
 public:
   ResultCandidateWord(std::string text, std::string comment)
       : fcitx::CandidateWord(fcitx::Text(std::move(text))) {
+#ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
     if (!comment.empty()) {
       setComment(fcitx::Text(std::move(comment)));
     }
+#else
+    (void)comment;
+#endif
   }
 
   void select(fcitx::InputContext * /*input_context*/) const override {}
