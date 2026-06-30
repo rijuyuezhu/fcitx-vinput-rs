@@ -2,10 +2,11 @@ use super::{
     ArchiveEntryKind, ArchiveSafetyError, ArchiveStagingError, AssetChecksumStatus, ChecksumPolicy,
     InstallPlan, PlannedInstallAsset, RegistryAssetStagingError, RegistryCacheError,
     RegistryCachedFetchError, RegistryEntryKind, RegistryError, RegistryFetchError, RegistryIndex,
-    RegistrySha256Error, RegistryTextCache, RegistryTextSource, ReqwestRegistryAssetSource,
-    ReqwestRegistryTextSource, checked_archive_entry_target, fetch_registry_index_from_mirrors,
-    fetch_registry_index_with_cache, sha256_hex, stage_planned_asset, stage_tar_archive,
-    verify_sha256_bytes, verify_sha256_file, verify_sha256_reader,
+    RegistryMaterializeError, RegistrySha256Error, RegistryTextCache, RegistryTextSource,
+    ReqwestRegistryAssetSource, ReqwestRegistryTextSource, checked_archive_entry_target,
+    fetch_registry_index_from_mirrors, fetch_registry_index_with_cache, materialize_staged_tree,
+    sha256_hex, stage_planned_asset, stage_tar_archive, verify_sha256_bytes, verify_sha256_file,
+    verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
 
@@ -1222,6 +1223,108 @@ fn tar_archive_staging_rejects_existing_output_without_mutation() {
 
     assert!(matches!(error, ArchiveStagingError::OutputExists { .. }));
     assert!(std::fs::read_dir(&output).unwrap().next().is_none());
+}
+
+fn materialize_backup_dirs(dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_dir()))
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".backup."))
+        .collect()
+}
+
+#[test]
+fn materialize_staged_tree_moves_new_tree_to_target() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let source = temp_dir.path().join("staged-tree");
+    std::fs::create_dir_all(source.join("models/sherpa")).unwrap();
+    std::fs::write(source.join("models/sherpa/model.bin"), b"model").unwrap();
+    let target = temp_dir.path().join("install-root/sherpa");
+
+    let materialized = materialize_staged_tree(&source, &target).unwrap();
+
+    assert_eq!(materialized.source_path, source);
+    assert_eq!(materialized.target_path, target);
+    assert!(!materialized.replaced_existing);
+    assert!(!materialized.source_path.exists());
+    assert_eq!(
+        std::fs::read(materialized.target_path.join("models/sherpa/model.bin")).unwrap(),
+        b"model"
+    );
+    assert!(materialize_backup_dirs(materialized.target_path.parent().unwrap()).is_empty());
+}
+
+#[test]
+fn materialize_staged_tree_replaces_existing_target_and_removes_backup() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let source = temp_dir.path().join("staged-tree");
+    std::fs::create_dir_all(source.join("models/sherpa")).unwrap();
+    std::fs::write(source.join("models/sherpa/model.bin"), b"new").unwrap();
+    let target = temp_dir.path().join("install-root/sherpa");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("old.bin"), b"old").unwrap();
+
+    let materialized = materialize_staged_tree(&source, &target).unwrap();
+
+    assert!(materialized.replaced_existing);
+    assert!(!source.exists());
+    assert_eq!(
+        std::fs::read(target.join("models/sherpa/model.bin")).unwrap(),
+        b"new"
+    );
+    assert!(!target.join("old.bin").exists());
+    assert!(materialize_backup_dirs(target.parent().unwrap()).is_empty());
+}
+
+#[test]
+fn materialize_staged_tree_rejects_missing_source() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let source = temp_dir.path().join("missing");
+    let target = temp_dir.path().join("target");
+
+    let error = materialize_staged_tree(&source, &target).unwrap_err();
+
+    assert!(matches!(
+        error,
+        RegistryMaterializeError::SourceMissing { .. }
+    ));
+    assert!(!target.exists());
+}
+
+#[test]
+fn materialize_staged_tree_rejects_file_target_without_mutation() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let source = temp_dir.path().join("staged-tree");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("model.bin"), b"model").unwrap();
+    let target = temp_dir.path().join("target-file");
+    std::fs::write(&target, b"existing").unwrap();
+
+    let error = materialize_staged_tree(&source, &target).unwrap_err();
+
+    assert!(matches!(
+        error,
+        RegistryMaterializeError::TargetNotDirectory { .. }
+    ));
+    assert_eq!(std::fs::read(source.join("model.bin")).unwrap(), b"model");
+    assert_eq!(std::fs::read(&target).unwrap(), b"existing");
+}
+
+#[test]
+fn materialize_staged_tree_rejects_source_as_target() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let source = temp_dir.path().join("staged-tree");
+    std::fs::create_dir_all(&source).unwrap();
+
+    let error = materialize_staged_tree(&source, &source).unwrap_err();
+
+    assert!(matches!(
+        error,
+        RegistryMaterializeError::TargetEqualsSource { .. }
+    ));
+    assert!(source.exists());
 }
 
 #[derive(Debug)]

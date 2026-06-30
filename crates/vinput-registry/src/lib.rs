@@ -1,9 +1,9 @@
 //! Registry manifest models, URL resolution helpers, and staged asset boundaries.
 //!
-//! Asset staging can download and verify one planned asset into a caller-owned
-//! staging file. Archive extraction, install root materialization, configuration
-//! mutation, and user-facing install commands are intentionally still outside
-//! this crate boundary.
+//! Registry side-effect boundaries can download/verify one planned asset, extract
+//! a staged tar archive into a temporary tree, and materialize a prepared staged
+//! directory with local filesystem renames. Configuration mutation and
+//! user-facing install commands are intentionally still outside this crate.
 
 mod archive;
 mod asset;
@@ -11,6 +11,7 @@ mod cache;
 mod checksum;
 mod error;
 mod fetch;
+mod materialize;
 mod plan;
 mod schema;
 
@@ -33,6 +34,9 @@ pub use error::RegistryError;
 pub use fetch::{
     RegistryFetchError, RegistryFetchFailure, RegistryTextSource, ReqwestRegistryTextSource,
     fetch_registry_index_from_mirrors,
+};
+pub use materialize::{
+    MaterializedRegistryTree, RegistryMaterializeError, materialize_staged_tree,
 };
 pub use plan::{
     AssetPlanSummary, ChecksumPolicy, InstallPlan, InstallPlanSummary, PlannedAsset,
