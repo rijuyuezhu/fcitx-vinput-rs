@@ -1,10 +1,11 @@
 use super::{
     AsrBackend, AsrBackendFactory, AsrError, AudioDeliveryMode, CommandAsrBackend,
     CommandAsrRequest, CommandAsrResponse, CommandAsrRunner, CommandAsrSpec,
-    LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrBackend,
-    ProcessCommandAsrRunner, RecognitionContext, RecognitionEvent, SherpaOnnxModelPathError,
-    SherpaOnnxSpec, events_to_payload, legacy_command_streaming_audio_line,
-    legacy_command_streaming_finish_line, parse_legacy_command_streaming_line,
+    LegacyCommandBatchRunner, LegacyCommandStreamingRunner, MockAsrAudioLog, MockAsrAudioPush,
+    MockAsrBackend, ProcessCommandAsrRunner, RecognitionContext, RecognitionEvent,
+    SherpaOnnxModelPathError, SherpaOnnxSpec, events_to_payload,
+    legacy_command_streaming_audio_line, legacy_command_streaming_finish_line,
+    parse_legacy_command_streaming_line,
 };
 use vinput_audio::{PcmBuffer, PcmSpec};
 use vinput_config::{AsrConfig, AsrProviderConfig, AsrProviderKind};
@@ -140,6 +141,56 @@ fn mock_buffered_backend_emits_final_text_on_finish() {
         ]
     );
     assert_eq!(events_to_payload(&events).unwrap().commit_text, "hello");
+}
+
+#[test]
+fn mock_asr_audio_log_records_raw_audio_pushes() {
+    let audio_log = MockAsrAudioLog::new();
+    let backend = MockAsrBackend::streaming("partial", "final").with_audio_log(audio_log.clone());
+    let mut session = backend
+        .create_session(RecognitionContext::normal("default", None))
+        .unwrap();
+
+    session.push_audio(&[1, 2]).unwrap();
+    session.push_audio(&[3]).unwrap();
+
+    assert_eq!(
+        audio_log.records(),
+        vec![
+            MockAsrAudioPush {
+                sample_len: 2,
+                pcm_spec: None,
+            },
+            MockAsrAudioPush {
+                sample_len: 1,
+                pcm_spec: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn mock_asr_audio_log_records_pcm_push_metadata() {
+    let audio_log = MockAsrAudioLog::new();
+    let backend = MockAsrBackend::buffered("final").with_audio_log(audio_log.clone());
+    let mut session = backend
+        .create_session(RecognitionContext::normal("default", None))
+        .unwrap();
+    let spec = PcmSpec {
+        sample_rate_hz: 48_000,
+        channels: 2,
+    };
+    let pcm = PcmBuffer::with_spec(spec, vec![1, 2, 3, 4]).unwrap();
+
+    session.push_pcm(&pcm).unwrap();
+
+    assert_eq!(
+        audio_log.records(),
+        vec![MockAsrAudioPush {
+            sample_len: 4,
+            pcm_spec: Some(spec),
+        }]
+    );
 }
 
 #[test]

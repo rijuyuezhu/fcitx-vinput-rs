@@ -20,7 +20,7 @@ pub use command::{
 };
 pub use error::AsrError;
 pub use factory::AsrBackendFactory;
-pub use mock::MockAsrBackend;
+pub use mock::{MockAsrAudioLog, MockAsrAudioPush, MockAsrBackend};
 pub use payload::events_to_payload;
 pub use sherpa::{
     SHERPA_ONNX_PROVIDER_ID, SherpaOnnxModelPathError, SherpaOnnxModelPaths, SherpaOnnxSpec,
