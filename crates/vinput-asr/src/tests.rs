@@ -1852,6 +1852,171 @@ fn sherpa_onnx_model_paths_reject_missing_hotwords_file() {
 }
 
 #[test]
+fn sherpa_onnx_model_paths_accept_absolute_hotwords_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
+    let model_dir = root.join("paraformer");
+    let hotwords_file = root.join("shared-hotwords.txt");
+    std::fs::create_dir_all(&model_dir).unwrap();
+    std::fs::write(
+        &hotwords_file,
+        b"hello 1.0
+",
+    )
+    .unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some(hotwords_file.display().to_string()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let paths = spec.resolve_model_paths(root).unwrap();
+
+    assert_eq!(paths.model_dir, model_dir);
+    assert_eq!(paths.hotwords_file, Some(hotwords_file));
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_empty_model_path() {
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("   ".to_owned()),
+        hotwords_file: None,
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths("model-root").unwrap_err();
+
+    assert_eq!(
+        error,
+        SherpaOnnxModelPathError::EmptyModel {
+            provider_id: "sherpa-onnx".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_missing_model_directory() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("missing-model".to_owned()),
+        hotwords_file: None,
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths(temp_dir.path()).unwrap_err();
+
+    assert!(matches!(
+        error,
+        SherpaOnnxModelPathError::MissingModelDir { .. }
+    ));
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_empty_hotwords_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
+    std::fs::create_dir_all(root.join("paraformer")).unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some("   ".to_owned()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths(root).unwrap_err();
+
+    assert_eq!(
+        error,
+        SherpaOnnxModelPathError::EmptyHotwords {
+            provider_id: "sherpa-onnx".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_url_like_hotwords_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
+    std::fs::create_dir_all(root.join("paraformer")).unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some("https://example.invalid/hotwords.txt".to_owned()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths(root).unwrap_err();
+
+    assert_eq!(
+        error,
+        SherpaOnnxModelPathError::UrlLikePath {
+            provider_id: "sherpa-onnx".to_owned(),
+            path: "https://example.invalid/hotwords.txt".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn sherpa_onnx_model_paths_reject_directory_hotwords_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
+    let model_dir = root.join("paraformer");
+    std::fs::create_dir_all(model_dir.join("hotwords-dir")).unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some("hotwords-dir".to_owned()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+
+    let error = spec.resolve_model_paths(root).unwrap_err();
+
+    assert!(matches!(
+        error,
+        SherpaOnnxModelPathError::HotwordsPathNotFile { .. }
+    ));
+}
+
+#[test]
 fn backend_factory_reports_sherpa_onnx_runtime_unavailable() {
     let provider = AsrProviderConfig {
         id: "sherpa-onnx".to_owned(),
