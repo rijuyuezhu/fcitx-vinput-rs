@@ -40,6 +40,14 @@ AppliedOutcome FcitxVinputAddon::ApplyDaemonUnavailable(fcitx::InputContext *ic,
   outcome.kind = BridgeOutcome::Kind::Error;
   outcome.text =
       error.empty() ? "Voice input daemon is unavailable." : std::move(error);
+  return ApplyBridgeOutcome(ic, outcome);
+}
+
+AppliedOutcome FcitxVinputAddon::ApplyBridgeOutcome(fcitx::InputContext *ic,
+                                                    const BridgeOutcome &outcome) {
+  if (outcome.kind == BridgeOutcome::Kind::Error) {
+    daemon_client_.reset();
+  }
   return ApplyBridgeOutcomeToInputContext(outcome, ic);
 }
 
@@ -53,18 +61,14 @@ AppliedOutcome FcitxVinputAddon::TriggerNormal(fcitx::InputContext *ic,
 
   auto outcome = bridge_.recording() ? bridge_.Stop(client, scene_id)
                                      : bridge_.StartNormal(client);
-  if (outcome.kind == BridgeOutcome::Kind::Error) {
-    daemon_client_.reset();
-  }
-  return ApplyBridgeOutcomeToInputContext(outcome, ic);
+  return ApplyBridgeOutcome(ic, outcome);
 }
 
 AppliedOutcome FcitxVinputAddon::TriggerCommand(fcitx::InputContext *ic,
                                                 std::string_view selected_text,
                                                 std::string_view scene_id) {
   if (!bridge_.recording() && selected_text.empty()) {
-    return ApplyBridgeOutcomeToInputContext(
-        bridge_.StartCommand(nullptr, selected_text), ic);
+    return ApplyBridgeOutcome(ic, bridge_.StartCommand(nullptr, selected_text));
   }
 
   std::string error;
@@ -75,10 +79,7 @@ AppliedOutcome FcitxVinputAddon::TriggerCommand(fcitx::InputContext *ic,
 
   auto outcome = bridge_.recording() ? bridge_.Stop(client, scene_id)
                                      : bridge_.StartCommand(client, selected_text);
-  if (outcome.kind == BridgeOutcome::Kind::Error) {
-    daemon_client_.reset();
-  }
-  return ApplyBridgeOutcomeToInputContext(outcome, ic);
+  return ApplyBridgeOutcome(ic, outcome);
 }
 
 void FcitxVinputAddon::HandleKeyEvent(fcitx::Event &event) {

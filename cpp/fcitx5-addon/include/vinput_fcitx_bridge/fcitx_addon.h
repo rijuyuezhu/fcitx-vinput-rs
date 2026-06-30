@@ -41,6 +41,8 @@ public:
 private:
   SdBusDaemonClient *EnsureDaemonClient(std::string *error);
   AppliedOutcome ApplyDaemonUnavailable(fcitx::InputContext *ic, std::string error);
+  AppliedOutcome ApplyBridgeOutcome(fcitx::InputContext *ic,
+                                    const BridgeOutcome &outcome);
   void HandleKeyEvent(fcitx::Event &event);
 
   fcitx::Instance *instance_ = nullptr;
