@@ -1,12 +1,12 @@
-//! CMake smoke tests for the retained C++ Fcitx5 bridge core.
+//! `CMake` smoke tests for the retained C++ Fcitx5 bridge core.
 
 mod common;
 
-use std::process::Command;
+use std::process::{Command, Output};
 
 use common::workspace_file;
 
-fn assert_success(output: std::process::Output, context: &str) {
+fn assert_success(output: &Output, context: &str) {
     assert!(
         output.status.success(),
         "{context} failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -32,7 +32,7 @@ fn cpp_bridge_cmake_project_configures_builds_and_tests() {
         .arg("-DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF")
         .output()
         .expect("run CMake configure for C++ bridge");
-    assert_success(configure, "C++ bridge CMake configure");
+    assert_success(&configure, "C++ bridge CMake configure");
 
     let build = Command::new("cmake")
         .arg("--build")
@@ -40,7 +40,7 @@ fn cpp_bridge_cmake_project_configures_builds_and_tests() {
         .arg("--parallel")
         .output()
         .expect("run CMake build for C++ bridge");
-    assert_success(build, "C++ bridge CMake build");
+    assert_success(&build, "C++ bridge CMake build");
 
     let test = Command::new("ctest")
         .arg("--test-dir")
@@ -48,5 +48,5 @@ fn cpp_bridge_cmake_project_configures_builds_and_tests() {
         .arg("--output-on-failure")
         .output()
         .expect("run CTest for C++ bridge");
-    assert_success(test, "C++ bridge CTest");
+    assert_success(&test, "C++ bridge CTest");
 }

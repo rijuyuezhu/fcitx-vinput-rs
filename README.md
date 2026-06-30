@@ -53,11 +53,19 @@ just smoke
 Equivalent raw commands:
 
 ```sh
+clang-format --dry-run --Werror {{addon-sources}}
 cargo fmt --all -- --check
+cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
+clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
 dbus-run-session -- cargo test -p vinput-daemon --features dbus-integration --test dbus_integration
 cargo clippy -p vinput-daemon --all-targets --features dbus-integration -- -D warnings
+cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
+cmake --build target/cpp/fcitx5-addon --parallel
+ctest --test-dir target/cpp/fcitx5-addon --output-on-failure
 cargo run -q -p vinput-cli -- protocol
 cargo run -q -p vinput-cli -- config
 cargo run -q -p vinput-cli -- config validate data/default-config.json --summary-only

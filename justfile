@@ -1,12 +1,20 @@
 set dotenv-load := false
 
-fmt: addon-format
+addon-sources := `find cpp/fcitx5-addon -type f \( -name '*.cpp' -o -name '*.h' \) | sort | tr '\n' ' '`
+addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' | sort | tr '\n' ' '`
+
+fmt:
+    clang-format -i {{addon-sources}}
     cargo fmt --all
 
-fmt-check: addon-format-check
+fmt-check:
+    clang-format --dry-run --Werror {{addon-sources}}
     cargo fmt --all -- --check
 
-lint: addon-lint
+lint:
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
+    clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
     cargo clippy --workspace --all-targets -- -D warnings
 
 dbus-lint:
@@ -20,9 +28,6 @@ dbus-test:
 
 check: fmt-check lint test dbus-test dbus-lint addon-test
 
-addon-sources := `find cpp/fcitx5-addon -type f \( -name '*.cpp' -o -name '*.h' \) | sort | tr '\n' ' '`
-addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' | sort | tr '\n' ' '`
-
 addon-format:
     clang-format -i {{addon-sources}}
 
@@ -33,16 +38,29 @@ addon-configure:
     cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
     ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
 
-addon-build: addon-configure
+addon-build:
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
     cmake --build target/cpp/fcitx5-addon --parallel
 
-addon-lint: addon-configure
+addon-lint:
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
     clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
 
-addon-test: addon-build
+addon-test:
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
+    cmake --build target/cpp/fcitx5-addon --parallel
     ctest --test-dir target/cpp/fcitx5-addon --output-on-failure
 
-addon-smoke: addon-format-check addon-lint addon-test
+addon-smoke:
+    clang-format --dry-run --Werror {{addon-sources}}
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
+    ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json
+    clang-tidy -p target/cpp/fcitx5-addon {{addon-lint-sources}}
+    cmake --build target/cpp/fcitx5-addon --parallel
+    ctest --test-dir target/cpp/fcitx5-addon --output-on-failure
 
 ci: check
 
@@ -65,10 +83,12 @@ smoke:
 
 # Compile and test optional PipeWire feature paths without requiring a live daemon.
 pipewire-check:
-    cargo test -p vinput-audio --features pipewire-backend
-    cargo test -p vinput-cli --features pipewire-backend --test audio_devices
-    cargo test -p vinput-daemon --features pipewire-backend --test cli
-    cargo clippy -p vinput-audio --all-targets --features pipewire-backend -- -D warnings
+    cargo test -p vinput-daemon --features=pipewire-backend
+    cargo clippy -p vinput-daemon --all-targets --features=pipewire-backend -- -D warnings
+    cargo test -p vinput-audio --features=pipewire-backend
+    cargo clippy -p vinput-audio --all-targets --features=pipewire-backend -- -D warnings
+    cargo test -p vinput-cli --features=pipewire-backend --test audio_devices
+    cargo clippy -p vinput-cli --all-targets --features=pipewire-backend -- -D warnings
 
 # Run explicit local PipeWire probes. Requires a live user PipeWire session.
 pipewire-live:
