@@ -35,8 +35,12 @@ public:
   }
   AppliedOutcome TriggerNormal(fcitx::InputContext *ic,
                                std::string_view scene_id = "raw");
+  AppliedOutcome TriggerCommand(fcitx::InputContext *ic, std::string_view selected_text,
+                                std::string_view scene_id = "raw");
 
 private:
+  SdBusDaemonClient *EnsureDaemonClient(std::string *error);
+  AppliedOutcome ApplyDaemonUnavailable(fcitx::InputContext *ic, std::string error);
   void HandleKeyEvent(fcitx::Event &event);
 
   fcitx::Instance *instance_ = nullptr;

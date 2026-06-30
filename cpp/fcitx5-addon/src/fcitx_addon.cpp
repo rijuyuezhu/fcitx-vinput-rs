@@ -15,22 +15,49 @@ FcitxVinputAddon::FcitxVinputAddon(fcitx::Instance *instance) : instance_(instan
   }
 }
 
+SdBusDaemonClient *FcitxVinputAddon::EnsureDaemonClient(std::string *error) {
+  if (daemon_client_ == nullptr) {
+    daemon_client_ = SdBusDaemonClient::ConnectSession(error);
+  }
+  return daemon_client_.get();
+}
+
+AppliedOutcome FcitxVinputAddon::ApplyDaemonUnavailable(fcitx::InputContext *ic,
+                                                        std::string error) {
+  BridgeOutcome outcome;
+  outcome.kind = BridgeOutcome::Kind::Error;
+  outcome.text =
+      error.empty() ? "Voice input daemon is unavailable." : std::move(error);
+  return ApplyBridgeOutcomeToInputContext(outcome, ic);
+}
+
 AppliedOutcome FcitxVinputAddon::TriggerNormal(fcitx::InputContext *ic,
                                                std::string_view scene_id) {
-  if (daemon_client_ == nullptr) {
-    std::string error;
-    daemon_client_ = SdBusDaemonClient::ConnectSession(&error);
-    if (daemon_client_ == nullptr) {
-      BridgeOutcome outcome;
-      outcome.kind = BridgeOutcome::Kind::Error;
-      outcome.text =
-          error.empty() ? "Voice input daemon is unavailable." : std::move(error);
-      return ApplyBridgeOutcomeToInputContext(outcome, ic);
-    }
+  std::string error;
+  auto *client = EnsureDaemonClient(&error);
+  if (client == nullptr) {
+    return ApplyDaemonUnavailable(ic, std::move(error));
   }
 
-  auto outcome = bridge_.recording() ? bridge_.Stop(daemon_client_.get(), scene_id)
-                                     : bridge_.StartNormal(daemon_client_.get());
+  auto outcome = bridge_.recording() ? bridge_.Stop(client, scene_id)
+                                     : bridge_.StartNormal(client);
+  if (outcome.kind == BridgeOutcome::Kind::Error) {
+    daemon_client_.reset();
+  }
+  return ApplyBridgeOutcomeToInputContext(outcome, ic);
+}
+
+AppliedOutcome FcitxVinputAddon::TriggerCommand(fcitx::InputContext *ic,
+                                                std::string_view selected_text,
+                                                std::string_view scene_id) {
+  std::string error;
+  auto *client = EnsureDaemonClient(&error);
+  if (client == nullptr) {
+    return ApplyDaemonUnavailable(ic, std::move(error));
+  }
+
+  auto outcome = bridge_.recording() ? bridge_.Stop(client, scene_id)
+                                     : bridge_.StartCommand(client, selected_text);
   if (outcome.kind == BridgeOutcome::Kind::Error) {
     daemon_client_.reset();
   }
