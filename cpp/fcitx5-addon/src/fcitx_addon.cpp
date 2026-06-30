@@ -6,8 +6,22 @@
 #include <utility>
 
 namespace vinput_fcitx_bridge {
+namespace {
 
-FcitxVinputAddon::FcitxVinputAddon(fcitx::Instance *instance) : instance_(instance) {}
+bool IsDefaultTriggerKey(const fcitx::KeyEvent &event) {
+  return event.isRelease() && event.key().check(FcitxKey_Control_R);
+}
+
+} // namespace
+
+FcitxVinputAddon::FcitxVinputAddon(fcitx::Instance *instance) : instance_(instance) {
+  if (instance_ != nullptr) {
+    event_handlers_.emplace_back(
+        instance_->watchEvent(fcitx::EventType::InputContextKeyEvent,
+                              fcitx::EventWatcherPhase::PostInputMethod,
+                              [this](fcitx::Event &event) { HandleKeyEvent(event); }));
+  }
+}
 
 AppliedOutcome FcitxVinputAddon::TriggerNormal(fcitx::InputContext *ic,
                                                std::string_view scene_id) {
@@ -34,7 +48,7 @@ void FcitxVinputAddon::HandleKeyEvent(fcitx::Event &event) {
   }
 
   auto &key_event = static_cast<fcitx::KeyEvent &>(event);
-  if (!key_event.isRelease() || !key_event.key().check(FcitxKey_Control_R)) {
+  if (!IsDefaultTriggerKey(key_event)) {
     return;
   }
 
