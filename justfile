@@ -47,6 +47,12 @@ addon-fcitx-build:
     cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon-fcitx -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
     cmake --build target/cpp/fcitx5-addon-fcitx --parallel
 
+addon-install-smoke: addon-fcitx-build
+    rm -rf target/tmp/fcitx-addon-install-smoke
+    cmake --install target/cpp/fcitx5-addon-fcitx --prefix target/tmp/fcitx-addon-install-smoke
+    test -f target/tmp/fcitx-addon-install-smoke/usr/local/lib/fcitx5/fcitx5-vinput.so
+    test -f target/tmp/fcitx-addon-install-smoke/usr/local/share/fcitx5/addon/vinput.conf
+
 addon-lint:
     cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS=OFF
     ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json

@@ -19,6 +19,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+
+function(vinput_bridge_install_dir output value fallback)
+  if(NOT "${value}" STREQUAL "")
+    if(IS_ABSOLUTE "${value}")
+      file(RELATIVE_PATH relative_value "/" "${value}")
+      set(${output} "${relative_value}" PARENT_SCOPE)
+    else()
+      set(${output} "${value}" PARENT_SCOPE)
+    endif()
+  else()
+    set(${output} "${fallback}" PARENT_SCOPE)
+  endif()
+endfunction()
+
 function(vinput_bridge_apply_warnings target)
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
@@ -80,14 +94,22 @@ if(Fcitx5Core_FOUND)
   )
   vinput_bridge_apply_warnings(fcitx5_vinput_addon)
 
-  if(DEFINED FCITX_INSTALL_LIBDIR AND DEFINED FCITX_INSTALL_PKGDATADIR)
-    install(TARGETS fcitx5_vinput_addon DESTINATION "${FCITX_INSTALL_LIBDIR}/fcitx5")
-    install(
-      FILES "${CMAKE_CURRENT_BINARY_DIR}/vinput-addon.conf"
-      DESTINATION "${FCITX_INSTALL_PKGDATADIR}/addon"
-      RENAME vinput.conf
-    )
-  endif()
+  vinput_bridge_install_dir(
+    VINPUT_FCITX_MODULE_INSTALL_DIR
+    "${FCITX_INSTALL_LIBDIR}/fcitx5"
+    "${CMAKE_INSTALL_LIBDIR}/fcitx5"
+  )
+  vinput_bridge_install_dir(
+    VINPUT_FCITX_ADDON_INSTALL_DIR
+    "${FCITX_INSTALL_PKGDATADIR}/addon"
+    "${CMAKE_INSTALL_DATADIR}/fcitx5/addon"
+  )
+  install(TARGETS fcitx5_vinput_addon DESTINATION "${VINPUT_FCITX_MODULE_INSTALL_DIR}")
+  install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/vinput-addon.conf"
+    DESTINATION "${VINPUT_FCITX_ADDON_INSTALL_DIR}"
+    RENAME vinput.conf
+  )
 else()
   if(VINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE)
     message(FATAL_ERROR "Fcitx5Core is required for the addon module target")

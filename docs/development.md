@@ -73,6 +73,7 @@ just addon-format-check # check C++ Fcitx bridge formatting
 just addon-configure # configure the C++ Fcitx bridge CMake project
 just addon-build  # build the C++ bridge and optional Fcitx module target
 just addon-fcitx-build # require Fcitx5Core and build fcitx5-vinput.so
+just addon-install-smoke # stage-install fcitx5-vinput.so and vinput.conf
 just addon-lint   # lint the C++ Fcitx bridge with clang-tidy
 just addon-test   # run CTest for the C++ Fcitx bridge core
 just addon-smoke  # addon-format-check plus addon-lint plus addon-test
