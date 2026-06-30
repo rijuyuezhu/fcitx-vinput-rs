@@ -43,6 +43,12 @@ fn protocol_prints_service_dbus_contract() {
     assert_eq!(value["service_bus_name"], "org.fcitx.Vinput");
     assert_eq!(value["service_object_path"], "/org/fcitx/Vinput");
     assert_eq!(value["service_interface"], "org.fcitx.Vinput.Service");
+    assert_eq!(value["frontend_notifier_method"], "Notify");
+    assert_eq!(
+        value["operation_failed_error"],
+        "org.fcitx.Vinput.Error.OperationFailed"
+    );
+    assert_eq!(value["error_info_signature"], "ssss");
     assert_eq!(
         value["methods"],
         serde_json::to_value(dbus::SERVICE_METHODS).unwrap()

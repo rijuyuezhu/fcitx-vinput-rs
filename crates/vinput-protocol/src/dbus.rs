@@ -125,6 +125,16 @@ mod tests {
     }
 
     #[test]
+    fn dbus_error_contract_matches_legacy_frontend_expectations() {
+        assert_eq!(
+            error::OPERATION_FAILED,
+            "org.fcitx.Vinput.Error.OperationFailed"
+        );
+        assert_eq!(signature::ERROR_INFO, "ssss");
+        assert_eq!(method::NOTIFY, "Notify");
+    }
+
+    #[test]
     fn legacy_service_methods_exclude_diagnostic_extensions() {
         assert_eq!(
             LEGACY_SERVICE_METHODS,
