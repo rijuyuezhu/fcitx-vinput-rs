@@ -1050,6 +1050,39 @@ fn openai_chat_request_debug_redacts_authorization_header() {
 }
 
 #[test]
+fn openai_chat_request_redacts_authorization_header_case_insensitively() {
+    let request = OpenAiCompatibleChatRequest {
+        url: "https://api.example.test/v1/chat/completions".to_owned(),
+        headers: vec![
+            ("authorization".to_owned(), "Bearer lower-secret".to_owned()),
+            ("AUTHORIZATION".to_owned(), "Bearer upper-secret".to_owned()),
+            ("X-Trace".to_owned(), "trace-id".to_owned()),
+        ],
+        body: serde_json::json!({"model":"model-id"}),
+        ignored_extra_body_keys: Vec::new(),
+    };
+
+    assert_eq!(
+        request.redacted_headers(),
+        [
+            ("authorization".to_owned(), "<redacted>".to_owned()),
+            ("AUTHORIZATION".to_owned(), "<redacted>".to_owned()),
+            ("X-Trace".to_owned(), "trace-id".to_owned()),
+        ]
+    );
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|(_, value)| value.contains("lower-secret"))
+    );
+    let debug = format!("{request:?}");
+    assert!(!debug.contains("lower-secret"));
+    assert!(!debug.contains("upper-secret"));
+    assert!(debug.contains("trace-id"));
+}
+
+#[test]
 fn openai_chat_url_appends_chat_completions_path() {
     assert_eq!(
         build_openai_compatible_chat_url("https://api.example.test/v1").as_deref(),
