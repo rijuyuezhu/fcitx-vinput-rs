@@ -582,7 +582,7 @@ fn configured_asr_state_reports_default_backend_without_runtime() {
     let state = RuntimeState::configured_asr_state(&config);
     assert_eq!(state.target_provider_id, "sherpa-onnx");
     assert!(!state.has_effective_backend);
-    assert!(!state.last_error.is_empty());
+    assert!(state.last_error.contains("sherpa-onnx runtime"));
 }
 
 #[test]

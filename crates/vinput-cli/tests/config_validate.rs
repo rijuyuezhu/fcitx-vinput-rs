@@ -955,6 +955,12 @@ fn asr_state_accepts_committed_default_fixture() {
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["target_model_id"], "");
     assert_eq!(value["has_effective_backend"], false);
+    assert!(
+        value["last_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("sherpa-onnx runtime")
+    );
 }
 
 #[test]
@@ -1024,7 +1030,7 @@ fn asr_state_reports_unavailable_provider() {
         value["last_error"]
             .as_str()
             .unwrap_or_default()
-            .contains("not implemented")
+            .contains("sherpa-onnx runtime")
     );
 }
 

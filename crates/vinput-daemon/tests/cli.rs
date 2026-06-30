@@ -388,6 +388,12 @@ fn asr_state_accepts_committed_default_fixture() {
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["target_model_id"], "");
     assert_eq!(value["has_effective_backend"], false);
+    assert!(
+        value["last_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("sherpa-onnx runtime")
+    );
 }
 
 #[test]
@@ -402,6 +408,12 @@ fn asr_state_with_default_fixture_ignores_configured_backend_runtime_init() {
     );
     assert_eq!(value["target_provider_id"], "sherpa-onnx");
     assert_eq!(value["has_effective_backend"], false);
+    assert!(
+        value["last_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("sherpa-onnx runtime")
+    );
 }
 
 #[test]
