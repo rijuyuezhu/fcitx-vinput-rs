@@ -34,19 +34,36 @@ int main() {
     return 1;
   }
 
-  FrontendBridge bridge;
-  auto start = bridge.StartNormal(client.get());
-  if (start.kind != BridgeOutcome::Kind::Preedit) {
-    std::cerr << "start failed: " << start.text << '\n';
+  FrontendBridge normal_bridge;
+  auto normal_start = normal_bridge.StartNormal(client.get());
+  if (normal_start.kind != BridgeOutcome::Kind::Preedit) {
+    std::cerr << "normal start failed: " << normal_start.text << '\n';
     return 1;
   }
 
-  auto stop = bridge.Stop(client.get(), "raw");
-  if (stop.kind != BridgeOutcome::Kind::Commit || stop.text.empty()) {
-    std::cerr << "stop did not produce commit text: " << stop.text << '\n';
+  auto normal_stop = normal_bridge.Stop(client.get(), "raw");
+  if (normal_stop.kind != BridgeOutcome::Kind::Commit ||
+      normal_stop.text != "mock recognition result") {
+    std::cerr << "normal stop did not produce expected commit text: "
+              << normal_stop.text << '\n';
     return 1;
   }
 
-  std::cout << stop.text << '\n';
+  FrontendBridge command_bridge;
+  auto command_start = command_bridge.StartCommand(client.get(), "selected text");
+  if (command_start.kind != BridgeOutcome::Kind::Preedit) {
+    std::cerr << "command start failed: " << command_start.text << '\n';
+    return 1;
+  }
+
+  auto command_stop = command_bridge.Stop(client.get(), "");
+  if (command_stop.kind != BridgeOutcome::Kind::Commit ||
+      command_stop.text != "mock command result for: selected text") {
+    std::cerr << "command stop did not produce expected commit text: "
+              << command_stop.text << '\n';
+    return 1;
+  }
+
+  std::cout << normal_stop.text << '\n' << command_stop.text << '\n';
   return 0;
 }
