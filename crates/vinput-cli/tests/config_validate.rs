@@ -4,7 +4,9 @@ mod common;
 
 use std::fs;
 
-use common::{assert_json_success, vinput_command, workspace_file, write_temp_json};
+use common::{
+    assert_json_success, assert_stdout_success, vinput_command, workspace_file, write_temp_json,
+};
 
 fn write_temp_config(contents: &str) -> std::path::PathBuf {
     write_temp_json("vinput-config", contents)
@@ -65,6 +67,106 @@ fn config_validate_prints_summary_for_valid_config() {
     assert_eq!(value["scene_count"], 3);
     assert_eq!(value["provider_count"], 1);
     assert_eq!(value["registry_mirror_count"], 0);
+}
+
+#[test]
+fn config_validate_summary_omits_sensitive_config_details() {
+    let path = write_temp_config(
+        r#"
+        {
+          "version": 1,
+          "registry": {"base_urls": ["https://registry-leak-marker.example.invalid/index.json"]},
+          "asr": {
+            "active_provider": "cmd",
+            "providers": [{
+              "id":"cmd",
+              "type":"command",
+              "command":"vinput-asr-helper",
+              "args":["--flag", "asr-arg-leak-marker"],
+              "env":{"ASR_KEY":"asr-env-leak-marker"},
+              "model":"asr-model-leak-marker",
+              "hotwords_file":"/tmp/asr-hotwords-leak-marker.txt"
+            }]
+          },
+          "llm": {
+            "providers": [{
+              "id":"llm",
+              "base_url":"https://llm-leak-marker.example.invalid/v1",
+              "api_key":"llm-key-leak-marker",
+              "model":"llm-model-leak-marker",
+              "extra_body":{"trace":"llm-extra-leak-marker"},
+              "future_field":"provider-extra-leak-marker"
+            }],
+            "adapters": [{
+              "id":"adapter",
+              "command":"vinput-text-helper",
+              "args":["--flag", "adapter-arg-leak-marker"],
+              "env":{"ADAPTER_KEY":"adapter-env-leak-marker"},
+              "working_dir":"/tmp/adapter-workdir-leak-marker",
+              "adapter_field":"adapter-extra-leak-marker"
+            }]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = vinput_command()
+        .args(["config", "validate"])
+        .arg(&path)
+        .arg("--summary-only")
+        .output()
+        .expect("run vinput config validate");
+    fs::remove_file(&path).expect("remove temporary config fixture");
+
+    let stdout = assert_stdout_success(output, "config summary");
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout should be JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["active_provider"], "cmd");
+    assert_eq!(value["active_scene"], "raw");
+    assert_eq!(value["provider_count"], 1);
+    assert_eq!(value["registry_mirror_count"], 1);
+
+    for forbidden_key in [
+        "api_key",
+        "base_url",
+        "env",
+        "args",
+        "command",
+        "working_dir",
+        "extra_body",
+        "future_field",
+        "adapter_field",
+    ] {
+        assert!(
+            !stdout.contains(&format!("\"{forbidden_key}\"")),
+            "config summary must not expose {forbidden_key}"
+        );
+    }
+    for marker in [
+        "registry-leak-marker",
+        "asr-arg-leak-marker",
+        "asr-env-leak-marker",
+        "asr-model-leak-marker",
+        "asr-hotwords-leak-marker",
+        "llm-leak-marker",
+        "llm-key-leak-marker",
+        "llm-model-leak-marker",
+        "llm-extra-leak-marker",
+        "provider-extra-leak-marker",
+        "adapter-arg-leak-marker",
+        "adapter-env-leak-marker",
+        "adapter-workdir-leak-marker",
+        "adapter-extra-leak-marker",
+    ] {
+        assert!(
+            !stdout.contains(marker),
+            "config summary must not leak {marker}"
+        );
+    }
 }
 
 #[test]
