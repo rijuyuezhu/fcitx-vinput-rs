@@ -5,6 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use vinput_config::{AsrProviderConfig, AsrProviderKind};
 
@@ -27,7 +29,7 @@ pub struct SherpaOnnxSpec {
 }
 
 /// Resolved local filesystem inputs for the future sherpa runtime.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SherpaOnnxModelPaths {
     /// Resolved model directory.
     pub model_dir: PathBuf,

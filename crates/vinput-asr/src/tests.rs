@@ -1650,6 +1650,36 @@ fn sherpa_onnx_model_paths_accept_absolute_model_path() {
 }
 
 #[test]
+fn sherpa_onnx_model_paths_serialize_resolved_paths() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
+    let model_dir = root.join("paraformer");
+    std::fs::create_dir_all(&model_dir).unwrap();
+    std::fs::write(model_dir.join("hotwords.txt"), b"hello 1.0\n").unwrap();
+    let provider = AsrProviderConfig {
+        id: "sherpa-onnx".to_owned(),
+        kind: AsrProviderKind::Local,
+        timeout_ms: None,
+        model: Some("paraformer".to_owned()),
+        hotwords_file: Some("hotwords.txt".to_owned()),
+        command: None,
+        args: Vec::new(),
+        env: std::collections::HashMap::default(),
+        endpoint: None,
+    };
+    let spec = SherpaOnnxSpec::from_provider(&provider).unwrap();
+    let paths = spec.resolve_model_paths(root).unwrap();
+
+    let json = serde_json::to_value(&paths).unwrap();
+
+    assert_eq!(json["model_dir"], model_dir.display().to_string());
+    assert_eq!(
+        json["hotwords_file"],
+        model_dir.join("hotwords.txt").display().to_string()
+    );
+}
+
+#[test]
 fn sherpa_onnx_model_paths_reject_missing_model_config() {
     let provider = AsrProviderConfig {
         id: "sherpa-onnx".to_owned(),
