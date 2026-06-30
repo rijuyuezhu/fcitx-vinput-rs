@@ -946,6 +946,7 @@ fn text_adapters_reports_configured_adapter_summary() {
     );
 
     let stdout = assert_success_stdout(output, "text adapter summary");
+    assert!(!stdout.contains("TOKEN"));
     assert!(!stdout.contains("secret"));
     assert!(!stdout.contains("/tmp/adapter-work"));
     let value: serde_json::Value =
