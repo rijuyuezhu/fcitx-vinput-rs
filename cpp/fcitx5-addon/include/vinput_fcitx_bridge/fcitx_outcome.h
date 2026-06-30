@@ -10,7 +10,7 @@ class InputContext;
 
 namespace vinput_fcitx_bridge {
 
-enum class AppliedOutcome : std::uint8_t { None, Preedit, Commit };
+enum class AppliedOutcome : std::uint8_t { None, Preedit, Commit, CandidateMenu };
 
 AppliedOutcome ApplyBridgeOutcomeToInputContext(const BridgeOutcome &outcome,
                                                 fcitx::InputContext *ic);
