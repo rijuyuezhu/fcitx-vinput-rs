@@ -52,6 +52,15 @@ int main() {
   }
 
   {
+    const auto plan =
+        MakeCommitPlan(R"({"candidates":[{"text":"","source":"cancel"}]})");
+    assert(plan.payload.commit_text.empty());
+    assert(plan.payload.candidates.size() == 1);
+    assert(plan.payload.candidates[0].source == CandidateSource::Cancel);
+    assert(!plan.show_candidate_menu);
+  }
+
+  {
     const auto payload = ParseRecognitionPayload("not json");
     assert(payload.commit_text.empty());
     assert(payload.candidates.empty());
