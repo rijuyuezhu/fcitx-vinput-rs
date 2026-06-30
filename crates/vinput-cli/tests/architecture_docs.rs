@@ -154,6 +154,9 @@ fn audio_architecture_pins_pipewire_live_test_policy() {
         "future live implementation should negotiate signed 16-bit 16 kHz mono PCM first",
         "`PipeWireStreamConfig` records the selected capture target",
         "pinned `S16LE` 16 kHz mono PCM policy",
+        "deterministic chunk planning use frames rather than raw sample count",
+        "chunk helpers never split a frame across chunk boundaries",
+        "`PcmBuffer::chunk_ranges_by_frames` can plan complete-frame chunk ranges without copying",
     ] {
         assert!(
             audio_doc.contains(required),

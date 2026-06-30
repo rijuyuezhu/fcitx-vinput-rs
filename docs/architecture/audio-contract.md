@@ -10,7 +10,7 @@ The canonical in-memory representation is signed 16-bit interleaved PCM carried 
 - `channels`: non-zero interleaved channel count, defaulting to mono when omitted from JSON.
 - `samples`: raw `i16` samples whose length must align to the channel count.
 
-Frame-oriented calculations, duration, and silence trimming use frames rather than raw sample count. Multi-channel buffers are preserved as complete interleaved frames.
+Frame-oriented calculations, duration, silence trimming, and deterministic chunk planning use frames rather than raw sample count. Multi-channel buffers are preserved as complete interleaved frames and chunk helpers never split a frame across chunk boundaries.
 
 ## Byte formats
 
@@ -48,4 +48,4 @@ ASR session ownership is explicit across the stop path. If recorder stop, PCM de
 2. Optionally normalize to a target peak.
 3. Apply input gain with saturating `i16` conversion.
 
-This order is part of the backend contract because command ASR helpers, file-input E2E demos, and future PipeWire capture should observe the same PCM delivered to ASR sessions.
+This order is part of the backend contract because command ASR helpers, file-input E2E demos, and future PipeWire capture should observe the same PCM delivered to ASR sessions. When streaming delivery is needed, `PcmBuffer::chunk_ranges_by_frames` can plan complete-frame chunk ranges without copying, and `PcmBuffer::chunks_by_frames` can materialize those ranges for deterministic tests or helper boundaries.

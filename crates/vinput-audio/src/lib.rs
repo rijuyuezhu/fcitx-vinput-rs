@@ -75,6 +75,23 @@ pub fn i16_samples_to_le_bytes(samples: &[i16]) -> Vec<u8> {
     }
     bytes
 }
+/// Frame range used to split PCM into streaming-safe chunks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PcmChunkRange {
+    /// Start frame index in the source buffer.
+    pub start_frame: usize,
+    /// Number of complete interleaved frames in this chunk.
+    pub frame_len: usize,
+}
+
+impl PcmChunkRange {
+    fn sample_range(self, channels: usize) -> std::ops::Range<usize> {
+        let start = self.start_frame * channels;
+        let end = start + (self.frame_len * channels);
+        start..end
+    }
+}
+
 impl PcmBuffer {
     /// Creates a mono PCM buffer with the given sample rate.
     pub fn new(sample_rate_hz: u32, samples: impl Into<Vec<i16>>) -> Result<Self, AudioError> {
@@ -165,6 +182,47 @@ impl PcmBuffer {
     #[must_use]
     pub fn frame_len(&self) -> usize {
         self.samples.len() / usize::from(self.spec.channels)
+    }
+
+    /// Plans streaming-safe chunk ranges in complete PCM frames.
+    ///
+    /// Ranges are expressed in frames rather than samples, so multi-channel
+    /// interleaved buffers are never split in the middle of a frame. Empty
+    /// buffers return an empty range list.
+    pub fn chunk_ranges_by_frames(
+        &self,
+        max_frames_per_chunk: usize,
+    ) -> Result<Vec<PcmChunkRange>, AudioError> {
+        if max_frames_per_chunk == 0 {
+            return Err(AudioError::InvalidChunkFrameCount(max_frames_per_chunk));
+        }
+        let mut ranges = Vec::new();
+        let mut start_frame = 0;
+        let total_frames = self.frame_len();
+        while start_frame < total_frames {
+            let frame_len = (total_frames - start_frame).min(max_frames_per_chunk);
+            ranges.push(PcmChunkRange {
+                start_frame,
+                frame_len,
+            });
+            start_frame += frame_len;
+        }
+        Ok(ranges)
+    }
+
+    /// Splits this PCM buffer into streaming-safe chunks by complete frames.
+    pub fn chunks_by_frames(
+        &self,
+        max_frames_per_chunk: usize,
+    ) -> Result<Vec<PcmBuffer>, AudioError> {
+        let channels = usize::from(self.spec.channels);
+        self.chunk_ranges_by_frames(max_frames_per_chunk)?
+            .into_iter()
+            .map(|range| {
+                let samples = self.samples[range.sample_range(channels)].to_vec();
+                PcmBuffer::with_spec(self.spec, samples)
+            })
+            .collect()
     }
 
     /// Returns duration in milliseconds, rounded down.
@@ -695,6 +753,9 @@ pub enum AudioError {
     /// RIFF/WAVE input was not uncompressed signed 16-bit PCM.
     #[error("invalid WAV file: {0}")]
     InvalidWav(String),
+    /// Chunk size must contain at least one frame.
+    #[error("invalid PCM chunk frame count: {0}")]
+    InvalidChunkFrameCount(usize),
     /// Empty mock buffer list.
     #[error("no more buffers")]
     SourceExhausted,
@@ -833,8 +894,8 @@ mod tests {
     use super::{
         AudioDeviceEnumerator, AudioDeviceInfo, AudioError, AudioRecorder, AudioSource,
         CaptureTarget, CapturedAudio, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE_HZ,
-        MockAudioDeviceEnumerator, MockAudioRecorder, MockAudioSource, PcmBuffer, PcmSpec,
-        RecorderAudioSource, SourceAudioRecorder,
+        MockAudioDeviceEnumerator, MockAudioRecorder, MockAudioSource, PcmBuffer, PcmChunkRange,
+        PcmSpec, RecorderAudioSource, SourceAudioRecorder,
     };
 
     fn wav_pcm16le_bytes(sample_rate_hz: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
@@ -899,6 +960,73 @@ mod tests {
         assert_eq!(
             PcmBuffer::new(0, vec![1]).unwrap_err(),
             AudioError::InvalidSampleRate(0)
+        );
+    }
+
+    #[test]
+    fn chunk_ranges_split_complete_frames() {
+        let pcm = PcmBuffer::new(1_000, vec![0, 1, 2, 3, 4]).unwrap();
+
+        let ranges = pcm.chunk_ranges_by_frames(2).unwrap();
+
+        assert_eq!(
+            ranges,
+            vec![
+                PcmChunkRange {
+                    start_frame: 0,
+                    frame_len: 2,
+                },
+                PcmChunkRange {
+                    start_frame: 2,
+                    frame_len: 2,
+                },
+                PcmChunkRange {
+                    start_frame: 4,
+                    frame_len: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn chunked_pcm_preserves_interleaved_multi_channel_frames() {
+        let pcm = PcmBuffer::with_spec(
+            PcmSpec {
+                sample_rate_hz: 1_000,
+                channels: 2,
+            },
+            vec![10, 11, 20, 21, 30, 31],
+        )
+        .unwrap();
+
+        let chunks = pcm.chunks_by_frames(2).unwrap();
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].spec(), pcm.spec());
+        assert_eq!(chunks[0].samples(), &[10, 11, 20, 21]);
+        assert_eq!(chunks[1].spec(), pcm.spec());
+        assert_eq!(chunks[1].samples(), &[30, 31]);
+    }
+
+    #[test]
+    fn chunking_empty_pcm_returns_no_chunks() {
+        let pcm = PcmBuffer::at_default_rate(Vec::new());
+
+        assert!(pcm.chunk_ranges_by_frames(10).unwrap().is_empty());
+        assert!(pcm.chunks_by_frames(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn chunking_rejects_zero_frames_per_chunk() {
+        let pcm = PcmBuffer::at_default_rate(vec![1, 2, 3]);
+
+        assert_eq!(
+            pcm.chunk_ranges_by_frames(0).unwrap_err(),
+            AudioError::InvalidChunkFrameCount(0)
+        );
+        assert_eq!(
+            pcm.chunks_by_frames(0).unwrap_err(),
+            AudioError::InvalidChunkFrameCount(0)
         );
     }
 
