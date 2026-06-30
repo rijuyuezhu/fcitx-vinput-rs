@@ -27,6 +27,8 @@ Fcitx trigger action
   -> commit payload.commit_text or show candidates when needed
 ```
 
+Normal trigger stops use the committed raw scene id `__raw__`; command-mode trigger stops pass an empty scene id so the daemon keeps its command-mode default.
+
 `include/vinput_fcitx_bridge/dbus_contract.h` mirrors `vinput-protocol::dbus` constants used by the C++ bridge. Keep it synchronized with focused tests before adding the actual addon implementation.
 
 `include/vinput_fcitx_bridge/recognition_payload.h` and `src/recognition_payload.cpp` are pure C++ bridge-core code for parsing the legacy recognition payload and deciding whether the frontend should commit immediately or show a result candidate menu.

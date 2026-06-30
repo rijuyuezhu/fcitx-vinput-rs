@@ -1,3 +1,4 @@
+#include "vinput_fcitx_bridge/fcitx_addon.h"
 #include "vinput_fcitx_bridge/fcitx_key_trigger.h"
 
 #include <fcitx-utils/key.h>
@@ -6,8 +7,13 @@
 #include <cassert>
 
 using vinput_fcitx_bridge::FcitxKeyTriggerPolicy;
+using vinput_fcitx_bridge::kDefaultCommandSceneId;
+using vinput_fcitx_bridge::kDefaultNormalSceneId;
 
 int main() {
+  assert(kDefaultNormalSceneId == "__raw__");
+  assert(kDefaultCommandSceneId.empty());
+
   const FcitxKeyTriggerPolicy policy;
 
   fcitx::KeyEvent control_release(nullptr, fcitx::Key(FcitxKey_Control_R), true);

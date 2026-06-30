@@ -17,6 +17,9 @@
 
 namespace vinput_fcitx_bridge {
 
+inline constexpr std::string_view kDefaultNormalSceneId = "__raw__";
+inline constexpr std::string_view kDefaultCommandSceneId = "";
+
 class FcitxVinputAddon final : public fcitx::AddonInstance {
 public:
   explicit FcitxVinputAddon(fcitx::Instance *instance);
@@ -34,9 +37,9 @@ public:
     return bridge_;
   }
   AppliedOutcome TriggerNormal(fcitx::InputContext *ic,
-                               std::string_view scene_id = "raw");
+                               std::string_view scene_id = kDefaultNormalSceneId);
   AppliedOutcome TriggerCommand(fcitx::InputContext *ic, std::string_view selected_text,
-                                std::string_view scene_id = "raw");
+                                std::string_view scene_id = kDefaultCommandSceneId);
 
 private:
   SdBusDaemonClient *EnsureDaemonClient(std::string *error);
