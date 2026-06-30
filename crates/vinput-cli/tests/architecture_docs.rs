@@ -115,3 +115,25 @@ fn text_architecture_pins_command_mode_payload_contract() {
         );
     }
 }
+
+#[test]
+fn text_architecture_pins_prompt_file_and_context_cache_rules() {
+    let text_doc = std::fs::read_to_string(architecture_dir().join("text-contract.md"))
+        .expect("read text contract doc");
+
+    for required in [
+        "only literal `file:///absolute/path` URIs are accepted",
+        "path is loaded only when it points to a regular file",
+        "reads are capped at 256 KiB",
+        "unsupported variables are preserved verbatim",
+        "frontend-facing code can buffer committed fragments",
+        "daemon-facing request builders read raw non-empty lines",
+        "XDG_CACHE_HOME/vinput/context.jsonl",
+        "$HOME/.cache/vinput/context.jsonl",
+    ] {
+        assert!(
+            text_doc.contains(required),
+            "text contract doc should pin prompt/context rule: {required}"
+        );
+    }
+}
