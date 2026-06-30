@@ -1,7 +1,5 @@
 #include "vinput_fcitx_bridge/fcitx_addon.h"
 
-#include "vinput_fcitx_bridge/fcitx_key_trigger.h"
-
 #include <fcitx/event.h>
 
 #include <utility>
@@ -42,8 +40,7 @@ void FcitxVinputAddon::HandleKeyEvent(fcitx::Event &event) {
   }
 
   auto &key_event = static_cast<fcitx::KeyEvent &>(event);
-  const FcitxKeyTriggerPolicy trigger_policy;
-  if (!trigger_policy.IsNormalTrigger(key_event)) {
+  if (!trigger_policy_.IsNormalTrigger(key_event)) {
     return;
   }
 

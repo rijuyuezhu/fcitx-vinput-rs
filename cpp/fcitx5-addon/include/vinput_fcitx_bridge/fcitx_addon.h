@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vinput_fcitx_bridge/fcitx_key_trigger.h"
 #include "vinput_fcitx_bridge/fcitx_outcome.h"
 #include "vinput_fcitx_bridge/frontend_bridge.h"
 #include "vinput_fcitx_bridge/sd_bus_daemon_client.h"
@@ -40,6 +41,7 @@ private:
 
   fcitx::Instance *instance_ = nullptr;
   FrontendBridge bridge_;
+  FcitxKeyTriggerPolicy trigger_policy_;
   std::unique_ptr<SdBusDaemonClient> daemon_client_;
   std::vector<std::unique_ptr<fcitx::HandlerTableEntry<fcitx::EventHandler>>>
       event_handlers_;
