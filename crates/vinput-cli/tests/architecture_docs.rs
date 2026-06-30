@@ -130,6 +130,8 @@ fn text_architecture_pins_prompt_file_and_context_cache_rules() {
         "daemon-facing request builders read raw non-empty lines",
         "XDG_CACHE_HOME/vinput/context.jsonl",
         "$HOME/.cache/vinput/context.jsonl",
+        "without exposing environment keys, environment values, or working directory paths",
+        "never include environment keys, environment values, or the configured working directory path",
     ] {
         assert!(
             text_doc.contains(required),
