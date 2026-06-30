@@ -17,6 +17,18 @@ const PW_KEY_MEDIA_CLASS: &str = "media.class";
 const PW_KEY_NODE_NAME: &str = "node.name";
 const PW_KEY_NODE_DESCRIPTION: &str = "node.description";
 
+/// Enables live `PipeWire` source enumeration tests when set in the environment.
+pub const TEST_PIPEWIRE_ENUMERATE_ENV: &str = "VINPUT_TEST_PIPEWIRE_ENUMERATE";
+
+/// Enables live `PipeWire` client context tests when set in the environment.
+pub const TEST_PIPEWIRE_CONTEXT_ENV: &str = "VINPUT_TEST_PIPEWIRE_CONTEXT";
+
+/// Returns whether a `PipeWire` live integration test gate is explicitly enabled.
+#[must_use]
+pub fn live_test_enabled(env_name: &str) -> bool {
+    std::env::var_os(env_name).is_some()
+}
+
 /// Initialize the `PipeWire` client library.
 pub fn initialize() {
     pipewire::init();
@@ -235,6 +247,20 @@ mod tests {
     }
 
     #[test]
+    fn pipewire_live_test_env_gates_are_explicit() {
+        assert_eq!(
+            super::TEST_PIPEWIRE_ENUMERATE_ENV,
+            "VINPUT_TEST_PIPEWIRE_ENUMERATE"
+        );
+        assert_eq!(
+            super::TEST_PIPEWIRE_CONTEXT_ENV,
+            "VINPUT_TEST_PIPEWIRE_CONTEXT"
+        );
+        assert!(!super::TEST_PIPEWIRE_ENUMERATE_ENV.is_empty());
+        assert!(!super::TEST_PIPEWIRE_CONTEXT_ENV.is_empty());
+    }
+
+    #[test]
     fn pipewire_recorder_reports_unavailable_without_live_stream() {
         let mut recorder = super::PipeWireAudioRecorder::new();
 
@@ -264,7 +290,7 @@ mod tests {
 
     #[test]
     fn pipewire_enumerator_lists_sources_when_enabled() {
-        if std::env::var_os("VINPUT_TEST_PIPEWIRE_ENUMERATE").is_none() {
+        if !super::live_test_enabled(super::TEST_PIPEWIRE_ENUMERATE_ENV) {
             return;
         }
         let mut enumerator = super::PipeWireDeviceEnumerator;
@@ -274,7 +300,7 @@ mod tests {
 
     #[test]
     fn pipewire_probe_creates_client_context_when_enabled() {
-        if std::env::var_os("VINPUT_TEST_PIPEWIRE_CONTEXT").is_none() {
+        if !super::live_test_enabled(super::TEST_PIPEWIRE_CONTEXT_ENV) {
             return;
         }
         super::probe_client_context().unwrap();

@@ -137,3 +137,24 @@ fn text_architecture_pins_prompt_file_and_context_cache_rules() {
         );
     }
 }
+
+#[test]
+fn audio_architecture_pins_pipewire_live_test_policy() {
+    let audio_doc = std::fs::read_to_string(architecture_dir().join("audio-contract.md"))
+        .expect("read audio contract doc");
+
+    for required in [
+        "VINPUT_TEST_PIPEWIRE_CONTEXT",
+        "VINPUT_TEST_PIPEWIRE_ENUMERATE",
+        "instead of running in default CI",
+        "without requiring a live PipeWire daemon",
+        "live probes must only run when those environment variables are set explicitly",
+        "`PipeWireAudioRecorder` currently exists behind `pipewire-backend` as an explicit skeleton",
+        "returns `RecordingBackendUnavailable` instead of silently falling back to mock capture",
+    ] {
+        assert!(
+            audio_doc.contains(required),
+            "audio contract doc should pin PipeWire live-test policy: {required}"
+        );
+    }
+}
