@@ -157,6 +157,7 @@ fn audio_architecture_pins_pipewire_live_test_policy() {
         "deterministic chunk planning use frames rather than raw sample count",
         "chunk helpers never split a frame across chunk boundaries",
         "`PcmBuffer::chunk_ranges_by_frames` can plan complete-frame chunk ranges without copying",
+        "can use complete-frame chunk helpers for deterministic streaming callback tests",
     ] {
         assert!(
             audio_doc.contains(required),

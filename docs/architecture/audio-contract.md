@@ -49,3 +49,7 @@ ASR session ownership is explicit across the stop path. If recorder stop, PCM de
 3. Apply input gain with saturating `i16` conversion.
 
 This order is part of the backend contract because command ASR helpers, file-input E2E demos, and future PipeWire capture should observe the same PCM delivered to ASR sessions. When streaming delivery is needed, `PcmBuffer::chunk_ranges_by_frames` can plan complete-frame chunk ranges without copying, and `PcmBuffer::chunks_by_frames` can materialize those ranges for deterministic tests or helper boundaries.
+
+## Deterministic chunk callback seams
+
+`MockAudioRecorder` and `SourceAudioRecorder` can use complete-frame chunk helpers for deterministic streaming callback tests. This keeps streaming callback behavior testable without requiring a live PipeWire backend or changing the stop-time buffered ASR delivery path.
