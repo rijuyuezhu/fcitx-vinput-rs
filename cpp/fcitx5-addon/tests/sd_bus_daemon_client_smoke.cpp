@@ -1,4 +1,5 @@
 #include "vinput_fcitx_bridge/frontend_bridge.h"
+#include "vinput_fcitx_bridge/scene_defaults.h"
 #include "vinput_fcitx_bridge/sd_bus_daemon_client.h"
 
 #include <chrono>
@@ -9,6 +10,8 @@
 
 using vinput_fcitx_bridge::BridgeOutcome;
 using vinput_fcitx_bridge::FrontendBridge;
+using vinput_fcitx_bridge::kDefaultCommandSceneId;
+using vinput_fcitx_bridge::kDefaultNormalSceneId;
 using vinput_fcitx_bridge::SdBusDaemonClient;
 
 namespace {
@@ -41,7 +44,7 @@ int main() {
     return 1;
   }
 
-  auto normal_stop = normal_bridge.Stop(client.get(), "raw");
+  auto normal_stop = normal_bridge.Stop(client.get(), kDefaultNormalSceneId);
   if (normal_stop.kind != BridgeOutcome::Kind::Commit ||
       normal_stop.text != "mock recognition result") {
     std::cerr << "normal stop did not produce expected commit text: "
@@ -56,7 +59,7 @@ int main() {
     return 1;
   }
 
-  auto command_stop = command_bridge.Stop(client.get(), "");
+  auto command_stop = command_bridge.Stop(client.get(), kDefaultCommandSceneId);
   if (command_stop.kind != BridgeOutcome::Kind::Commit ||
       command_stop.text != "mock command result for: selected text") {
     std::cerr << "command stop did not produce expected commit text: "

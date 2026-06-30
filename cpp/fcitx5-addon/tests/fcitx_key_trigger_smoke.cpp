@@ -1,5 +1,5 @@
-#include "vinput_fcitx_bridge/fcitx_addon.h"
 #include "vinput_fcitx_bridge/fcitx_key_trigger.h"
+#include "vinput_fcitx_bridge/scene_defaults.h"
 
 #include <fcitx-utils/key.h>
 #include <fcitx/event.h>

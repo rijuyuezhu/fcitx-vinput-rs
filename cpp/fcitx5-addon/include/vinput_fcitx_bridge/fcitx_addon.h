@@ -3,6 +3,7 @@
 #include "vinput_fcitx_bridge/fcitx_key_trigger.h"
 #include "vinput_fcitx_bridge/fcitx_outcome.h"
 #include "vinput_fcitx_bridge/frontend_bridge.h"
+#include "vinput_fcitx_bridge/scene_defaults.h"
 #include "vinput_fcitx_bridge/sd_bus_daemon_client.h"
 
 #include <memory>
@@ -16,9 +17,6 @@
 #include <fcitx/instance.h>
 
 namespace vinput_fcitx_bridge {
-
-inline constexpr std::string_view kDefaultNormalSceneId = "__raw__";
-inline constexpr std::string_view kDefaultCommandSceneId = "";
 
 class FcitxVinputAddon final : public fcitx::AddonInstance {
 public:
