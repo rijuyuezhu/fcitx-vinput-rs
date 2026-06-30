@@ -2045,6 +2045,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "vinput-audio",
  "vinput-config",

@@ -105,21 +105,6 @@ impl CommandAsrRunner for ConfigEchoCommandRunner {
     }
 }
 
-fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!(
-        "{}-{}-{}",
-        prefix,
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir(&path).unwrap();
-    path
-}
-
 #[test]
 fn recognition_context_marks_command_sessions() {
     let context = super::RecognitionContext::command("__command__", Some("zh".to_owned()), "text");
@@ -1612,7 +1597,8 @@ fn sherpa_onnx_spec_preserves_local_provider_config() {
 
 #[test]
 fn sherpa_onnx_model_paths_resolve_relative_model_and_hotwords() {
-    let root = unique_temp_dir("sherpa-model-root");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
     let model_dir = root.join("paraformer");
     std::fs::create_dir_all(&model_dir).unwrap();
     std::fs::write(model_dir.join("hotwords.txt"), b"hello 1.0\n").unwrap();
@@ -1636,12 +1622,12 @@ fn sherpa_onnx_model_paths_resolve_relative_model_and_hotwords() {
         paths.hotwords_file,
         Some(paths.model_dir.join("hotwords.txt"))
     );
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn sherpa_onnx_model_paths_accept_absolute_model_path() {
-    let root = unique_temp_dir("sherpa-model-root");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
     let model_dir = root.join("absolute-model");
     std::fs::create_dir_all(&model_dir).unwrap();
     let provider = AsrProviderConfig {
@@ -1661,7 +1647,6 @@ fn sherpa_onnx_model_paths_accept_absolute_model_path() {
 
     assert_eq!(paths.model_dir, model_dir);
     assert_eq!(paths.hotwords_file, None);
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -1717,7 +1702,8 @@ fn sherpa_onnx_model_paths_reject_url_like_model_path() {
 
 #[test]
 fn sherpa_onnx_model_paths_reject_file_model_path() {
-    let root = unique_temp_dir("sherpa-model-root");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
     std::fs::write(root.join("not-dir"), b"model").unwrap();
     let provider = AsrProviderConfig {
         id: "sherpa-onnx".to_owned(),
@@ -1738,12 +1724,12 @@ fn sherpa_onnx_model_paths_reject_file_model_path() {
         error,
         SherpaOnnxModelPathError::ModelPathNotDirectory { .. }
     ));
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn sherpa_onnx_model_paths_reject_missing_hotwords_file() {
-    let root = unique_temp_dir("sherpa-model-root");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let root = temp_dir.path();
     let model_dir = root.join("paraformer");
     std::fs::create_dir_all(&model_dir).unwrap();
     let provider = AsrProviderConfig {
@@ -1765,7 +1751,6 @@ fn sherpa_onnx_model_paths_reject_missing_hotwords_file() {
         error,
         SherpaOnnxModelPathError::MissingHotwordsFile { .. }
     ));
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
