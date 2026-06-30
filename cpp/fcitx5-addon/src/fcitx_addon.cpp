@@ -62,6 +62,11 @@ AppliedOutcome FcitxVinputAddon::TriggerNormal(fcitx::InputContext *ic,
 AppliedOutcome FcitxVinputAddon::TriggerCommand(fcitx::InputContext *ic,
                                                 std::string_view selected_text,
                                                 std::string_view scene_id) {
+  if (!bridge_.recording() && selected_text.empty()) {
+    return ApplyBridgeOutcomeToInputContext(
+        bridge_.StartCommand(nullptr, selected_text), ic);
+  }
+
   std::string error;
   auto *client = EnsureDaemonClient(&error);
   if (client == nullptr) {
