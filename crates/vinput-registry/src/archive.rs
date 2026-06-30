@@ -12,6 +12,8 @@ use std::{
     str::FromStr,
 };
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Minimal archive entry kind used by the extraction safety policy.
@@ -30,7 +32,8 @@ pub enum ArchiveEntryKind {
 }
 
 /// Supported staged archive wrapper formats.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ArchiveFormat {
     /// Plain tar archive.
     Tar,

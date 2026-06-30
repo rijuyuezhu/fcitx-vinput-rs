@@ -1443,6 +1443,24 @@ fn materialize_backup_dirs(dir: &std::path::Path) -> Vec<String> {
 }
 
 #[test]
+fn archive_staging_paths_serialize_format_name() {
+    let asset = planned_install_asset(vec!["https://example.invalid/m.tar.zst".to_owned()], None);
+    let paths = plan_archive_staging_paths(&asset, "stage-root").unwrap();
+
+    let json = serde_json::to_value(&paths).unwrap();
+
+    assert_eq!(json["archive_format"], "tar_zst");
+    assert_eq!(json["source_path"], "models/sherpa-zh-small.tar.zst");
+    assert_eq!(
+        json["staged_asset_path"],
+        "stage-root/assets/models/sherpa-zh-small.tar.zst"
+    );
+    assert_eq!(
+        json["archive_extract_path"],
+        "stage-root/trees/models/sherpa-zh-small"
+    );
+}
+#[test]
 fn archive_staging_paths_batch_preserves_plan_order() {
     let assets = vec![
         PlannedAsset {

@@ -7,6 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -15,7 +17,7 @@ use crate::{
 };
 
 /// Side-effect-free paths for staging one archive asset.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ArchiveStagingPaths {
     /// Registry-relative asset source path.
     pub source_path: String,
