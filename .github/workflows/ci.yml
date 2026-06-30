@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
-          sudo apt-get install -y dbus libpipewire-0.3-dev libspa-0.2-dev libclang-dev clang pkg-config cmake g++ clang-format clang-tidy
+          sudo apt-get install -y dbus libpipewire-0.3-dev libspa-0.2-dev libclang-dev clang pkg-config cmake g++ clang-format clang-tidy libsystemd-dev
       - name: Ensure just
         run: |
           if ! command -v just >/dev/null 2>&1; then
