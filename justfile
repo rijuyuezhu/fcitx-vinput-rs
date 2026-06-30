@@ -1,7 +1,7 @@
 set dotenv-load := false
 
 addon-sources := `find cpp/fcitx5-addon -type f \( -name '*.cpp' -o -name '*.h' \) | sort | tr '\n' ' '`
-addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' ! -name 'fcitx_addon.cpp' ! -name 'fcitx_addon_factory.cpp' ! -name 'fcitx_outcome.cpp' | sort | tr '\n' ' '`
+addon-lint-sources := `find cpp/fcitx5-addon -type f -name '*.cpp' ! -name 'fcitx_addon.cpp' ! -name 'fcitx_addon_factory.cpp' ! -name 'fcitx_key_trigger.cpp' ! -name 'fcitx_outcome.cpp' ! -name 'fcitx_key_trigger_smoke.cpp' | sort | tr '\n' ' '`
 
 fmt:
     clang-format -i {{addon-sources}}
