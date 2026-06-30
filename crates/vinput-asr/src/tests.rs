@@ -170,6 +170,23 @@ fn mock_asr_audio_log_records_raw_audio_pushes() {
 }
 
 #[test]
+fn mock_asr_audio_push_serializes_stable_fields() {
+    let push = MockAsrAudioPush {
+        sample_len: 4,
+        pcm_spec: Some(PcmSpec {
+            sample_rate_hz: 48_000,
+            channels: 2,
+        }),
+    };
+
+    let json = serde_json::to_value(push).unwrap();
+
+    assert_eq!(json["sample_len"], 4);
+    assert_eq!(json["pcm_spec"]["sample_rate_hz"], 48_000);
+    assert_eq!(json["pcm_spec"]["channels"], 2);
+}
+
+#[test]
 fn mock_asr_audio_log_records_pcm_push_metadata() {
     let audio_log = MockAsrAudioLog::new();
     let backend = MockAsrBackend::buffered("final").with_audio_log(audio_log.clone());

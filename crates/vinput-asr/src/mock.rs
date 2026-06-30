@@ -2,6 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use vinput_audio::{PcmBuffer, PcmSpec};
 
 use crate::{
@@ -20,7 +22,7 @@ pub struct MockAsrBackend {
 }
 
 /// One observed audio push into a mock ASR session.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MockAsrAudioPush {
     /// Number of raw interleaved i16 samples accepted in this push.
     pub sample_len: usize,
