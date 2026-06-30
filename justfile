@@ -39,6 +39,15 @@ smoke:
     cargo run -q -p vinput-daemon -- audio-devices
     cargo run -q -p vinput-daemon -- --once
 
+# Compile and test optional PipeWire feature paths without requiring a live daemon.
+pipewire-check:
+    cargo test -p vinput-audio --features pipewire-backend
+    cargo clippy -p vinput-audio --all-targets --features pipewire-backend -- -D warnings
+
+# Run explicit local PipeWire probes. Requires a live user PipeWire session.
+pipewire-live:
+    VINPUT_TEST_PIPEWIRE_CONTEXT=1 VINPUT_TEST_PIPEWIRE_ENUMERATE=1 cargo test -p vinput-audio --features pipewire-backend pipewire_ -- --nocapture
+
 # Run a deterministic file-input E2E demo through command ASR and text adapter.
 e2e-demo:
     python3 scripts/write-demo-wav.py target/tmp/vinput-demo.wav

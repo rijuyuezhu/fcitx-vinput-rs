@@ -177,3 +177,32 @@ fn asr_architecture_pins_local_sherpa_runtime_gap() {
         );
     }
 }
+
+#[test]
+fn development_doc_pins_optional_pipewire_recipes() {
+    let development = std::fs::read_to_string(workspace_file("docs/development.md"))
+        .expect("read development guide");
+    let justfile = std::fs::read_to_string(workspace_file("justfile")).expect("read justfile");
+
+    for required in [
+        "just pipewire-check",
+        "just pipewire-live",
+        "VINPUT_TEST_PIPEWIRE_CONTEXT=1",
+        "VINPUT_TEST_PIPEWIRE_ENUMERATE=1",
+        "intentionally excluded from `just ci`",
+        "without live daemon",
+    ] {
+        assert!(
+            development.contains(required),
+            "development guide should pin optional PipeWire recipe policy: {required}"
+        );
+    }
+
+    assert!(justfile.contains("pipewire-check:"));
+    assert!(justfile.contains("pipewire-live:"));
+    let check_line = justfile
+        .lines()
+        .find(|line| line.starts_with("check:"))
+        .expect("justfile should define check recipe");
+    assert!(!check_line.contains("pipewire-live"));
+}

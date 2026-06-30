@@ -71,8 +71,12 @@ just check        # fmt-check + lint + test + dbus-test + dbus-lint
 just ci           # alias for check
 just smoke        # CLI/daemon smoke commands
 just e2e-demo     # deterministic file-input command ASR/text demo
+just pipewire-check # optional PipeWire feature compile/tests without live daemon
+just pipewire-live  # explicit local PipeWire probes gated by env variables
 just dbus         # run the mock/configured legacy D-Bus service on the current session bus
 ```
+
+`just pipewire-check` is safe for machines with PipeWire development libraries because it does not require a live PipeWire daemon. `just pipewire-live` is intentionally excluded from `just ci`; it sets `VINPUT_TEST_PIPEWIRE_CONTEXT=1` and `VINPUT_TEST_PIPEWIRE_ENUMERATE=1` and should only be run on a desktop session where live PipeWire probes are expected to work.
 
 Before proposing a code change, prefer running:
 
