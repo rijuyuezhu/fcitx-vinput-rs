@@ -2,6 +2,7 @@
 
 #include <fcitx/text.h>
 
+#include <string_view>
 #include <utility>
 
 namespace vinput_fcitx_bridge {
@@ -11,11 +12,11 @@ constexpr int kResultMenuPageSize = 5;
 
 class ResultCandidateWord final : public fcitx::CandidateWord {
 public:
-  ResultCandidateWord(std::string text, std::string comment)
+  ResultCandidateWord(std::string text, std::string_view comment)
       : fcitx::CandidateWord(fcitx::Text(std::move(text))) {
 #ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
     if (!comment.empty()) {
-      setComment(fcitx::Text(std::move(comment)));
+      setComment(fcitx::Text(std::string(comment)));
     }
 #else
     (void)comment;
