@@ -192,6 +192,7 @@ fn print_protocol() -> anyhow::Result<()> {
         "legacy_methods": dbus::LEGACY_SERVICE_METHODS,
         "diagnostic_extension_methods": dbus::DIAGNOSTIC_EXTENSION_METHODS,
         "signals": dbus::SERVICE_SIGNALS,
+        "statuses": ServiceStatus::WIRE_VALUES,
     });
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())

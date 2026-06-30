@@ -34,6 +34,16 @@ Preserve these legacy method names and payload shapes:
 
 `GetTextAdapterState` is a Rust diagnostic extension. It can remain available, but it is not part of the original C++ daemon vtable and should be documented as an extension whenever listed.
 
+## Status strings
+
+Preserve these legacy status strings and their lowercase wire format:
+
+- `idle`
+- `recording`
+- `inferring`
+- `postprocessing`
+- `error`
+
 ## Signals
 
 Preserve these signal names and payload shapes:

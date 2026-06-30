@@ -3,7 +3,7 @@
 mod common;
 
 use common::{assert_json_success, vinput_command};
-use vinput_protocol::{RecognitionPayload, dbus};
+use vinput_protocol::{RecognitionPayload, ServiceStatus, dbus};
 
 const RAW_PAYLOAD_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -64,5 +64,9 @@ fn protocol_prints_service_dbus_contract() {
     assert_eq!(
         value["signals"],
         serde_json::to_value(dbus::SERVICE_SIGNALS).unwrap()
+    );
+    assert_eq!(
+        value["statuses"],
+        serde_json::to_value(ServiceStatus::WIRE_VALUES).unwrap()
     );
 }

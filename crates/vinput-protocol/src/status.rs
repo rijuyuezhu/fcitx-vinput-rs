@@ -25,9 +25,22 @@ pub enum ServiceStatus {
 }
 
 impl ServiceStatus {
+    /// Status values in legacy protocol order.
+    pub const ALL: [Self; 5] = [
+        Self::Idle,
+        Self::Recording,
+        Self::Inferring,
+        Self::Postprocessing,
+        Self::Error,
+    ];
+
+    /// Wire-format status strings in legacy protocol order.
+    pub const WIRE_VALUES: [&'static str; 5] =
+        ["idle", "recording", "inferring", "postprocessing", "error"];
+
     /// Returns the wire-format string used by the legacy daemon.
     #[must_use]
-    pub fn as_wire_str(self) -> &'static str {
+    pub const fn as_wire_str(self) -> &'static str {
         match self {
             Self::Idle => "idle",
             Self::Recording => "recording",
@@ -55,13 +68,12 @@ mod tests {
 
     #[test]
     fn status_roundtrips_as_legacy_lowercase_strings() {
-        for status in [
-            ServiceStatus::Idle,
-            ServiceStatus::Recording,
-            ServiceStatus::Inferring,
-            ServiceStatus::Postprocessing,
-            ServiceStatus::Error,
-        ] {
+        assert_eq!(
+            ServiceStatus::WIRE_VALUES,
+            ["idle", "recording", "inferring", "postprocessing", "error"]
+        );
+
+        for status in ServiceStatus::ALL {
             let json = serde_json::to_string(&status).unwrap();
             assert_eq!(json, format!("\"{}\"", status.as_wire_str()));
             assert_eq!(
