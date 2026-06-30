@@ -143,6 +143,29 @@ fn text_architecture_pins_prompt_file_and_context_cache_rules() {
 }
 
 #[test]
+fn config_architecture_pins_summary_redaction_contract() {
+    let config_doc = std::fs::read_to_string(architecture_dir().join("config-contract.md"))
+        .expect("read config contract doc");
+
+    for required in [
+        "`VinputConfig::summary()` is the compact config diagnostic surface",
+        "active scene/provider ids, and counts only",
+        "must not serialize secret-bearing config fields",
+        "LLM API keys",
+        "provider or adapter environment values",
+        "command arguments",
+        "working directories",
+        "provider base URLs",
+        "forward-compatible extra bodies",
+        "`vinput-daemon --config data/default-config.json print-config`",
+    ] {
+        assert!(
+            config_doc.contains(required),
+            "config contract doc should pin summary redaction rule: {required}"
+        );
+    }
+}
+#[test]
 fn audio_architecture_pins_pipewire_live_test_policy() {
     let audio_doc = std::fs::read_to_string(architecture_dir().join("audio-contract.md"))
         .expect("read audio contract doc");
