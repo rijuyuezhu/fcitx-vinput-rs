@@ -4,6 +4,7 @@
 #include <fcitx/text.h>
 
 #include <cassert>
+#include <vector>
 
 using vinput_fcitx_bridge::BuildResultCandidateList;
 using vinput_fcitx_bridge::Candidate;
@@ -28,7 +29,13 @@ int main() {
       Candidate{"polished 2", CandidateSource::Llm},
   };
 
-  auto candidates = BuildResultCandidateList(payload);
+  std::vector<Candidate> selected_candidates;
+  auto candidates = BuildResultCandidateList(
+      payload, [&selected_candidates](fcitx::InputContext *input_context,
+                                      const Candidate &candidate) {
+        assert(input_context == nullptr);
+        selected_candidates.push_back(candidate);
+      });
   assert(candidates != nullptr);
   assert(candidates->totalSize() == 3);
   assert(candidates->size() == 3);
@@ -43,6 +50,11 @@ int main() {
 #ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
   assert(candidates->candidateFromAll(2).comment().toString() == "LLM 2");
 #endif
+
+  candidates->candidateFromAll(1).select(nullptr);
+  assert(selected_candidates.size() == 1);
+  assert(selected_candidates[0].text == "polished 1");
+  assert(selected_candidates[0].source == CandidateSource::Llm);
 
   return 0;
 }
