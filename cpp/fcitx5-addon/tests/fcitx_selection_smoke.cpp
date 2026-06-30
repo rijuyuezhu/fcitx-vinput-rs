@@ -19,6 +19,10 @@ int main() {
   backward.setText("head selected", 5, 13);
   assert(SelectedTextFromSurroundingText(backward) == "selected");
 
+  fcitx::SurroundingText utf8;
+  utf8.setText("你好abc", 2, 0);
+  assert(SelectedTextFromSurroundingText(utf8) == "你好");
+
   fcitx::SurroundingText collapsed;
   collapsed.setText("nothing selected", 7, 7);
   assert(SelectedTextFromSurroundingText(collapsed).empty());
