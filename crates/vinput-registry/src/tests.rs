@@ -5,8 +5,8 @@ use super::{
     RegistryMaterializeError, RegistrySha256Error, RegistryTextCache, RegistryTextSource,
     ReqwestRegistryAssetSource, ReqwestRegistryTextSource, checked_archive_entry_target,
     fetch_registry_index_from_mirrors, fetch_registry_index_with_cache, materialize_staged_tree,
-    sha256_hex, stage_planned_asset, stage_tar_archive, verify_sha256_bytes, verify_sha256_file,
-    verify_sha256_reader,
+    sha256_hex, stage_planned_asset, stage_tar_archive, stage_tar_zst_archive, verify_sha256_bytes,
+    verify_sha256_file, verify_sha256_reader,
 };
 use vinput_config::RegistryConfig;
 
@@ -1022,6 +1022,15 @@ fn write_test_tar_archive(path: &std::path::Path, entries: &[TestTarEntry<'_>]) 
     std::io::Write::write_all(&mut file, &[0_u8; 1024]).unwrap();
 }
 
+fn write_test_tar_zst_archive(path: &std::path::Path, entries: &[TestTarEntry<'_>]) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let plain_tar = temp_dir.path().join("asset.tar");
+    write_test_tar_archive(&plain_tar, entries);
+    let plain_bytes = std::fs::read(&plain_tar).unwrap();
+    let compressed = zstd::stream::encode_all(plain_bytes.as_slice(), 0).unwrap();
+    std::fs::write(path, compressed).unwrap();
+}
+
 fn write_raw_tar_entry(
     writer: &mut std::fs::File,
     path: &str,
@@ -1223,6 +1232,70 @@ fn tar_archive_staging_rejects_existing_output_without_mutation() {
 
     assert!(matches!(error, ArchiveStagingError::OutputExists { .. }));
     assert!(std::fs::read_dir(&output).unwrap().next().is_none());
+}
+
+#[test]
+fn tar_zst_archive_staging_extracts_regular_files_to_staged_tree() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar.zst");
+    write_test_tar_zst_archive(
+        &archive,
+        &[
+            TestTarEntry::Directory("models/sherpa"),
+            TestTarEntry::File("models/sherpa/model.bin", b"model"),
+        ],
+    );
+    let output = temp_dir.path().join("extracted-zst");
+
+    let staged = stage_tar_zst_archive(&archive, &output).unwrap();
+
+    assert_eq!(staged.archive_path, archive);
+    assert_eq!(staged.path, output);
+    assert_eq!(staged.file_count, 1);
+    assert_eq!(staged.directory_count, 1);
+    assert_eq!(
+        std::fs::read_to_string(staged.path.join("models/sherpa/model.bin")).unwrap(),
+        "model"
+    );
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn tar_zst_archive_staging_rejects_unsafe_entries_without_publishing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar.zst");
+    let traversal_path = format!("{}{}", "..", "/escape");
+    write_test_tar_zst_archive(&archive, &[TestTarEntry::File(&traversal_path, b"no")]);
+    let output = temp_dir.path().join("extracted-zst");
+
+    let error = stage_tar_zst_archive(&archive, &output).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ArchiveStagingError::UnsafeEntry {
+            error: ArchiveSafetyError::ParentTraversal(_),
+            ..
+        }
+    ));
+    assert!(!output.exists());
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn tar_zst_archive_staging_rejects_invalid_compressed_input_without_publishing() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let archive = temp_dir.path().join("asset.tar.zst");
+    std::fs::write(&archive, b"invalid compressed archive").unwrap();
+    let output = temp_dir.path().join("extracted-zst");
+
+    let error = stage_tar_zst_archive(&archive, &output).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ArchiveStagingError::DecodeArchive { .. } | ArchiveStagingError::ReadArchive { .. }
+    ));
+    assert!(!output.exists());
+    assert!(temp_archive_dirs(temp_dir.path()).is_empty());
 }
 
 fn materialize_backup_dirs(dir: &std::path::Path) -> Vec<String> {

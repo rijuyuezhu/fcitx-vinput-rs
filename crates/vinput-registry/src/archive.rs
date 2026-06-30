@@ -1,11 +1,10 @@
 //! Archive extraction safety and staging helpers.
 //!
 //! This module pins validation policy and provides a narrow tar extraction
-//! boundary for already-staged local archives. It extracts into a caller-owned
-//! staging directory through a temporary directory and publishes the staged tree
-//! only after every entry passes the safety policy. It does not install assets,
-//! replace install roots, read compressed archive wrappers, or mutate
-//! configuration.
+//! boundary for already-staged local tar or tar.zst archives. It extracts into a
+//! caller-owned staging directory through a temporary directory and publishes the
+//! staged tree only after every entry passes the safety policy. It does not
+//! install assets, replace install roots, or mutate configuration.
 
 use std::{
     fs, io,
@@ -99,6 +98,14 @@ pub enum ArchiveStagingError {
         /// Sanitized I/O failure message.
         message: String,
     },
+    /// Compressed archive decoder could not be created.
+    #[error("failed to decode staged archive `{path}`: {message}")]
+    DecodeArchive {
+        /// Archive path.
+        path: String,
+        /// Sanitized I/O failure message.
+        message: String,
+    },
     /// Tar entry iteration failed.
     #[error("failed to read tar archive `{path}`: {message}")]
     ReadArchive {
@@ -181,18 +188,52 @@ pub fn checked_archive_entry_target(
     Ok(target)
 }
 
-/// Extracts an already-staged local tar archive into a staged directory.
+/// Extracts an already-staged local plain tar archive into a staged directory.
 ///
 /// The final `output_root` is created only after all entries have been validated
 /// and copied into a same-directory temporary tree. This function rejects
 /// symlinks, hardlinks, absolute paths, parent traversal, backslashes, unknown
-/// entry types, and attempts to publish over an existing output path. It reads
-/// plain tar only; compressed wrappers such as `.tar.zst` remain future work.
+/// entry types, and attempts to publish over an existing output path.
 pub fn stage_tar_archive(
     archive_path: impl AsRef<Path>,
     output_root: impl AsRef<Path>,
 ) -> Result<StagedArchiveTree, ArchiveStagingError> {
     let archive_path = archive_path.as_ref();
+    let file = fs::File::open(archive_path).map_err(|error| ArchiveStagingError::OpenArchive {
+        path: display_path(archive_path),
+        message: sanitize_io_error(&error),
+    })?;
+    stage_tar_reader(archive_path, output_root, file)
+}
+
+/// Extracts an already-staged local zstd-compressed tar archive into a staged directory.
+///
+/// This is the compressed-wrapper companion to `stage_tar_archive`. It decodes
+/// `.tar.zst` bytes and then applies the same tar entry safety policy and
+/// same-directory temporary-tree publication flow.
+pub fn stage_tar_zst_archive(
+    archive_path: impl AsRef<Path>,
+    output_root: impl AsRef<Path>,
+) -> Result<StagedArchiveTree, ArchiveStagingError> {
+    let archive_path = archive_path.as_ref();
+    let file = fs::File::open(archive_path).map_err(|error| ArchiveStagingError::OpenArchive {
+        path: display_path(archive_path),
+        message: sanitize_io_error(&error),
+    })?;
+    let decoder = zstd::stream::read::Decoder::new(file).map_err(|error| {
+        ArchiveStagingError::DecodeArchive {
+            path: display_path(archive_path),
+            message: sanitize_io_error(&error),
+        }
+    })?;
+    stage_tar_reader(archive_path, output_root, decoder)
+}
+
+fn stage_tar_reader<R: io::Read>(
+    archive_path: &Path,
+    output_root: impl AsRef<Path>,
+    reader: R,
+) -> Result<StagedArchiveTree, ArchiveStagingError> {
     let output_root = output_root.as_ref();
     if output_root.exists() {
         return Err(ArchiveStagingError::OutputExists {
@@ -217,7 +258,7 @@ pub fn stage_tar_archive(
         message: sanitize_io_error(&error),
     })?;
 
-    let result = extract_tar_archive_to_temp(archive_path, output_root, &temp_root);
+    let result = extract_tar_archive_to_temp(archive_path, output_root, &temp_root, reader);
     match result {
         Ok((file_count, directory_count)) => {
             fs::rename(&temp_root, output_root).map_err(|error| {
@@ -241,16 +282,13 @@ pub fn stage_tar_archive(
     }
 }
 
-fn extract_tar_archive_to_temp(
+fn extract_tar_archive_to_temp<R: io::Read>(
     archive_path: &Path,
     output_root: &Path,
     temp_root: &Path,
+    reader: R,
 ) -> Result<(usize, usize), ArchiveStagingError> {
-    let file = fs::File::open(archive_path).map_err(|error| ArchiveStagingError::OpenArchive {
-        path: display_path(archive_path),
-        message: sanitize_io_error(&error),
-    })?;
-    let mut archive = tar::Archive::new(file);
+    let mut archive = tar::Archive::new(reader);
     let entries = archive
         .entries()
         .map_err(|error| ArchiveStagingError::ReadArchive {
@@ -330,9 +368,9 @@ fn extract_tar_archive_to_temp(
     Ok((file_count, directory_count))
 }
 
-fn archive_entry_path(
+fn archive_entry_path<R: io::Read>(
     archive_path: &Path,
-    entry: &tar::Entry<'_, fs::File>,
+    entry: &tar::Entry<'_, R>,
 ) -> Result<String, ArchiveStagingError> {
     let path = entry
         .path()
