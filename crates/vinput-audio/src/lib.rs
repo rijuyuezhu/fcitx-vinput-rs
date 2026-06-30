@@ -989,6 +989,19 @@ mod tests {
     }
 
     #[test]
+    fn pcm_chunk_range_serializes_stable_fields() {
+        let range = PcmChunkRange {
+            start_frame: 4,
+            frame_len: 2,
+        };
+
+        let json = serde_json::to_value(range).unwrap();
+
+        assert_eq!(json["start_frame"], 4);
+        assert_eq!(json["frame_len"], 2);
+    }
+
+    #[test]
     fn chunked_pcm_preserves_interleaved_multi_channel_frames() {
         let pcm = PcmBuffer::with_spec(
             PcmSpec {
