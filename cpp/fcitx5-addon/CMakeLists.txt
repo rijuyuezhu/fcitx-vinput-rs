@@ -60,6 +60,7 @@ if(Fcitx5Core_FOUND)
   add_library(fcitx5_vinput_addon MODULE
     src/fcitx_addon.cpp
     src/fcitx_addon_factory.cpp
+    src/fcitx_outcome.cpp
   )
   target_link_libraries(fcitx5_vinput_addon
     PRIVATE
