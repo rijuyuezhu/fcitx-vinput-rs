@@ -1,6 +1,6 @@
 use super::{
     ChecksumPolicy, InstallPlan, RegistryError, RegistryFetchError, RegistryIndex,
-    RegistryTextSource, fetch_registry_index_from_mirrors,
+    RegistryTextSource, ReqwestRegistryTextSource, fetch_registry_index_from_mirrors,
 };
 use vinput_config::RegistryConfig;
 
@@ -587,4 +587,107 @@ fn fetch_registry_index_stops_on_invalid_successful_mirror() {
         source.attempts(),
         ["https://first.invalid/index.json".to_owned()]
     );
+}
+
+#[derive(Debug)]
+struct CapturedRegistryHttpRequest {
+    head: String,
+}
+
+fn serve_registry_http_response(
+    status: &str,
+    response_body: &str,
+) -> (String, std::thread::JoinHandle<CapturedRegistryHttpRequest>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let status = status.to_owned();
+    let response_body = response_body.to_owned();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let head = read_registry_http_request_head(&mut stream);
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+            response_body.len()
+        );
+        std::io::Write::write_all(&mut stream, response.as_bytes()).unwrap();
+        CapturedRegistryHttpRequest { head }
+    });
+    (url, handle)
+}
+
+fn read_registry_http_request_head(stream: &mut std::net::TcpStream) -> String {
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    loop {
+        let read = std::io::Read::read(stream, &mut chunk).unwrap();
+        assert_ne!(read, 0, "HTTP client closed before headers were complete");
+        buffer.extend_from_slice(&chunk[..read]);
+        if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+            return String::from_utf8_lossy(&buffer[..position + 4]).into_owned();
+        }
+    }
+}
+
+fn closed_local_http_url() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    url
+}
+
+#[test]
+fn reqwest_registry_text_source_fetches_and_parses_http_200() {
+    let (url, handle) = serve_registry_http_response("200 OK", SAMPLE);
+    let source = ReqwestRegistryTextSource::new();
+
+    let index = fetch_registry_index_from_mirrors(&source, &[url]).unwrap();
+
+    assert_eq!(index.summary().model_count, 1);
+    let request = handle.join().unwrap();
+    assert!(request.head.starts_with("GET / HTTP/1.1"));
+    assert!(!request.head.to_ascii_lowercase().contains("authorization"));
+}
+
+#[test]
+fn reqwest_registry_text_source_sanitizes_http_error_body() {
+    let (url, handle) = serve_registry_http_response("500 Internal Server Error", "secret-token");
+    let source = ReqwestRegistryTextSource::new();
+
+    let message = source.fetch_registry_text(&url).unwrap_err();
+
+    assert!(message.contains("HTTP 500 Internal Server Error"));
+    assert!(!message.contains("secret-token"));
+    assert!(!message.contains(&url));
+    handle.join().unwrap();
+}
+
+#[test]
+fn reqwest_registry_text_source_sanitizes_timeout_or_connection_failure() {
+    let url = closed_local_http_url();
+    let source = ReqwestRegistryTextSource::with_timeout(std::time::Duration::from_millis(250));
+
+    let message = source.fetch_registry_text(&url).unwrap_err();
+
+    assert!(
+        [
+            "registry HTTP connection failed",
+            "registry HTTP request timed out",
+        ]
+        .contains(&message.as_str())
+    );
+    assert!(!message.contains(&url));
+}
+
+#[test]
+fn reqwest_registry_text_source_keeps_mirror_fallback_in_fetch_boundary() {
+    let (first_url, first_handle) =
+        serve_registry_http_response("503 Service Unavailable", "try later");
+    let (second_url, second_handle) = serve_registry_http_response("200 OK", SAMPLE);
+    let source = ReqwestRegistryTextSource::new();
+
+    let index = fetch_registry_index_from_mirrors(&source, &[first_url, second_url]).unwrap();
+
+    assert_eq!(index.summary().model_count, 1);
+    first_handle.join().unwrap();
+    second_handle.join().unwrap();
 }

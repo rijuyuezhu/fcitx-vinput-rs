@@ -2021,6 +2021,7 @@ dependencies = [
 name = "vinput-registry"
 version = "0.1.0"
 dependencies = [
+ "reqwest",
  "schemars",
  "serde",
  "serde_json",

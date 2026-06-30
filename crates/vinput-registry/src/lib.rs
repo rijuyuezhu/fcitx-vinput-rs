@@ -11,7 +11,8 @@ mod schema;
 
 pub use error::RegistryError;
 pub use fetch::{
-    RegistryFetchError, RegistryFetchFailure, RegistryTextSource, fetch_registry_index_from_mirrors,
+    RegistryFetchError, RegistryFetchFailure, RegistryTextSource, ReqwestRegistryTextSource,
+    fetch_registry_index_from_mirrors,
 };
 pub use plan::{
     AssetPlanSummary, ChecksumPolicy, InstallPlan, InstallPlanSummary, PlannedAsset,

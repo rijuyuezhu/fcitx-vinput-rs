@@ -9,10 +9,10 @@ The registry crate is split before any side-effectful installer work lands:
 - `schema.rs`: registry index, model, adapter, asset, summary, validation, and URL resolution helpers;
 - `plan.rs`: planned assets, dry-run install plans, checksum policy planning, and target path calculation;
 - `error.rs`: `RegistryError`;
-- `fetch.rs`: side-effect-free mirror fallback boundary over an injected `RegistryTextSource`;
-- `tests.rs`: behavior-preserving schema, safety, and planning coverage.
+- `fetch.rs`: registry text fetch boundary, ordered mirror fallback, and the concrete `ReqwestRegistryTextSource` for HTTP index text fetching;
+- `tests.rs`: behavior-preserving schema, safety, planning, injected-source fetch, and local HTTP fetch coverage.
 
-Future fetch/cache/checksum/archive extraction/materialization code should use separate modules and must not be hidden inside schema or dry-run planning code.
+Future cache/checksum/archive extraction/materialization code should use separate modules and must not be hidden inside schema, dry-run planning, or concrete HTTP text fetch code.
 
 ## Registry shape
 
@@ -35,7 +35,7 @@ cargo run -q -p vinput-cli -- registry plan data/sample-registry-index.json --su
 
 These commands parse local JSON only. They do not download assets or touch install directories.
 
-The library also exposes `fetch_registry_index_from_mirrors` as a small testable boundary for future network/cache work. It iterates mirror URLs through an injected `RegistryTextSource`, falls through on transport failures, stops on the first fetched-but-invalid registry body, and performs the same `RegistryIndex` validation as file-backed CLI diagnostics. No concrete HTTP client or cache is wired yet.
+The library exposes `fetch_registry_index_from_mirrors` as the shared mirror fallback boundary. It iterates mirror URLs through a `RegistryTextSource`, falls through on transport failures, stops on the first fetched-but-invalid registry body, and performs the same `RegistryIndex` validation as file-backed CLI diagnostics. `ReqwestRegistryTextSource` is the implemented concrete HTTP registry index text source behind that boundary; it fetches JSON text from mirror URLs with sanitized transport/status errors and no auth/header/body leakage. User-facing cache fallback, checksum verification, asset download, archive extraction, install, and config materialization remain future work.
 
 ## Fixture
 
