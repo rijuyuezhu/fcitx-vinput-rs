@@ -77,3 +77,7 @@ These gaps remain after the behavior-preserving ASR split:
 - Local `sherpa-onnx` typed config parsing and local model/hotwords path validation exist as seams; hotwords runtime use, VAD trimming, warmup, and concrete reload state are not implemented yet.
 - Runtime streaming has command-helper test seams, but live PipeWire chunk delivery to streaming ASR is not implemented.
 - Command ASR is runtime-wired for configured command providers; local and remote ASR provider kinds other than command/mock remain contract-pinned but unavailable.
+
+## Mock audio push observation
+
+`MockAsrBackend` can attach a shared `MockAsrAudioLog` for deterministic tests. The log records each `push_audio` or `push_pcm` call, including sample length and optional `PcmSpec` metadata. This is a mock-only observation seam for future runtime streaming tests; it does not imply a real ASR runtime or live recorder is wired.

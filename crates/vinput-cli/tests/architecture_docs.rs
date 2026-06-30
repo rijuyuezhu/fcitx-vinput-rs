@@ -176,6 +176,8 @@ fn asr_architecture_pins_local_sherpa_runtime_gap() {
         "runtime remains unavailable until the concrete backend is implemented",
         "Local `sherpa-onnx` typed config parsing and local model/hotwords path validation exist as seams",
         "VAD trimming, warmup, and concrete reload state are not implemented yet",
+        "`MockAsrBackend` can attach a shared `MockAsrAudioLog` for deterministic tests",
+        "mock-only observation seam for future runtime streaming tests",
     ] {
         assert!(
             asr_doc.contains(required),
