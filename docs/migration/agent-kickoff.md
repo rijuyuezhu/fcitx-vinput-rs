@@ -59,6 +59,8 @@ cargo test -p vinput-daemon --test cli
 cargo test -p vinput-cli --test architecture_docs
 cargo test --workspace --all-targets
 just addon-smoke
+just addon-dbus-smoke
+just addon-install-smoke
 just smoke
 just e2e-demo
 ```
