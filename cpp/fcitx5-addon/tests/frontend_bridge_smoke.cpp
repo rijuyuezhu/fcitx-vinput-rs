@@ -11,16 +11,20 @@ using vinput_fcitx_bridge::FrontendBridge;
 class FakeDaemonClient final : public DaemonClient {
 public:
   bool StartRecording(std::string *error) override {
-    (void)error;
     ++start_recording_calls;
+    if (!start_ok && error) {
+      *error = start_error;
+    }
     return start_ok;
   }
 
   bool StartCommandRecording(std::string_view selected_text,
                              std::string *error) override {
-    (void)error;
     ++start_command_calls;
     last_selected_text = std::string(selected_text);
+    if (!start_ok && error) {
+      *error = start_error;
+    }
     return start_ok;
   }
 
@@ -42,6 +46,7 @@ public:
 
   bool start_ok = true;
   bool stop_ok = true;
+  std::string start_error;
   std::string next_payload_json =
       R"({"commit_text":"mock recognition result","candidates":[{"text":"mock recognition result","source":"raw"}]})";
   int start_recording_calls = 0;
@@ -220,22 +225,24 @@ int main() {
   {
     FakeDaemonClient client;
     client.start_ok = false;
+    client.start_error = "start failed";
     FrontendBridge bridge;
 
     const auto start = bridge.StartNormal(&client);
     assert(start.kind == BridgeOutcome::Kind::Error);
-    assert(!start.text.empty());
+    assert(start.text == "start failed");
     assert(!bridge.recording());
   }
 
   {
     FakeDaemonClient client;
     client.start_ok = false;
+    client.start_error = "command start failed";
     FrontendBridge bridge;
 
     const auto start = bridge.StartCommand(&client, "selected text");
     assert(start.kind == BridgeOutcome::Kind::Error);
-    assert(!start.text.empty());
+    assert(start.text == "command start failed");
     assert(client.start_command_calls == 1);
     assert(client.last_selected_text == "selected text");
     assert(!bridge.recording());
