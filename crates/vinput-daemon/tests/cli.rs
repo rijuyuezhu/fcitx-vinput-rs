@@ -488,6 +488,41 @@ fn audio_devices_reports_pipewire_enumeration_error_without_failing() {
     );
 }
 
+#[cfg(feature = "pipewire-backend")]
+#[test]
+fn once_pipewire_backend_reports_recorder_plan_before_live_stream_exists() {
+    let config = TempConfig::write(
+        "pipewire-once",
+        r#"
+        {
+          "version": 1,
+          "global": {"capture_device": "alsa_input.usb-mic"},
+          "asr": {
+            "active_provider": "mock",
+            "providers": [{"id":"mock","type":"local","model":"fixture"}]
+          },
+          "scenes": {
+            "active_scene": "raw",
+            "definitions": [{"id":"raw","label":"Raw","candidate_count":0}]
+          }
+        }
+        "#,
+    );
+
+    let output = daemon_command()
+        .arg("--config")
+        .arg(&config.path)
+        .args(["--audio-backend", "pipewire", "--once"])
+        .output()
+        .expect("run vinput-daemon once with pipewire recorder");
+
+    let stderr = assert_failure_stderr(output, "pipewire once should report live stream gap");
+    assert!(stderr.contains("PipeWire recorder stream"));
+    assert!(stderr.contains("S16LE"));
+    assert!(stderr.contains("16000"));
+    assert!(stderr.contains("alsa_input.usb-mic"));
+}
+
 #[test]
 fn asr_state_accepts_committed_default_fixture() {
     let value = assert_json_success(
