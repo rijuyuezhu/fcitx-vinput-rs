@@ -38,7 +38,12 @@ std::chrono::milliseconds RecordDelay() {
   if (value == nullptr) {
     return std::chrono::milliseconds(0);
   }
-  return std::chrono::milliseconds(std::atoi(value));
+  char *end = nullptr;
+  const long delay_ms = std::strtol(value, &end, 10);
+  if (end == value || delay_ms <= 0) {
+    return std::chrono::milliseconds(0);
+  }
+  return std::chrono::milliseconds(delay_ms);
 }
 
 void WaitForRecording(std::chrono::milliseconds delay) {
