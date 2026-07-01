@@ -52,6 +52,12 @@ int main() {
     return 1;
   }
 
+  if (normal_bridge.recording() || normal_bridge.command_mode() ||
+      normal_stop.command_mode) {
+    std::cerr << "normal stop did not reset bridge state\n";
+    return 1;
+  }
+
   FrontendBridge command_bridge;
   auto command_start = command_bridge.StartCommand(client.get(), "selected text");
   if (command_start.kind != BridgeOutcome::Kind::Preedit) {
@@ -64,6 +70,12 @@ int main() {
       command_stop.text != "mock command result for: selected text") {
     std::cerr << "command stop did not produce expected commit text: "
               << command_stop.text << '\n';
+    return 1;
+  }
+
+  if (command_bridge.recording() || command_bridge.command_mode() ||
+      !command_stop.command_mode) {
+    std::cerr << "command stop did not reset bridge state\n";
     return 1;
   }
 
