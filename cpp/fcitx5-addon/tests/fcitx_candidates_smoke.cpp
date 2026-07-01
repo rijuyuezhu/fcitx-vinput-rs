@@ -17,6 +17,8 @@ int main() {
   RecognitionPayload empty;
   assert(BuildResultCandidateList(empty) == nullptr);
 
+  assert(ResultCandidateMenuTitle(0) == "Choose Result (0)");
+  assert(ResultCandidateMenuTitle(1) == "Choose Result (1)");
   assert(ResultCandidateMenuTitle(3) == "Choose Result (3)");
 
   assert(ResultCandidateComment({"raw", CandidateSource::Raw}, 0) == "ASR raw");
