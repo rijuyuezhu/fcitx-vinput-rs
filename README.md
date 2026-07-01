@@ -103,7 +103,7 @@ Stage the Rust daemon, Fcitx addon module, addon metadata, and D-Bus activation 
 just ime-install-smoke
 ```
 
-This staged install shape is the current local packaging spine for the input method: Fcitx loads `fcitx5-vinput.so`, the addon talks to `org.fcitx.Vinput`, and the D-Bus service activates `vinput-daemon --dbus` from the same install prefix.
+This staged install shape is the current local packaging spine for the input method: Fcitx loads `fcitx5-vinput.so`, the addon talks to `org.fcitx.Vinput`, and the D-Bus service activates `vinput-daemon --dbus` from the same install prefix. To activate configured command ASR/text backends from Fcitx, configure the addon CMake build with `-DVINPUT_DAEMON_ARGS="--dbus --configured-backends --config /path/to/config.json"`.
 
 Run the mock D-Bus service inside an existing session bus with:
 

@@ -72,6 +72,9 @@ vinput_bridge_apply_warnings(vinput_fcitx_bridge_sdbus)
 set(VINPUT_DAEMON_EXECUTABLE
     "${CMAKE_INSTALL_FULL_BINDIR}/vinput-daemon"
     CACHE FILEPATH "Installed vinput-daemon executable used by DBus activation")
+set(VINPUT_DAEMON_ARGS
+    "--dbus"
+    CACHE STRING "Arguments used by the DBus activation service for vinput-daemon")
 configure_file(vinput-addon.conf.in vinput-addon.conf @ONLY)
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/../../data/org.fcitx.Vinput.service.in"
