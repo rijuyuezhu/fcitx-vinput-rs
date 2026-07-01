@@ -78,6 +78,15 @@ int main() {
   }
 
   {
+    const auto payload = ParseRecognitionPayload(
+        R"({"candidates":[{"text":"","source":"raw"},{"text":"kept","source":"asr"}]})");
+    assert(payload.commit_text == "kept");
+    assert(payload.candidates.size() == 1);
+    assert(payload.candidates[0].text == "kept");
+    assert(payload.candidates[0].source == CandidateSource::Asr);
+  }
+
+  {
     const auto payload = ParseRecognitionPayload("not json");
     assert(payload.commit_text.empty());
     assert(payload.candidates.empty());
