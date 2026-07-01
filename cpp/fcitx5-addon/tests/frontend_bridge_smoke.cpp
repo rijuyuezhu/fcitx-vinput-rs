@@ -306,6 +306,20 @@ int main() {
 
   {
     FakeDaemonClient client;
+    client.start_ok = false;
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartCommand(&client, "selected text");
+    assert(start.kind == BridgeOutcome::Kind::Error);
+    assert(start.text == "Voice input daemon is unavailable.");
+    assert(client.start_command_calls == 1);
+    assert(client.last_selected_text == "selected text");
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
+  }
+
+  {
+    FakeDaemonClient client;
     FrontendBridge bridge;
 
     const auto start = bridge.StartCommand(&client, "");
