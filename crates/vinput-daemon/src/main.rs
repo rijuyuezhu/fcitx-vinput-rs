@@ -3,10 +3,12 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
 use vinput_asr::{AsrBackendFactory, MockAsrBackend};
-use vinput_audio::{CaptureTarget, CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec};
+use vinput_audio::{
+    AudioRecorder, CaptureTarget, CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec,
+};
 use vinput_config::VinputConfig;
 use vinput_daemon::{RuntimeState, VinputDbusService};
 
@@ -29,6 +31,10 @@ struct Args {
     /// Use configured ASR and command text adapters instead of mock runtime backends.
     #[arg(long)]
     configured_backends: bool,
+
+    /// Audio recorder backend used for long-running daemon sessions.
+    #[arg(long, value_enum, default_value_t = AudioBackendArg::Mock)]
+    audio_backend: AudioBackendArg,
 
     /// Optional config JSON file. Omitted to use the bundled default config.
     #[arg(long)]
@@ -53,6 +59,15 @@ struct Args {
     /// Utility command.
     #[command(subcommand)]
     command: Option<Command>,
+}
+
+/// Audio recorder backend selection for long-running daemon sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum AudioBackendArg {
+    /// Deterministic mock PCM source used by CI and non-desktop checks.
+    Mock,
+    /// Live PipeWire recorder. Requires the `pipewire-backend` Cargo feature.
+    Pipewire,
 }
 
 /// One-shot utility commands useful while bootstrapping the daemon.
@@ -218,24 +233,56 @@ fn capture_target_json(target: &CaptureTarget) -> serde_json::Value {
 }
 
 fn build_runtime(args: &Args, config: VinputConfig) -> anyhow::Result<RuntimeState> {
-    let Some(audio_source) = input_audio_source(args)? else {
+    if let Some(audio_source) = input_audio_source(args)? {
         return if args.configured_backends {
-            RuntimeState::with_configured_backends(config).context("build configured runtime")
+            let backend = AsrBackendFactory::build_active(&config.asr)
+                .context("build configured ASR backend")?;
+            RuntimeState::with_configured_text(config, backend, Box::new(audio_source))
+                .context("build configured runtime with file input")
         } else {
-            RuntimeState::new(config).context("build mock runtime")
+            let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+            RuntimeState::with_backends(config, Box::new(backend), Box::new(audio_source))
+                .context("build mock runtime with file input")
         };
-    };
+    }
+
+    if let Some(audio_recorder) = selected_audio_recorder(args)? {
+        return if args.configured_backends {
+            let backend = AsrBackendFactory::build_active(&config.asr)
+                .context("build configured ASR backend")?;
+            RuntimeState::with_configured_audio_recorder(config, backend, audio_recorder)
+                .context("build configured runtime with selected audio recorder")
+        } else {
+            let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
+            RuntimeState::with_audio_recorder(config, Box::new(backend), audio_recorder)
+                .context("build mock runtime with selected audio recorder")
+        };
+    }
 
     if args.configured_backends {
-        let backend =
-            AsrBackendFactory::build_active(&config.asr).context("build configured ASR backend")?;
-        RuntimeState::with_configured_text(config, backend, Box::new(audio_source))
-            .context("build configured runtime with file input")
+        RuntimeState::with_configured_backends(config).context("build configured runtime")
     } else {
-        let backend = MockAsrBackend::streaming("mock partial", "mock recognition result");
-        RuntimeState::with_backends(config, Box::new(backend), Box::new(audio_source))
-            .context("build mock runtime with file input")
+        RuntimeState::new(config).context("build mock runtime")
     }
+}
+
+fn selected_audio_recorder(args: &Args) -> anyhow::Result<Option<Box<dyn AudioRecorder>>> {
+    match args.audio_backend {
+        AudioBackendArg::Mock => Ok(None),
+        AudioBackendArg::Pipewire => pipewire_audio_recorder().map(Some),
+    }
+}
+
+#[cfg(feature = "pipewire-backend")]
+fn pipewire_audio_recorder() -> anyhow::Result<Box<dyn AudioRecorder>> {
+    Ok(Box::new(
+        vinput_audio::pipewire_backend::PipeWireAudioRecorder::new(),
+    ))
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+fn pipewire_audio_recorder() -> anyhow::Result<Box<dyn AudioRecorder>> {
+    bail!("--audio-backend pipewire requires the pipewire-backend Cargo feature")
 }
 
 fn input_audio_source(args: &Args) -> anyhow::Result<Option<MockAudioSource>> {

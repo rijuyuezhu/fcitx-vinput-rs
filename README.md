@@ -116,6 +116,8 @@ Run the mock D-Bus service inside an existing session bus with:
 cargo run -p vinput-daemon -- --dbus
 ```
 
+The daemon now accepts `--audio-backend mock|pipewire` for long-running D-Bus sessions. `mock` remains the default for deterministic CI and staged demos. `pipewire` is feature-gated behind `--features pipewire-backend` and selects the live recorder seam for the next desktop-capture slice.
+
 ## Development route
 
 The current route is E2E port acceleration. Start with `AGENT.md`, then read `docs/README.md`, `docs/development.md`, and `docs/migration/e2e-port-plan.md`.

@@ -123,18 +123,18 @@ impl RuntimeState {
         asr_backend: Box<dyn AsrBackend>,
         audio_source: Box<dyn AudioSource>,
     ) -> Result<Self, RuntimeError> {
-        let text_processor: Box<dyn TextProcessor> = if config.llm.providers.is_empty() {
-            Box::new(CommandTextProcessor::from_configs_with_runner(
-                &config.llm.adapters,
-                ProcessCommandTextRunner,
-            ))
-        } else {
-            Box::new(OpenAiCompatibleTextProcessor::new(
-                config.llm.providers.clone(),
-                ReqwestOpenAiCompatibleChatTransport::new(),
-            ))
-        };
+        let text_processor = configured_text_processor(&config);
         Self::with_components(config, asr_backend, audio_source, text_processor)
+    }
+
+    /// Builds an idle runtime with an injected recorder and configured command text adapters.
+    pub fn with_configured_audio_recorder(
+        config: VinputConfig,
+        asr_backend: Box<dyn AsrBackend>,
+        audio_recorder: Box<dyn AudioRecorder>,
+    ) -> Result<Self, RuntimeError> {
+        let text_processor = configured_text_processor(&config);
+        Self::with_recorder_components(config, asr_backend, audio_recorder, text_processor)
     }
 
     /// Builds an idle runtime from validated config and injected component seams.
@@ -226,6 +226,20 @@ impl RuntimeState {
         } else {
             Err(RuntimeError::Busy(self.status))
         }
+    }
+}
+
+fn configured_text_processor(config: &VinputConfig) -> Box<dyn TextProcessor> {
+    if config.llm.providers.is_empty() {
+        Box::new(CommandTextProcessor::from_configs_with_runner(
+            &config.llm.adapters,
+            ProcessCommandTextRunner,
+        ))
+    } else {
+        Box::new(OpenAiCompatibleTextProcessor::new(
+            config.llm.providers.clone(),
+            ReqwestOpenAiCompatibleChatTransport::new(),
+        ))
     }
 }
 
