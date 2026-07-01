@@ -114,6 +114,9 @@ addon-dbus-smoke:
 addon-dbus-activation-smoke:
     scripts/run-cpp-dbus-activation-smoke.sh
 
+addon-dbus-configured-activation-smoke:
+    scripts/run-cpp-dbus-configured-activation-smoke.sh
+
 ci: check
 
 smoke:

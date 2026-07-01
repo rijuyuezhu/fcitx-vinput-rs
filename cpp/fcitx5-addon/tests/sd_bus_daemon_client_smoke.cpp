@@ -3,6 +3,7 @@
 #include "vinput_fcitx_bridge/sd_bus_daemon_client.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -27,6 +28,11 @@ std::unique_ptr<SdBusDaemonClient> ConnectWithRetry(std::string *error) {
   return nullptr;
 }
 
+std::string ExpectedText(const char *env_name, const char *fallback) {
+  const char *value = std::getenv(env_name);
+  return value == nullptr ? std::string(fallback) : std::string(value);
+}
+
 } // namespace
 
 int main() {
@@ -44,9 +50,11 @@ int main() {
     return 1;
   }
 
+  const auto expected_normal_text =
+      ExpectedText("VINPUT_DBUS_SMOKE_EXPECTED_NORMAL", "mock recognition result");
   auto normal_stop = normal_bridge.Stop(client.get(), kDefaultNormalSceneId);
   if (normal_stop.kind != BridgeOutcome::Kind::Commit ||
-      normal_stop.text != "mock recognition result") {
+      normal_stop.text != expected_normal_text) {
     std::cerr << "normal stop did not produce expected commit text: "
               << normal_stop.text << '\n';
     return 1;
@@ -65,9 +73,11 @@ int main() {
     return 1;
   }
 
+  const auto expected_command_text = ExpectedText(
+      "VINPUT_DBUS_SMOKE_EXPECTED_COMMAND", "mock command result for: selected text");
   auto command_stop = command_bridge.Stop(client.get(), kDefaultCommandSceneId);
   if (command_stop.kind != BridgeOutcome::Kind::Commit ||
-      command_stop.text != "mock command result for: selected text") {
+      command_stop.text != expected_command_text) {
     std::cerr << "command stop did not produce expected commit text: "
               << command_stop.text << '\n';
     return 1;
