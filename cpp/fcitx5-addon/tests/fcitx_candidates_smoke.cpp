@@ -60,6 +60,15 @@ int main() {
   assert(selected_candidates[0].text == "polished 1");
   assert(selected_candidates[0].source == CandidateSource::Llm);
 
+  RecognitionPayload asr_payload;
+  asr_payload.commit_text = "asr choice";
+  asr_payload.candidates = {Candidate{"asr choice", CandidateSource::Asr}};
+  auto asr_candidates = BuildResultCandidateList(asr_payload);
+  assert(asr_candidates != nullptr);
+#ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
+  assert(asr_candidates->candidateFromAll(0).comment().toString() == "ASR");
+#endif
+
   RecognitionPayload missing_commit_payload;
   missing_commit_payload.commit_text = "not present";
   missing_commit_payload.candidates = {
