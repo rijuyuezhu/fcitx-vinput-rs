@@ -70,7 +70,7 @@ int main() {
 
   {
     const auto payload = ParseRecognitionPayload(
-        R"({"commit_text":"kept","extra":1,"candidates":[{"text":"kept","source":"llm","rank":1}]})");
+        R"({"commit_text":"kept","trace":{"id":"42","tags":["new",null,true]},"candidates":[{"text":"kept","source":"llm","rank":1,"metadata":{"stable":true},"tags":["new"]}],"extra":[{"ignored":null}]})");
     assert(payload.commit_text == "kept");
     assert(payload.candidates.size() == 1);
     assert(payload.candidates[0].text == "kept");
