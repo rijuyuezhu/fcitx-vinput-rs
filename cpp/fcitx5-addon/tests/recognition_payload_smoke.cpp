@@ -136,6 +136,14 @@ int main() {
 
   {
     const auto payload =
+        ParseRecognitionPayload("{\"commit_text\":\"kept\",\"candidates\":[]}\n\t  ");
+    assert(payload.commit_text == "kept");
+    assert(payload.candidates.size() == 1);
+    assert(payload.candidates[0].source == CandidateSource::Raw);
+  }
+
+  {
+    const auto payload =
         ParseRecognitionPayload("{\"commit_text\":\"bad\ntext\",\"candidates\":[]}");
     assert(payload.commit_text.empty());
     assert(payload.candidates.empty());
