@@ -37,7 +37,7 @@ Result candidate menus are built as Fcitx `CommonCandidateList` instances. The m
 
 Empty stop payloads and cancel-only payloads are treated as explicit cleanup outcomes: they clear the recording preedit and any stale result menu without committing text.
 
-`include/vinput_fcitx_bridge/frontend_bridge.h` and `src/frontend_bridge.cpp` provide the pure trigger/start/stop bridge seam. The future Fcitx `AddonInstance` should translate key events into this seam and translate `BridgeOutcome` into preedit, candidate list, notification, or `commitString` calls.
+`include/vinput_fcitx_bridge/frontend_bridge.h` and `src/frontend_bridge.cpp` provide the pure trigger/start/stop bridge seam. `FcitxVinputAddon` translates key events into this seam and translates `BridgeOutcome` into preedit, candidate list, notification, or `commitString` calls.
 
 `include/vinput_fcitx_bridge/sd_bus_daemon_client.h` and `src/sd_bus_daemon_client.cpp` provide the concrete `sd-bus` implementation of the daemon client seam. It calls the Rust daemon's legacy `StartRecording`, `StartCommandRecording`, and `StopRecording` methods over the session bus; Fcitx-specific UI logic still stays outside this wrapper.
 
