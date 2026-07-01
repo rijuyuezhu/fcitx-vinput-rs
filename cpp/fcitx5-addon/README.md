@@ -51,6 +51,8 @@ just addon-build
 just addon-smoke
 just addon-fcitx-build
 just addon-install-smoke
+just ime-install-smoke
+just ime-configured-install-smoke
 ```
 
 Run `just addon-dbus-smoke` to start the Rust daemon under `dbus-run-session` and exercise the C++ `SdBusDaemonClient` through the real legacy D-Bus ABI. The smoke covers both normal recording and command-mode recording with selected text, expecting the mock daemon to return `mock recognition result` and `mock command result for: selected text`.

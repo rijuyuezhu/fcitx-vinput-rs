@@ -83,6 +83,7 @@ just addon-build  # build the C++ bridge core without requiring Fcitx desktop de
 just addon-fcitx-build # require Fcitx5Core and build fcitx5-vinput.so
 just addon-install-smoke # stage-install fcitx5-vinput.so and verify addon metadata plus DBus activation
 just ime-install-smoke # stage Rust daemon, addon module, metadata, and DBus activation together
+just ime-configured-install-smoke # stage demo config plus activation for configured backends
 just addon-lint   # require Fcitx5Core and lint all C++ addon sources with clang-tidy
 just addon-test   # run CTest for the C++ Fcitx bridge core
 just addon-smoke  # addon-format-check plus addon-lint plus addon-test
