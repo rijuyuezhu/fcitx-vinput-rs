@@ -145,6 +145,31 @@ int main() {
 
   {
     FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    const auto stop = bridge.Stop(&client, "not-recording-scene");
+    assert(stop.kind == BridgeOutcome::Kind::None);
+    assert(client.stop_calls == 0);
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
+    client.stop_ok = false;
+    FrontendBridge bridge;
+
+    assert(bridge.StartNormal(&client).kind == BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(&client, "failing-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Error);
+    assert(stop.text == "stop failed");
+    assert(client.stop_calls == 1);
+    assert(client.last_scene_id == "failing-scene");
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
+  }
+
+  {
+    FakeDaemonClient client;
     client.start_ok = false;
     FrontendBridge bridge;
 
