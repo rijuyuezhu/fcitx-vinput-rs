@@ -154,4 +154,4 @@ Tasks:
 
 ## Recommended next task for a new agent
 
-Start with Phase 1: compare the legacy frontend files against the current Rust bus service and design the thinnest retained C++ Fcitx5 frontend bridge. Defer local model runtime, registry resource preparation, and GUI work.
+Continue Phase 1/2 with focused retained frontend bridge slices: keep addon smoke coverage tight, exercise the bridge against the Rust daemon, and align local run/install documentation with the current `cpp/fcitx5-addon` workflow. Defer local model runtime, registry resource preparation, and GUI work until the product spine remains easy to validate.
