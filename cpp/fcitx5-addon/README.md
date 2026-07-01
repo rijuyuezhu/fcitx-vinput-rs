@@ -43,7 +43,7 @@ Empty stop payloads and cancel-only payloads are treated as explicit cleanup out
 
 ## Build
 
-The C++ bridge has its own CMake project, following the retained legacy addon build boundary. It builds the bridge core, the concrete `sd-bus` daemon client, and CTest smoke binaries without requiring a live Fcitx desktop session. When `Fcitx5Core` development files are available, it also builds the retained `fcitx5-vinput.so` module skeleton.
+The C++ bridge has its own CMake project, following the retained legacy addon build boundary. It builds the bridge core, the concrete `sd-bus` daemon client, and CTest smoke binaries without requiring a live Fcitx desktop session. When `Fcitx5Core` development files are available, it also builds the retained `fcitx5-vinput.so` module target.
 
 ```sh
 just addon-configure

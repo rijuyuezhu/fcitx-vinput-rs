@@ -33,7 +33,7 @@ The next phase should optimize for a working E2E product spine, not for perfect 
 
 | Legacy area | Legacy C++ source | Current Rust status | Gap for usable E2E |
 |---|---|---|---|
-| Fcitx frontend addon | `src/addon/*` | Retained thin C++ addon skeleton exists under `cpp/fcitx5-addon`: trigger/key handling, bus client wrapper, preedit/status, candidate UI, selection replacement, install metadata, and focused smoke coverage. | Keep exercising it against the Rust daemon, document local install/run paths, and add only thin frontend behavior needed for E2E. |
+| Fcitx frontend addon | `src/addon/*` | Retained thin C++ addon bridge exists under `cpp/fcitx5-addon`: trigger/key handling, bus client wrapper, preedit/status, candidate UI, selection replacement, install metadata, and focused smoke coverage. | Keep exercising it against the Rust daemon, document local install/run paths, and add only thin frontend behavior needed for E2E. |
 | D-Bus daemon API | `src/daemon/runtime/dbus_service.*`, `src/common/dbus/*` | `vinput-protocol` + `vinput-daemon` expose legacy names/methods plus diagnostics. | Exercise from the real Fcitx addon and keep ABI tests green. |
 | Runtime pipeline | `src/daemon/runtime/*` | `RuntimeState` supports mock/configured paths, `--once`, D-Bus facade, command ASR/text flows. | Wire live frontend start/stop/cancel and selected text; tighten actor/race handling only as needed for E2E. |
 | Audio capture | `src/daemon/audio/*`, `src/common/audio/pipewire_device.*` | Pure PCM and recorder traits are strong; PipeWire enumeration and recorder skeleton exist. | Implement minimal live PipeWire recorder or provide a dev fallback path that can be used from the addon. |
@@ -77,7 +77,7 @@ Tasks:
 - Keep only minimal legacy frontend behavior from `src/addon/*`.
 - Preserve registration, trigger action, bus client wrapper, basic state display, final text commit, candidate menu, and selected-text replacement smoke coverage.
 - Add new frontend behavior only when it is needed for the E2E product spine.
-- Keep build notes and dev install metadata aligned with the retained addon skeleton.
+- Keep build notes and dev install metadata aligned with the retained addon bridge.
 
 
 ### Phase 2 — local run path

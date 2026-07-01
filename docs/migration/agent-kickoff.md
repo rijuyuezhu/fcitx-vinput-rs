@@ -38,7 +38,7 @@ Then read:
 
 ## First recommended implementation slice
 
-The retained C++ Fcitx5 frontend bridge now exists under `cpp/fcitx5-addon`. Continue with small E2E-product-spine slices: keep addon smoke coverage tight, exercise the bridge against the Rust daemon, and align local run/install documentation with the retained addon skeleton.
+The retained C++ Fcitx5 frontend bridge now exists under `cpp/fcitx5-addon`. Continue with small E2E-product-spine slices: keep addon smoke coverage tight, exercise the bridge against the Rust daemon, and align local run/install documentation with the retained addon bridge.
 
 Keep backend logic in Rust crates. Add frontend behavior only when it is needed for trigger handling, status/preedit, candidate UI, selected-text replacement, bus cleanup, or local E2E validation.
 
@@ -70,7 +70,7 @@ For bus compatibility work, also run the daemon bus integration test under a ses
 Use concise Conventional Commit messages in English:
 
 ```text
-feat(addon): add fcitx bridge skeleton
+feat(addon): update fcitx bridge behavior
 feat(dbus): add addon client wrapper
 feat(daemon): support frontend context
 fix(protocol): preserve legacy method shape
