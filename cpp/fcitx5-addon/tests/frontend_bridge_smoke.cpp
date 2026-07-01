@@ -137,6 +137,18 @@ int main() {
 
   {
     FakeDaemonClient client;
+    client.next_payload_json = "not json";
+    FrontendBridge bridge;
+
+    assert(bridge.StartNormal(&client).kind == BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(&client, "invalid-payload-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Clear);
+    assert(!stop.command_mode);
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
     client.next_payload_json = R"({"candidates":[{"text":"","source":"cancel"}]})";
     FrontendBridge bridge;
 
