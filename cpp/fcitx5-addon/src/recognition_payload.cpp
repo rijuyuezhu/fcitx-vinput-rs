@@ -301,9 +301,11 @@ private:
       return true;
     }
     while (true) {
+      skipSpace();
       if (!parseString()) {
         return false;
       }
+      skipSpace();
       if (!consume(':') || !skipValue()) {
         return false;
       }

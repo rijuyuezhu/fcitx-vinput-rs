@@ -57,6 +57,14 @@ int main() {
 
   {
     const auto payload = ParseRecognitionPayload(
+        R"({"commit_text":"kept","extra":{"nested" : true, "items" : [null, 1]},"candidates":[]})");
+    assert(payload.commit_text == "kept");
+    assert(payload.candidates.size() == 1);
+    assert(payload.candidates[0].source == CandidateSource::Raw);
+  }
+
+  {
+    const auto payload = ParseRecognitionPayload(
         R"({"commit_text":"bad","debug":bogus,"candidates":[]})");
     assert(payload.commit_text.empty());
     assert(payload.candidates.empty());
