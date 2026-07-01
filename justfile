@@ -113,6 +113,10 @@ addon-smoke:
 addon-dbus-smoke:
     scripts/run-cpp-dbus-smoke.sh
 
+# Explicit live PipeWire D-Bus smoke. Requires a user PipeWire session.
+addon-dbus-pipewire-live:
+    scripts/run-cpp-dbus-pipewire-live-smoke.sh
+
 addon-dbus-activation-smoke:
     scripts/run-cpp-dbus-activation-smoke.sh
 
