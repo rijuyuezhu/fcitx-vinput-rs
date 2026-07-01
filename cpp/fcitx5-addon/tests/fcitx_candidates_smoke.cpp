@@ -59,6 +59,17 @@ int main() {
   assert(selected_candidates[0].text == "polished 1");
   assert(selected_candidates[0].source == CandidateSource::Llm);
 
+  RecognitionPayload missing_commit_payload;
+  missing_commit_payload.commit_text = "not present";
+  missing_commit_payload.candidates = {
+      Candidate{"raw transcript", CandidateSource::Raw},
+      Candidate{"polished", CandidateSource::Llm},
+  };
+  auto missing_commit_candidates = BuildResultCandidateList(missing_commit_payload);
+  assert(missing_commit_candidates != nullptr);
+  assert(missing_commit_candidates->totalSize() == 2);
+  assert(missing_commit_candidates->globalCursorIndex() == 0);
+
   RecognitionPayload cancel_payload;
   cancel_payload.candidates = {Candidate{"", CandidateSource::Cancel}};
   auto cancel_candidates = BuildResultCandidateList(
