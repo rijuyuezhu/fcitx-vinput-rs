@@ -169,6 +169,39 @@ int main() {
   }
 
   {
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartNormal(nullptr);
+    assert(start.kind == BridgeOutcome::Kind::Error);
+    assert(!start.text.empty());
+    assert(!bridge.recording());
+  }
+
+  {
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartCommand(nullptr, "selected text");
+    assert(start.kind == BridgeOutcome::Kind::Error);
+    assert(!start.text.empty());
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
+  }
+
+  {
+    FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    assert(bridge.StartCommand(&client, "selected text").kind ==
+           BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(nullptr, "missing-client-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Error);
+    assert(!stop.text.empty());
+    assert(client.stop_calls == 0);
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
+  }
+
+  {
     FakeDaemonClient client;
     client.start_ok = false;
     FrontendBridge bridge;
