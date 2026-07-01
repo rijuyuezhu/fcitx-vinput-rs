@@ -179,6 +179,14 @@ impl Default for PipeWireAudioRecorder {
     }
 }
 
+impl Drop for PipeWireAudioRecorder {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            let _ = stop_recording_worker(worker, WorkerCommand::Cancel);
+        }
+    }
+}
+
 impl AudioRecorder for PipeWireAudioRecorder {
     fn begin_recording(&mut self, target: CaptureTarget) -> Result<(), AudioError> {
         if self.worker.is_some() {
