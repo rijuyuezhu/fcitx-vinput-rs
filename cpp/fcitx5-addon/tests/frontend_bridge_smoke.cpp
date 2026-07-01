@@ -335,6 +335,8 @@ int main() {
     assert(start.kind == BridgeOutcome::Kind::Error);
     assert(start.text == "Please select text first.");
     assert(client.start_command_calls == 0);
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
   }
 
   return 0;
