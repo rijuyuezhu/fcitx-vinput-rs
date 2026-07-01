@@ -106,8 +106,8 @@ fn text_architecture_pins_command_mode_payload_contract() {
         "LLM/post-processing candidates as `llm` candidates",
         "Commit text prefers the first LLM/post-processing candidate",
         "falls back to the selected text when present",
-        "Frontend-side selected-text deletion, clipboard fallback",
-        "remain future frontend work",
+        "retained C++ frontend owns selected-text replacement and cleanup",
+        "clipboard fallback remains future frontend work",
     ] {
         assert!(
             text_doc.contains(required),
@@ -259,7 +259,8 @@ fn target_architecture_pins_frontend_packaging_boundary() {
         "existing `vinput-protocol` D-Bus ABI",
         "Fcitx API integration, menus, preedit/status presentation",
         "selected-text collection",
-        "frontend-side clipboard/deletion fallbacks",
+        "command-mode selected-text replacement",
+        "frontend-side cleanup",
         "Backend logic, ASR/text processing, registry operations, and runtime state must stay in Rust crates",
         "Do not replace the Fcitx5 addon with a Rust addon",
         "Packaging/service install artifacts remain future work",
