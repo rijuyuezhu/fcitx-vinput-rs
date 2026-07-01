@@ -57,4 +57,4 @@ Run `just addon-dbus-smoke` to start the Rust daemon under `dbus-run-session` an
 
 The CMake project also configures `vinput-addon.conf.in` and probes the legacy Fcitx addon dependencies (`Fcitx5Core`, `Fcitx5ModuleDBus`, `Fcitx5ModuleClipboard`, and `Fcitx5ModuleNotifications`) so the retained addon sources follow the original C++ project's module/install shape.
 
-`just addon-install-smoke` installs the module into a temporary prefix and checks the generated addon metadata, including `Library`, `Type`, `OnDemand`, `Configurable`, and the `dbus`/clipboard` dependency entries.
+`just addon-install-smoke` installs the module into a temporary prefix and checks the generated addon metadata, including `Library`, `Type`, `OnDemand`, `Configurable`, and the `dbus`/`clipboard` dependency entries.
