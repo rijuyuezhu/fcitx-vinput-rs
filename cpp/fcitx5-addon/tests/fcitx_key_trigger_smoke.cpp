@@ -37,6 +37,10 @@ int main() {
   assert(!shift_policy.IsNormalTrigger(control_release));
   fcitx::KeyEvent custom_command_release(nullptr, fcitx::Key(FcitxKey_F9), true);
   assert(shift_policy.IsCommandTrigger(custom_command_release));
+  assert(!shift_policy.IsNormalTrigger(custom_command_release));
+  fcitx::KeyEvent custom_command_press(nullptr, fcitx::Key(FcitxKey_F9), false);
+  assert(!shift_policy.IsCommandTrigger(custom_command_press));
+  assert(!shift_policy.IsCommandTrigger(shift_release));
 
   return 0;
 }
