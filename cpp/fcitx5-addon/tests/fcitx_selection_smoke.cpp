@@ -61,6 +61,15 @@ int main() {
   assert(backward_utf8_range->offset == 0);
   assert(backward_utf8_range->size == 2);
 
+  const std::string emoji = "\xF0\x9F\x98\x80";
+  fcitx::SurroundingText emoji_text;
+  emoji_text.setText("a" + emoji + "b", 2, 1);
+  assert(SelectedTextFromSurroundingText(emoji_text) == emoji);
+  auto emoji_range = SelectedTextDeletionRange(emoji_text);
+  assert(emoji_range.has_value());
+  assert(emoji_range->offset == -1);
+  assert(emoji_range->size == 1);
+
   fcitx::SurroundingText collapsed;
   collapsed.setText("nothing selected", 7, 7);
   assert(SelectedTextFromSurroundingText(collapsed).empty());
