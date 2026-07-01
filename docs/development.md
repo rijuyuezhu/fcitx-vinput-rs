@@ -70,9 +70,9 @@ sudo pacman -S --needed base-devel cmake clang just pkgconf fcitx5
 Common commands:
 
 ```sh
-just fmt          # format Rust code
-just fmt-check    # check formatting
-just lint         # clippy for the workspace
+just fmt          # format Rust code and C++ addon sources
+just fmt-check    # check Rust and C++ addon formatting
+just lint         # clang-tidy for addon sources plus clippy for the workspace
 just test         # cargo test --workspace --all-targets
 just dbus-test    # D-Bus integration tests under dbus-run-session
 just dbus-lint    # clippy with dbus-integration feature
