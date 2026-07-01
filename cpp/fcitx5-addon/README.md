@@ -59,14 +59,21 @@ The CMake project also configures `vinput-addon.conf.in` and probes the legacy F
 
 ## Local daemon workflow
 
-The current local validation path keeps the daemon and addon bridge explicit:
+The current local validation path keeps the daemon and addon bridge explicit. For manual session-bus testing, run the daemon in one terminal:
 
 ```sh
 cargo run -p vinput-daemon -- --dbus
+```
+
+Add `--configured-backends --config <path>` when testing configured command ASR or text adapters instead of the mock runtime.
+
+For automated checks, prefer:
+
+```sh
 just addon-dbus-smoke
 just e2e-demo
 ```
 
-`cargo run -p vinput-daemon -- --dbus` serves the mock legacy D-Bus ABI on the current session bus. Add `--configured-backends --config <path>` when testing configured command ASR or text adapters instead of the mock runtime. `just addon-dbus-smoke` wraps a private `dbus-run-session` and verifies the retained C++ `SdBusDaemonClient` against the Rust daemon without requiring a live desktop. `just e2e-demo` remains the deterministic file-input command ASR/text demo for backend-only validation.
+`just addon-dbus-smoke` wraps a private `dbus-run-session` and verifies the retained C++ `SdBusDaemonClient` against the Rust daemon without requiring a live desktop. `just e2e-demo` remains the deterministic file-input command ASR/text demo for backend-only validation.
 
 For install-shape validation, use `just addon-install-smoke`; it stages the generated module and `vinput.conf` under `target/tmp/fcitx-addon-install-smoke` rather than installing into the host Fcitx prefix.
