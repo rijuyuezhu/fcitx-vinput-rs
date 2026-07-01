@@ -4,6 +4,7 @@
 #include <string>
 
 using vinput_fcitx_bridge::CandidateSource;
+using vinput_fcitx_bridge::CandidateSourceFromWire;
 using vinput_fcitx_bridge::MakeCommitPlan;
 using vinput_fcitx_bridge::ParseRecognitionPayload;
 using vinput_fcitx_bridge::ShouldShowCandidateMenu;
@@ -62,6 +63,23 @@ int main() {
   }
 
   {
+    const auto plan = MakeCommitPlan(
+        R"({"commit_text":"single polished","candidates":[{"text":"single polished","source":"llm"}]})");
+    assert(plan.payload.commit_text == "single polished");
+    assert(plan.payload.candidates.size() == 1);
+    assert(plan.payload.candidates[0].source == CandidateSource::Llm);
+    assert(!plan.show_candidate_menu);
+  }
+
+  {
+    const auto plan = MakeCommitPlan(
+        R"({"commit_text":"asr text","candidates":[{"text":"raw transcript","source":"raw"},{"text":"asr text","source":"asr"}]})");
+    assert(plan.payload.commit_text == "asr text");
+    assert(plan.payload.candidates.size() == 2);
+    assert(!plan.show_candidate_menu);
+  }
+
+  {
     const auto payload = ParseRecognitionPayload(
         R"({"commit_text":"fallback","candidates":[{"text":"fallback","source":"future"}]})");
     assert(payload.candidates.size() == 1);
@@ -112,5 +130,11 @@ int main() {
   assert(ToWireString(CandidateSource::Llm) == "llm");
   assert(ToWireString(CandidateSource::Asr) == "asr");
   assert(ToWireString(CandidateSource::Cancel) == "cancel");
+  assert(ToWireString(static_cast<CandidateSource>(99)) == "raw");
+  assert(CandidateSourceFromWire("raw") == CandidateSource::Raw);
+  assert(CandidateSourceFromWire("llm") == CandidateSource::Llm);
+  assert(CandidateSourceFromWire("asr") == CandidateSource::Asr);
+  assert(CandidateSourceFromWire("cancel") == CandidateSource::Cancel);
+  assert(CandidateSourceFromWire("future") == CandidateSource::Raw);
   return 0;
 }
