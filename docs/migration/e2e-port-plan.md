@@ -67,9 +67,9 @@ A task is considered done only when it moves toward one of these acceptance chec
 - Use existing Rust crates instead of adding backend logic to the frontend bridge.
 - Build the first usable input-method path before polishing every internal seam.
 
-### Phase 1 — frontend bridge skeleton
+### Phase 1 — retained frontend bridge
 
-Goal: build the smallest Fcitx5 frontend bridge that can trigger the Rust backend and commit returned text.
+Goal: maintain the smallest Fcitx5 frontend bridge that triggers the Rust backend, commits returned text, and covers only the frontend behavior needed for the E2E product spine.
 
 Tasks:
 
