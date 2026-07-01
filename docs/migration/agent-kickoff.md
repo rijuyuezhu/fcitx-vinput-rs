@@ -38,9 +38,9 @@ Then read:
 
 ## First recommended implementation slice
 
-Compare the legacy frontend files with the Rust bus service. Focus on addon core, key handling, menu handling, bus constants, and the Rust daemon service facade.
+The retained C++ Fcitx5 frontend bridge now exists under `cpp/fcitx5-addon`. Continue with small E2E-product-spine slices: keep addon smoke coverage tight, exercise the bridge against the Rust daemon, and align local run/install documentation with the retained addon skeleton.
 
-Design the smallest retained C++ Fcitx5 frontend bridge. Keep backend logic in Rust crates.
+Keep backend logic in Rust crates. Add frontend behavior only when it is needed for trigger handling, status/preedit, candidate UI, selected-text replacement, bus cleanup, or local E2E validation.
 
 ## Project style
 
@@ -58,6 +58,7 @@ cargo test --package vinput-protocol
 cargo test -p vinput-daemon --test cli
 cargo test -p vinput-cli --test architecture_docs
 cargo test --workspace --all-targets
+just addon-smoke
 just smoke
 just e2e-demo
 ```
