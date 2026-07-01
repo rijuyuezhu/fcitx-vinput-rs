@@ -74,6 +74,9 @@ int main() {
     assert(payload.candidates.empty());
   }
 
+  assert(ToWireString(CandidateSource::Raw) == "raw");
+  assert(ToWireString(CandidateSource::Llm) == "llm");
+  assert(ToWireString(CandidateSource::Asr) == "asr");
   assert(ToWireString(CandidateSource::Cancel) == "cancel");
   return 0;
 }
