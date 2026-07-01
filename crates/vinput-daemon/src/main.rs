@@ -173,6 +173,7 @@ fn audio_devices_summary(config: &VinputConfig) -> anyhow::Result<serde_json::Va
         "ok": true,
         "capture_device": config.global.capture_device,
         "capture_target": capture_target_json(&capture_target),
+        "recording": recording_summary(&capture_target),
         "backend": audio_devices_backend_name(),
         "live": audio_report.live,
         "devices": audio_report.devices,
@@ -232,6 +233,28 @@ fn capture_target_json(target: &CaptureTarget) -> serde_json::Value {
         CaptureTarget::Default => serde_json::json!({"kind": "default"}),
         CaptureTarget::Object(value) => serde_json::json!({"kind": "object", "value": value}),
     }
+}
+
+#[cfg(feature = "pipewire-backend")]
+fn recording_summary(target: &CaptureTarget) -> serde_json::Value {
+    let config = vinput_audio::pipewire_backend::PipeWireStreamConfig::for_target(target.clone());
+    serde_json::json!({
+        "available": false,
+        "status": "stream-unimplemented",
+        "target": capture_target_json(&config.target),
+        "format": config.format,
+        "sample_rate_hz": config.pcm_spec.sample_rate_hz,
+        "channels": config.pcm_spec.channels,
+    })
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+fn recording_summary(target: &CaptureTarget) -> serde_json::Value {
+    serde_json::json!({
+        "available": false,
+        "status": "feature-disabled",
+        "target": capture_target_json(target),
+    })
 }
 
 fn build_runtime(args: &Args, config: VinputConfig) -> anyhow::Result<RuntimeState> {

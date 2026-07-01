@@ -170,9 +170,15 @@ fn assert_audio_devices_backend_shape(value: &serde_json::Value) {
     }
     if cfg!(feature = "pipewire-backend") {
         assert!(value["enumeration_error"].is_null() || value["enumeration_error"].is_string());
+        assert_eq!(value["recording"]["status"], "stream-unimplemented");
+        assert_eq!(value["recording"]["format"], "S16LE");
+        assert_eq!(value["recording"]["sample_rate_hz"], 16_000);
+        assert_eq!(value["recording"]["channels"], 1);
     } else {
         assert_eq!(value["enumeration_error"], serde_json::Value::Null);
+        assert_eq!(value["recording"]["status"], "feature-disabled");
     }
+    assert_eq!(value["recording"]["available"], false);
 }
 
 #[derive(Debug)]
@@ -405,6 +411,7 @@ fn audio_devices_reports_default_capture_target_and_unavailable_backend() {
     assert_eq!(value["ok"], true);
     assert_eq!(value["capture_device"], "default");
     assert_eq!(value["capture_target"]["kind"], "default");
+    assert_eq!(value["recording"]["target"], value["capture_target"]);
     assert_audio_devices_backend_shape(&value);
 }
 
@@ -439,6 +446,7 @@ fn audio_devices_preserves_configured_capture_target_object() {
     assert_eq!(value["capture_device"], "alsa_input.usb-mic");
     assert_eq!(value["capture_target"]["kind"], "object");
     assert_eq!(value["capture_target"]["value"], "alsa_input.usb-mic");
+    assert_eq!(value["recording"]["target"], value["capture_target"]);
     assert_audio_devices_backend_shape(&value);
 }
 
@@ -469,6 +477,8 @@ fn audio_devices_reports_pipewire_enumeration_error_without_failing() {
     let value = assert_json_success(output, "audio devices without PipeWire config");
     assert_eq!(value["ok"], true);
     assert_eq!(value["backend"], "pipewire");
+    assert_eq!(value["recording"]["status"], "stream-unimplemented");
+    assert_eq!(value["recording"]["format"], "S16LE");
     assert_eq!(value["live"], false);
     assert_eq!(value["devices"].as_array().unwrap().len(), 0);
     assert!(

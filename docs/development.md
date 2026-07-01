@@ -104,7 +104,7 @@ GitHub Actions runs `just ci`, then `just ime-configured-activation-smoke`, then
 
 `just pipewire-check` is safe for machines with PipeWire development libraries because it does not require a live PipeWire daemon and covers the audio crate plus CLI/daemon audio-device diagnostics with the optional feature enabled. `just pipewire-live` is intentionally excluded from `just ci`; it sets `VINPUT_TEST_PIPEWIRE_CONTEXT=1` and `VINPUT_TEST_PIPEWIRE_ENUMERATE=1` and should only be run on a desktop session where live PipeWire probes are expected to work.
 
-Long-running daemon sessions default to `--audio-backend mock`. Use `cargo run -p vinput-daemon --features pipewire-backend -- --dbus --audio-backend pipewire` only for explicit desktop capture work; the option selects the PipeWire recorder seam without changing CI or staged mock/configured demos.
+Long-running daemon sessions default to `--audio-backend mock`. Use `cargo run -p vinput-daemon --features pipewire-backend -- audio-devices` to inspect the configured PipeWire target and pinned `S16LE`/16 kHz/mono recording plan. Use `cargo run -p vinput-daemon --features pipewire-backend -- --dbus --audio-backend pipewire` only for explicit desktop capture work; the option selects the PipeWire recorder seam without changing CI or staged mock/configured demos.
 
 Before proposing a code change, prefer running:
 
