@@ -33,7 +33,7 @@ Normal trigger stops use the committed raw scene id `__raw__`; command-mode trig
 
 `include/vinput_fcitx_bridge/recognition_payload.h` and `src/recognition_payload.cpp` are pure C++ bridge-core code for parsing the legacy recognition payload and deciding whether the frontend should commit immediately or show a result candidate menu.
 
-Result candidate menus are built as Fcitx `CommonCandidateList` instances. The menu is labeled `Choose Result (N)`, selecting a candidate commits that candidate text, and cancel candidates only clear the menu/preedit state. Command-mode result commits and candidate selections first replace the current selected surrounding text so the command output edits the original selection instead of appending after it.
+Result candidate menus are built as Fcitx `CommonCandidateList` instances only when a payload carries multiple `llm` candidates. Raw/asr candidates and single-LLM payloads commit immediately through the default candidate. The menu is labeled `Choose Result (N)`, selecting a candidate commits that candidate text, and cancel candidates only clear the menu/preedit state. Command-mode result commits and candidate selections first replace the current selected surrounding text so the command output edits the original selection instead of appending after it.
 
 Empty stop payloads and cancel-only payloads are treated as explicit cleanup outcomes: they clear the recording preedit and any stale result menu without committing text.
 
