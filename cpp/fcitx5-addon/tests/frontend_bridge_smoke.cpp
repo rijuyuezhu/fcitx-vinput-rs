@@ -34,7 +34,7 @@ public:
     last_scene_id = std::string(scene_id);
     if (!stop_ok) {
       if (error) {
-        *error = "stop failed";
+        *error = stop_error;
       }
       return false;
     }
@@ -47,6 +47,7 @@ public:
   bool start_ok = true;
   bool stop_ok = true;
   std::string start_error;
+  std::string stop_error = "stop failed";
   std::string next_payload_json =
       R"({"commit_text":"mock recognition result","candidates":[{"text":"mock recognition result","source":"raw"}]})";
   int start_recording_calls = 0;
@@ -201,6 +202,22 @@ int main() {
 
   {
     FakeDaemonClient client;
+    client.stop_ok = false;
+    client.stop_error.clear();
+    FrontendBridge bridge;
+
+    assert(bridge.StartNormal(&client).kind == BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(&client, "empty-error-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Error);
+    assert(stop.text == "Voice input daemon is unavailable.");
+    assert(client.stop_calls == 1);
+    assert(client.last_scene_id == "empty-error-scene");
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
+  }
+
+  {
+    FakeDaemonClient client;
     FrontendBridge bridge;
 
     assert(bridge.StartCommand(&client, "selected text").kind ==
@@ -257,6 +274,18 @@ int main() {
     const auto start = bridge.StartNormal(&client);
     assert(start.kind == BridgeOutcome::Kind::Error);
     assert(start.text == "start failed");
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
+    client.start_ok = false;
+    FrontendBridge bridge;
+
+    const auto start = bridge.StartNormal(&client);
+    assert(start.kind == BridgeOutcome::Kind::Error);
+    assert(start.text == "Voice input daemon is unavailable.");
+    assert(client.start_recording_calls == 1);
     assert(!bridge.recording());
   }
 
