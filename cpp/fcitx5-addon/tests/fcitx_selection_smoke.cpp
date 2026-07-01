@@ -37,6 +37,14 @@ int main() {
   assert(utf8_range->offset == -2);
   assert(utf8_range->size == 2);
 
+  fcitx::SurroundingText backward_utf8;
+  backward_utf8.setText("ab你好", 2, 4);
+  assert(SelectedTextFromSurroundingText(backward_utf8) == "你好");
+  auto backward_utf8_range = SelectedTextDeletionRange(backward_utf8);
+  assert(backward_utf8_range.has_value());
+  assert(backward_utf8_range->offset == 0);
+  assert(backward_utf8_range->size == 2);
+
   fcitx::SurroundingText collapsed;
   collapsed.setText("nothing selected", 7, 7);
   assert(SelectedTextFromSurroundingText(collapsed).empty());
