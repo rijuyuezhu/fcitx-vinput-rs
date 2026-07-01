@@ -108,7 +108,7 @@ just ime-configured-install-smoke
 
 This staged install shape is the current local packaging spine for the input method: Fcitx loads `fcitx5-vinput.so`, the addon talks to `org.fcitx.Vinput`, and the D-Bus service activates `vinput-daemon --dbus` from the same install prefix. To activate configured command ASR/text backends from Fcitx, configure the addon CMake build with `-DVINPUT_DAEMON_ARGS="--dbus --configured-backends --config /path/to/config.json"`.
 
-Run `just addon-dbus-activation-smoke` to verify that a staged D-Bus service file can activate the Rust daemon for the C++ bridge client without manually starting `vinput-daemon` first. Run `just addon-dbus-configured-activation-smoke` to exercise the same activation path with `--configured-backends` and the command ASR demo config.
+Run `just addon-dbus-activation-smoke` to verify that a staged D-Bus service file can activate the Rust daemon for the C++ bridge client without manually starting `vinput-daemon` first. Run `just addon-dbus-configured-activation-smoke` to exercise the same activation path with `--configured-backends`, the command ASR demo config, and deterministic demo WAV input.
 
 Run the mock D-Bus service inside an existing session bus with:
 
@@ -116,7 +116,7 @@ Run the mock D-Bus service inside an existing session bus with:
 cargo run -p vinput-daemon -- --dbus
 ```
 
-The daemon now accepts `--audio-backend mock|pipewire` for long-running D-Bus sessions. `mock` remains the default for deterministic CI and staged demos. `pipewire` is feature-gated behind `--features pipewire-backend` and selects the live recorder seam for the next desktop-capture slice.
+The daemon accepts `--wav` or `--pcm16le` with `--dbus` for deterministic file-input service demos, and accepts `--audio-backend mock|pipewire` for long-running D-Bus sessions. `mock` remains the default for deterministic CI and staged demos. `pipewire` is feature-gated behind `--features pipewire-backend` and selects the live recorder seam for the next desktop-capture slice.
 
 ## Development route
 

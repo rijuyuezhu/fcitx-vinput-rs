@@ -70,6 +70,8 @@ enum AudioBackendArg {
     Pipewire,
 }
 
+const DEFAULT_FILE_AUDIO_FRAMES: usize = 4;
+
 /// One-shot utility commands useful while bootstrapping the daemon.
 #[derive(Debug, Subcommand)]
 enum Command {
@@ -94,8 +96,8 @@ async fn main() -> anyhow::Result<()> {
     if args.pcm16le.is_some() && args.wav.is_some() {
         bail!("--pcm16le and --wav cannot be used together");
     }
-    if (args.pcm16le.is_some() || args.wav.is_some()) && !args.once {
-        bail!("--pcm16le and --wav are only supported together with --once");
+    if (args.pcm16le.is_some() || args.wav.is_some()) && !(args.once || args.dbus) {
+        bail!("--pcm16le and --wav are only supported together with --once or --dbus");
     }
     config.validate().context("validate daemon config")?;
     if let Some(command) = &args.command {
@@ -317,7 +319,8 @@ fn wav_audio_source(path: &Path) -> anyhow::Result<MockAudioSource> {
 }
 
 fn file_audio_source(source_name: String, pcm: PcmBuffer) -> MockAudioSource {
-    MockAudioSource::once(CapturedAudio::named(pcm, source_name))
+    let frame = CapturedAudio::named(pcm, source_name);
+    MockAudioSource::from_frames(vec![frame; DEFAULT_FILE_AUDIO_FRAMES])
 }
 
 fn read_pcm16le(path: &Path, spec: PcmSpec) -> anyhow::Result<PcmBuffer> {
