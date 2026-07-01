@@ -48,7 +48,7 @@ just ci
 just smoke
 ```
 
-`just ci` mirrors the GitHub Actions checks, including the D-Bus integration feature lint.
+`just ci` mirrors the GitHub Actions checks, including C++ addon format/lint/test coverage and the D-Bus integration feature lint.
 
 Equivalent raw commands:
 
