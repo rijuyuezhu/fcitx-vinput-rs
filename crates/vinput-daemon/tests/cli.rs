@@ -968,6 +968,35 @@ fn once_runs_committed_e2e_demo_config_with_wav() {
     assert_eq!(value["commit_text"], "demo final: demo heard 8 bytes");
 }
 #[test]
+fn dbus_allows_wav_file_argument_for_service_runtime() {
+    let wav = TempBytes::write(
+        "dbus-service-wav",
+        "wav",
+        &wav_pcm16le_bytes(16_000, 1, &[1_000, -1_000, 2_000, -2_000]),
+    );
+    let wav_path = wav.path.to_string_lossy().into_owned();
+
+    let stderr = assert_failure_stderr(
+        run_daemon(
+            &["--wav", wav_path.as_str(), "print-config"],
+            "run vinput-daemon print-config with bare WAV file",
+        ),
+        "bare WAV file should be rejected",
+    );
+    assert!(stderr.contains("only supported together with --once or --dbus"));
+
+    let value = assert_json_success(
+        run_daemon_with_config(
+            e2e_demo_config_path(),
+            &["--dbus", "--wav", wav_path.as_str(), "print-config"],
+            "run vinput-daemon print-config with D-Bus WAV file",
+        ),
+        "D-Bus WAV argument should pass validation",
+    );
+    assert_eq!(value["version"], 1);
+}
+
+#[test]
 fn once_rejects_odd_pcm_file() {
     let pcm = TempBytes::write("odd-pcm", "pcm", &[0]);
     let pcm_path = pcm.path.to_string_lossy().into_owned();
@@ -1172,6 +1201,7 @@ fn help_lists_diagnostics_commands() {
     let stdout = assert_success_stdout(output, "help output");
     assert!(stdout.contains("--config"));
     assert!(stdout.contains("--configured-backends"));
+    assert!(stdout.contains("--audio-backend"));
     assert!(stdout.contains("--pcm16le"));
     assert!(stdout.contains("--wav"));
     assert!(stdout.contains("--pcm-sample-rate"));
