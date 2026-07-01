@@ -90,6 +90,9 @@ private:
         return output;
       }
       if (ch != '\\') {
+        if (ch < 0x20) {
+          return std::nullopt;
+        }
         output.push_back(static_cast<char>(ch));
         continue;
       }

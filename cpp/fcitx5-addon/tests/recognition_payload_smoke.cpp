@@ -135,6 +135,13 @@ int main() {
   }
 
   {
+    const auto payload =
+        ParseRecognitionPayload("{\"commit_text\":\"bad\ntext\",\"candidates\":[]}");
+    assert(payload.commit_text.empty());
+    assert(payload.candidates.empty());
+  }
+
+  {
     const auto payload = ParseRecognitionPayload("not json");
     assert(payload.commit_text.empty());
     assert(payload.candidates.empty());
