@@ -26,6 +26,7 @@ int main() {
     assert(payload.commit_text == "first");
     assert(payload.candidates.size() == 1);
     assert(payload.candidates[0].source == CandidateSource::Asr);
+    assert(!ShouldShowCandidateMenu(payload));
   }
 
   {
