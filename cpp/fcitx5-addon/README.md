@@ -13,11 +13,11 @@ The bridge owns only Fcitx API integration and user interaction:
 
 Command-mode starts require a non-empty selection. Empty selections return the local `Please select text first.` error outcome without connecting to the daemon.
 
-Backend logic must stay in Rust crates and `vinput-daemon`. The first E2E slice should call the daemon over the legacy D-Bus contract, then commit the mock or configured recognition result returned by `StopRecording`.
+Backend logic must stay in Rust crates and `vinput-daemon`. The E2E spine calls the daemon over the legacy D-Bus contract, then commits the mock or configured recognition result returned by `StopRecording`.
 
-## First slice
+## Current slice
 
-The initial bridge should intentionally avoid GUI, registry install, sherpa runtime, and full PipeWire work. The target flow is:
+The retained bridge intentionally avoids GUI, registry install, sherpa runtime, and full PipeWire work. The target flow is:
 
 ```text
 Fcitx trigger action
@@ -29,7 +29,7 @@ Fcitx trigger action
 
 Normal trigger stops use the committed raw scene id `__raw__`; command-mode trigger stops pass an empty scene id so the daemon keeps its command-mode default. `include/vinput_fcitx_bridge/scene_defaults.h` is the single C++ source of truth for these default ids and is shared by addon-facing code and D-Bus smoke tests.
 
-`include/vinput_fcitx_bridge/dbus_contract.h` mirrors `vinput-protocol::dbus` constants used by the C++ bridge. Keep it synchronized with focused tests before adding the actual addon implementation.
+`include/vinput_fcitx_bridge/dbus_contract.h` mirrors `vinput-protocol::dbus` constants used by the C++ bridge. Keep it synchronized with focused tests as the retained addon behavior evolves.
 
 `include/vinput_fcitx_bridge/recognition_payload.h` and `src/recognition_payload.cpp` are pure C++ bridge-core code for parsing the legacy recognition payload and deciding whether the frontend should commit immediately or show a result candidate menu.
 
