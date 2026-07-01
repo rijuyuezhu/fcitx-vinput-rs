@@ -9,7 +9,7 @@ pkg_check_modules(SYSTEMD REQUIRED libsystemd)
 find_package(Fcitx5Core QUIET)
 
 option(VINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS
-       "Probe Fcitx5 dependencies for the future addon module target" ON)
+       "Probe Fcitx5 dependencies for the retained addon module target" ON)
 option(VINPUT_FCITX_BRIDGE_ENABLE_TESTS
        "Build pure C++ bridge smoke tests" ON)
 option(VINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE
@@ -195,7 +195,7 @@ if(VINPUT_FCITX_BRIDGE_ENABLE_FCITX_DEPS)
 
   if(Fcitx5Core_FOUND AND Fcitx5ModuleDBus_FOUND AND
      Fcitx5ModuleClipboard_FOUND AND Fcitx5ModuleNotifications_FOUND)
-    message(STATUS "Fcitx5 addon dependencies found; future adapter sources can link module helpers")
+    message(STATUS "Fcitx5 addon dependencies found; retained addon sources can link module helpers")
   else()
     message(STATUS "Fcitx5 addon dependencies incomplete; building bridge core and sd-bus client only")
   endif()
