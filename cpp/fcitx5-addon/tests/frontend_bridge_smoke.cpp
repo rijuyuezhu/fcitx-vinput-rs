@@ -189,7 +189,7 @@ int main() {
 
     const auto start = bridge.StartNormal(nullptr);
     assert(start.kind == BridgeOutcome::Kind::Error);
-    assert(!start.text.empty());
+    assert(start.text == "Voice input daemon is unavailable.");
     assert(!bridge.recording());
   }
 
@@ -198,7 +198,7 @@ int main() {
 
     const auto start = bridge.StartCommand(nullptr, "selected text");
     assert(start.kind == BridgeOutcome::Kind::Error);
-    assert(!start.text.empty());
+    assert(start.text == "Voice input daemon is unavailable.");
     assert(!bridge.recording());
     assert(!bridge.command_mode());
   }
@@ -211,7 +211,7 @@ int main() {
            BridgeOutcome::Kind::Preedit);
     const auto stop = bridge.Stop(nullptr, "missing-client-scene");
     assert(stop.kind == BridgeOutcome::Kind::Error);
-    assert(!stop.text.empty());
+    assert(stop.text == "Voice input daemon is unavailable.");
     assert(client.stop_calls == 0);
     assert(!bridge.recording());
     assert(!bridge.command_mode());
