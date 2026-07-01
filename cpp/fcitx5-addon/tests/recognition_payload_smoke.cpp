@@ -45,6 +45,14 @@ int main() {
   }
 
   {
+    const auto plan = MakeCommitPlan(
+        R"({"commit_text":"polished","candidates":[{"text":"raw transcript","source":"raw"},{"text":"asr command","source":"asr"},{"text":"polished","source":"llm"}]})");
+    assert(plan.payload.commit_text == "polished");
+    assert(plan.payload.candidates.size() == 3);
+    assert(!plan.show_candidate_menu);
+  }
+
+  {
     const auto payload = ParseRecognitionPayload(
         R"({"commit_text":"fallback","candidates":[{"text":"fallback","source":"future"}]})");
     assert(payload.candidates.size() == 1);
