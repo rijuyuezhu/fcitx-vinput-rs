@@ -33,6 +33,20 @@ std::string ExpectedText(const char *env_name, const char *fallback) {
   return value == nullptr ? std::string(fallback) : std::string(value);
 }
 
+std::chrono::milliseconds RecordDelay() {
+  const char *value = std::getenv("VINPUT_DBUS_SMOKE_RECORD_MS");
+  if (value == nullptr) {
+    return std::chrono::milliseconds(0);
+  }
+  return std::chrono::milliseconds(std::atoi(value));
+}
+
+void WaitForRecording(std::chrono::milliseconds delay) {
+  if (delay.count() > 0) {
+    std::this_thread::sleep_for(delay);
+  }
+}
+
 } // namespace
 
 int main() {
@@ -43,12 +57,16 @@ int main() {
     return 1;
   }
 
+  const auto record_delay = RecordDelay();
+
   FrontendBridge normal_bridge;
   auto normal_start = normal_bridge.StartNormal(client.get());
   if (normal_start.kind != BridgeOutcome::Kind::Preedit) {
     std::cerr << "normal start failed: " << normal_start.text << '\n';
     return 1;
   }
+
+  WaitForRecording(record_delay);
 
   const auto expected_normal_text =
       ExpectedText("VINPUT_DBUS_SMOKE_EXPECTED_NORMAL", "mock recognition result");
@@ -72,6 +90,8 @@ int main() {
     std::cerr << "command start failed: " << command_start.text << '\n';
     return 1;
   }
+
+  WaitForRecording(record_delay);
 
   const auto expected_command_text = ExpectedText(
       "VINPUT_DBUS_SMOKE_EXPECTED_COMMAND", "mock command result for: selected text");

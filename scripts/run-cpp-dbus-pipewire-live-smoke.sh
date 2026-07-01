@@ -21,6 +21,7 @@ cleanup() {
 }
 trap cleanup EXIT
 sleep 0.5
+export VINPUT_DBUS_SMOKE_RECORD_MS=100
 
 for _ in $(seq 1 50); do
   if target/cpp/fcitx5-addon/vinput_fcitx_bridge_dbus_smoke; then
