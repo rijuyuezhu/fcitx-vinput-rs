@@ -55,7 +55,7 @@ A task is considered done only when it moves toward one of these acceptance chec
 4. Stopping recognition produces a legacy recognition payload.
 5. The Fcitx addon commits the final text and can show candidate/menu state when available.
 6. A deterministic dev path works without network credentials: command ASR helper plus command text adapter or mock backend.
-7. `just e2e-demo` remains green, and a future local Fcitx dev recipe should validate the installed product spine as far as CI/local desktop constraints allow.
+7. `just e2e-demo`, `just addon-dbus-smoke`, and `just addon-install-smoke` remain green so the backend demo, daemon D-Bus ABI, and staged Fcitx addon install shape stay locally verifiable within CI/desktop constraints.
 
 
 ## Implementation phases
