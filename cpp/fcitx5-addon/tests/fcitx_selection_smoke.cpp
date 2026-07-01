@@ -74,6 +74,20 @@ int main() {
   collapsed.setText("nothing selected", 7, 7);
   assert(SelectedTextFromSurroundingText(collapsed).empty());
   assert(!SelectedTextDeletionRange(collapsed).has_value());
+  fcitx::SurroundingText full_forward;
+  full_forward.setText("replace all", 11, 0);
+  assert(SelectedTextFromSurroundingText(full_forward) == "replace all");
+  auto full_forward_range = SelectedTextDeletionRange(full_forward);
+  assert(full_forward_range.has_value());
+  assert(full_forward_range->offset == -11);
+  assert(full_forward_range->size == 11);
 
+  fcitx::SurroundingText full_backward;
+  full_backward.setText("replace all", 0, 11);
+  assert(SelectedTextFromSurroundingText(full_backward) == "replace all");
+  auto full_backward_range = SelectedTextDeletionRange(full_backward);
+  assert(full_backward_range.has_value());
+  assert(full_backward_range->offset == 0);
+  assert(full_backward_range->size == 11);
   return 0;
 }
