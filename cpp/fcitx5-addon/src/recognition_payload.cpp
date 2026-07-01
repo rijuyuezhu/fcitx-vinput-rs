@@ -23,8 +23,7 @@ public:
     while (true) {
       skipSpace();
       if (consume('}')) {
-        normalize(&payload);
-        return payload;
+        return finishPayload(std::move(payload));
       }
 
       auto key = parseString();
@@ -52,8 +51,7 @@ public:
 
       skipSpace();
       if (consume('}')) {
-        normalize(&payload);
-        return payload;
+        return finishPayload(std::move(payload));
       }
       if (!consume(',')) {
         return {};
@@ -350,6 +348,15 @@ private:
       ++pos_;
     }
     return pos_ > start;
+  }
+
+  RecognitionPayload finishPayload(RecognitionPayload payload) {
+    skipSpace();
+    if (pos_ != input_.size()) {
+      return {};
+    }
+    normalize(&payload);
+    return payload;
   }
 
   static void normalize(RecognitionPayload *payload) {

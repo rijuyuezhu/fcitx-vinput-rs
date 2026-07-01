@@ -128,6 +128,13 @@ int main() {
   }
 
   {
+    const auto payload = ParseRecognitionPayload(
+        R"json({"commit_text":"kept","candidates":[]}) trailing)json");
+    assert(payload.commit_text.empty());
+    assert(payload.candidates.empty());
+  }
+
+  {
     const auto payload = ParseRecognitionPayload("not json");
     assert(payload.commit_text.empty());
     assert(payload.candidates.empty());
