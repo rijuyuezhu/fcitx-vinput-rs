@@ -235,6 +235,8 @@ fn development_doc_pins_optional_pipewire_recipes() {
         "intentionally excluded from `just ci`",
         "without live daemon",
         "CLI/daemon audio-device diagnostics",
+        "--record-ms 100",
+        "start/wait/stop smoke",
     ] {
         assert!(
             development.contains(required),
