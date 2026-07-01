@@ -30,4 +30,4 @@ grep -qx "Exec=${daemon_path} --dbus --configured-backends --config ${config_pat
 XDG_DATA_DIRS="${repo_root}/${stage_dir}/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
 VINPUT_DBUS_SMOKE_EXPECTED_NORMAL="demo heard 16 bytes" \
 VINPUT_DBUS_SMOKE_EXPECTED_COMMAND="demo final: demo heard 16 bytes" \
-  dbus-run-session -- "${smoke_bin}"
+  timeout 20s dbus-run-session -- "${smoke_bin}"

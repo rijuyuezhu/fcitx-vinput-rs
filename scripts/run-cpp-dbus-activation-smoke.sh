@@ -25,4 +25,4 @@ grep -qx "Name=org.fcitx.Vinput" "${service_file}"
 grep -qx "Exec=${daemon_path} --dbus" "${service_file}"
 
 XDG_DATA_DIRS="${repo_root}/${stage_dir}/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" \
-  dbus-run-session -- "${smoke_bin}"
+  timeout 20s dbus-run-session -- "${smoke_bin}"
