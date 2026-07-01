@@ -38,6 +38,14 @@ int main() {
   }
 
   {
+    const auto payload = ParseRecognitionPayload(
+        R"({"commit_text":"emoji \uD83D\uDE00","candidates":[]})");
+    assert(payload.commit_text == std::string("emoji \xF0\x9F\x98\x80"));
+    assert(payload.candidates.size() == 1);
+    assert(payload.candidates[0].text == std::string("emoji \xF0\x9F\x98\x80"));
+  }
+
+  {
     const auto plan = MakeCommitPlan(
         R"({"commit_text":"polished 1","candidates":[{"text":"raw transcript","source":"raw"},{"text":"polished 1","source":"llm"},{"text":"polished 2","source":"llm"}]})");
     assert(plan.payload.commit_text == "polished 1");
