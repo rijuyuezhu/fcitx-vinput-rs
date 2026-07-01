@@ -79,7 +79,7 @@ just dbus-lint    # clippy with dbus-integration feature
 just addon-format # format the C++ Fcitx bridge sources with clang-format
 just addon-format-check # check C++ Fcitx bridge formatting
 just addon-configure # configure the C++ Fcitx bridge CMake project
-just addon-build  # build the C++ bridge and optional Fcitx module target
+just addon-build  # build the C++ bridge core without requiring Fcitx desktop deps
 just addon-fcitx-build # require Fcitx5Core and build fcitx5-vinput.so
 just addon-install-smoke # stage-install fcitx5-vinput.so and verify vinput.conf metadata
 just addon-lint   # require Fcitx5Core and lint all C++ addon sources with clang-tidy
