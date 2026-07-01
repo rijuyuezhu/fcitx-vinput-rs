@@ -8,7 +8,7 @@
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
-    sync::mpsc,
+    sync::{Arc, Mutex, mpsc},
     thread,
     time::Duration,
 };
@@ -134,7 +134,7 @@ impl AudioDeviceEnumerator for PipeWireDeviceEnumerator {
 /// Feature-gated `PipeWire` recorder skeleton.
 pub struct PipeWireAudioRecorder {
     stream_config: PipeWireStreamConfig,
-    chunk_callback: Option<AudioChunkCallback>,
+    chunk_callback: Arc<Mutex<Option<AudioChunkCallback>>>,
     worker: Option<PipeWireRecordingWorker>,
 }
 
@@ -155,7 +155,7 @@ impl PipeWireAudioRecorder {
     pub fn new() -> Self {
         Self {
             stream_config: PipeWireStreamConfig::for_target(CaptureTarget::default()),
-            chunk_callback: None,
+            chunk_callback: Arc::new(Mutex::new(None)),
             worker: None,
         }
     }
@@ -186,11 +186,11 @@ impl AudioRecorder for PipeWireAudioRecorder {
         }
         self.stream_config = PipeWireStreamConfig::for_target(target);
         let config = self.stream_config.clone();
-        let callback = self.chunk_callback.take();
+        let callback = Arc::clone(&self.chunk_callback);
         let (stop_tx, stop_rx) = mpsc::channel();
         let (setup_tx, setup_rx) = mpsc::channel();
         let join =
-            thread::spawn(move || run_recording_worker(&config, callback, &stop_rx, &setup_tx));
+            thread::spawn(move || run_recording_worker(&config, &callback, &stop_rx, &setup_tx));
 
         match setup_rx.recv() {
             Ok(Ok(())) => {
@@ -211,7 +211,9 @@ impl AudioRecorder for PipeWireAudioRecorder {
     }
 
     fn set_chunk_callback(&mut self, callback: Option<AudioChunkCallback>) {
-        self.chunk_callback = callback;
+        if let Ok(mut installed) = self.chunk_callback.lock() {
+            *installed = callback;
+        }
     }
 
     fn stop_and_get_buffer(&mut self) -> Result<CapturedAudio, AudioError> {
@@ -286,7 +288,7 @@ fn stop_recording_worker(
 
 fn run_recording_worker(
     config: &PipeWireStreamConfig,
-    callback: Option<AudioChunkCallback>,
+    callback: &Arc<Mutex<Option<AudioChunkCallback>>>,
     stop_rx: &mpsc::Receiver<WorkerCommand>,
     setup_tx: &mpsc::Sender<Result<(), AudioError>>,
 ) -> Result<CapturedAudio, AudioError> {
@@ -303,7 +305,7 @@ fn run_recording_worker(
 
 fn run_recording_worker_inner(
     config: &PipeWireStreamConfig,
-    callback: Option<AudioChunkCallback>,
+    callback: &Arc<Mutex<Option<AudioChunkCallback>>>,
     stop_rx: &mpsc::Receiver<WorkerCommand>,
     setup_tx: &mpsc::Sender<Result<(), AudioError>>,
 ) -> Result<CapturedAudio, AudioError> {
@@ -330,9 +332,8 @@ fn run_recording_worker_inner(
     let stream = pipewire::stream::StreamBox::new(&core, "vinput-capture", props)
         .map_err(|error| pipewire_recording_error(config, error))?;
     let samples = Rc::new(RefCell::new(Vec::new()));
-    let callback = Rc::new(RefCell::new(callback));
     let samples_for_process = Rc::clone(&samples);
-    let callback_for_process = Rc::clone(&callback);
+    let callback_for_process = Arc::clone(callback);
     let pcm_spec = config.pcm_spec;
 
     let _listener = stream
@@ -390,7 +391,7 @@ fn capture_stream_buffer(
     stream: &pipewire::stream::Stream,
     pcm_spec: PcmSpec,
     samples: &Rc<RefCell<Vec<i16>>>,
-    callback: &Rc<RefCell<Option<AudioChunkCallback>>>,
+    callback: &Arc<Mutex<Option<AudioChunkCallback>>>,
 ) {
     let Some(mut buffer) = stream.dequeue_buffer() else {
         return;
@@ -418,7 +419,8 @@ fn capture_stream_buffer(
         return;
     }
     samples.borrow_mut().extend_from_slice(&chunk_samples);
-    if let Some(callback) = callback.borrow_mut().as_mut()
+    if let Ok(mut callback) = callback.lock()
+        && let Some(callback) = callback.as_mut()
         && let Ok(pcm) = PcmBuffer::with_spec(pcm_spec, chunk_samples)
     {
         callback(&pcm);
@@ -646,6 +648,32 @@ mod tests {
         assert!(!super::AudioRecorder::is_recording(&recorder));
         assert_eq!(captured.pcm.spec(), super::recording_pcm_spec());
         assert_eq!(captured.source_name.as_deref(), Some("pipewire:default"));
+    }
+
+    #[test]
+    fn pipewire_recorder_live_callback_survives_multiple_recordings_when_enabled() {
+        if !super::live_test_enabled(super::TEST_PIPEWIRE_RECORD_ENV) {
+            return;
+        }
+        let mut recorder = super::PipeWireAudioRecorder::new();
+        let callback_count = std::sync::Arc::new(std::sync::Mutex::new(0usize));
+        let callback_count_for_callback = std::sync::Arc::clone(&callback_count);
+        super::AudioRecorder::set_chunk_callback(
+            &mut recorder,
+            Some(Box::new(move |_chunk| {
+                *callback_count_for_callback.lock().unwrap() += 1;
+            })),
+        );
+
+        for _ in 0..2 {
+            super::AudioRecorder::begin_recording(&mut recorder, super::CaptureTarget::Default)
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let captured = super::AudioRecorder::stop_and_get_buffer(&mut recorder).unwrap();
+            assert_eq!(captured.pcm.spec(), super::recording_pcm_spec());
+        }
+
+        assert!(*callback_count.lock().unwrap() >= 2);
     }
 
     #[test]
