@@ -88,6 +88,7 @@ just addon-lint   # require Fcitx5Core and lint all C++ addon sources with clang
 just addon-test   # run CTest for the C++ Fcitx bridge core
 just addon-smoke  # addon-format-check plus addon-lint plus addon-test
 just addon-dbus-smoke # run C++ bridge against Rust daemon over DBus
+just addon-dbus-activation-smoke # verify DBus activation starts the Rust daemon for the C++ bridge
 just check        # fmt-check plus lint plus test plus dbus-test plus dbus-lint plus addon-test
 just ci           # alias for check
 just smoke        # CLI/daemon smoke commands
