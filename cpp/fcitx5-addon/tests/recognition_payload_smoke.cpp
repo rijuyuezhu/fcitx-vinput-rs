@@ -48,6 +48,21 @@ int main() {
   }
 
   {
+    const auto payload = ParseRecognitionPayload(
+        R"({"commit_text":"kept","debug":true,"score":-1.25e+2,"candidates":[]})");
+    assert(payload.commit_text == "kept");
+    assert(payload.candidates.size() == 1);
+    assert(payload.candidates[0].source == CandidateSource::Raw);
+  }
+
+  {
+    const auto payload = ParseRecognitionPayload(
+        R"({"commit_text":"bad","debug":bogus,"candidates":[]})");
+    assert(payload.commit_text.empty());
+    assert(payload.candidates.empty());
+  }
+
+  {
     const auto plan = MakeCommitPlan(
         R"({"commit_text":"polished 1","candidates":[{"text":"raw transcript","source":"raw"},{"text":"polished 1","source":"llm"},{"text":"polished 2","source":"llm"}]})");
     assert(plan.payload.commit_text == "polished 1");

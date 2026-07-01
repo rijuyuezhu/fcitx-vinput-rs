@@ -341,16 +341,66 @@ private:
 
   bool skipScalar() {
     skipSpace();
+    return consumeLiteral("true") || consumeLiteral("false") ||
+           consumeLiteral("null") || skipNumber();
+  }
+
+  bool consumeLiteral(std::string_view literal) {
+    if (input_.substr(pos_, literal.size()) != literal) {
+      return false;
+    }
+    pos_ += literal.size();
+    return true;
+  }
+
+  bool skipNumber() {
     const std::size_t start = pos_;
-    while (pos_ < input_.size()) {
-      const char ch = input_[pos_];
-      if (std::isspace(static_cast<unsigned char>(ch)) != 0 || ch == ',' || ch == ']' ||
-          ch == '}') {
-        break;
-      }
+    if (pos_ < input_.size() && input_[pos_] == '-') {
       ++pos_;
     }
-    return pos_ > start;
+    if (pos_ >= input_.size()) {
+      pos_ = start;
+      return false;
+    }
+    if (input_[pos_] == '0') {
+      ++pos_;
+    } else if (input_[pos_] >= '1' && input_[pos_] <= '9') {
+      while (pos_ < input_.size() &&
+             std::isdigit(static_cast<unsigned char>(input_[pos_])) != 0) {
+        ++pos_;
+      }
+    } else {
+      pos_ = start;
+      return false;
+    }
+    if (pos_ < input_.size() && input_[pos_] == '.') {
+      ++pos_;
+      const std::size_t fraction_start = pos_;
+      while (pos_ < input_.size() &&
+             std::isdigit(static_cast<unsigned char>(input_[pos_])) != 0) {
+        ++pos_;
+      }
+      if (pos_ == fraction_start) {
+        pos_ = start;
+        return false;
+      }
+    }
+    if (pos_ < input_.size() && (input_[pos_] == 'e' || input_[pos_] == 'E')) {
+      ++pos_;
+      if (pos_ < input_.size() && (input_[pos_] == '+' || input_[pos_] == '-')) {
+        ++pos_;
+      }
+      const std::size_t exponent_start = pos_;
+      while (pos_ < input_.size() &&
+             std::isdigit(static_cast<unsigned char>(input_[pos_])) != 0) {
+        ++pos_;
+      }
+      if (pos_ == exponent_start) {
+        pos_ = start;
+        return false;
+      }
+    }
+    return true;
   }
 
   RecognitionPayload finishPayload(RecognitionPayload payload) {
