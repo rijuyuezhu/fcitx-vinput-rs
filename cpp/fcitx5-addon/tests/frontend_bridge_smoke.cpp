@@ -186,6 +186,15 @@ int main() {
   }
 
   {
+    FrontendBridge bridge;
+
+    const auto stop = bridge.Stop(nullptr, "not-recording-missing-client-scene");
+    assert(stop.kind == BridgeOutcome::Kind::None);
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
+  }
+
+  {
     FakeDaemonClient client;
     client.stop_ok = false;
     FrontendBridge bridge;
