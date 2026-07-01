@@ -14,6 +14,8 @@ option(VINPUT_FCITX_BRIDGE_ENABLE_TESTS
        "Build pure C++ bridge smoke tests" ON)
 option(VINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE
        "Fail configure if Fcitx5Core is unavailable" OFF)
+option(VINPUT_FCITX_BRIDGE_INSTALL_DBUS_SERVICE
+       "Install the DBus activation service for the Rust daemon" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -67,7 +69,15 @@ target_compile_features(vinput_fcitx_bridge_sdbus PUBLIC cxx_std_20)
 set_target_properties(vinput_fcitx_bridge_sdbus PROPERTIES POSITION_INDEPENDENT_CODE ON)
 vinput_bridge_apply_warnings(vinput_fcitx_bridge_sdbus)
 
+set(VINPUT_DAEMON_EXECUTABLE
+    "${CMAKE_INSTALL_FULL_BINDIR}/vinput-daemon"
+    CACHE FILEPATH "Installed vinput-daemon executable used by DBus activation")
 configure_file(vinput-addon.conf.in vinput-addon.conf @ONLY)
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../data/org.fcitx.Vinput.service.in"
+  org.fcitx.Vinput.service
+  @ONLY
+)
 
 
 if(Fcitx5Core_FOUND)
@@ -181,6 +191,12 @@ if(Fcitx5Core_FOUND)
     DESTINATION "${VINPUT_FCITX_ADDON_INSTALL_DIR}"
     RENAME vinput.conf
   )
+  if(VINPUT_FCITX_BRIDGE_INSTALL_DBUS_SERVICE)
+    install(
+      FILES "${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Vinput.service"
+      DESTINATION "${CMAKE_INSTALL_DATADIR}/dbus-1/services"
+    )
+  endif()
 else()
   if(VINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE)
     message(FATAL_ERROR "Fcitx5Core is required for the addon module target")

@@ -55,7 +55,7 @@ just addon-install-smoke
 
 Run `just addon-dbus-smoke` to start the Rust daemon under `dbus-run-session` and exercise the C++ `SdBusDaemonClient` through the real legacy D-Bus ABI. The smoke covers both normal recording and command-mode recording with selected text, expecting the mock daemon to return `mock recognition result` and `mock command result for: selected text`.
 
-The CMake project also configures `vinput-addon.conf.in` and probes the legacy Fcitx addon dependencies (`Fcitx5Core`, `Fcitx5ModuleDBus`, `Fcitx5ModuleClipboard`, and `Fcitx5ModuleNotifications`) so the retained addon sources follow the original C++ project's module/install shape.
+The CMake project also configures `vinput-addon.conf.in`, configures the D-Bus activation service from `data/org.fcitx.Vinput.service.in`, and probes the legacy Fcitx addon dependencies (`Fcitx5Core`, `Fcitx5ModuleDBus`, `Fcitx5ModuleClipboard`, and `Fcitx5ModuleNotifications`) so the retained addon sources follow the original C++ project's module/install shape.
 
 ## Local daemon workflow
 
@@ -76,4 +76,4 @@ just e2e-demo
 
 `just addon-dbus-smoke` wraps a private `dbus-run-session` and verifies the retained C++ `SdBusDaemonClient` against the Rust daemon without requiring a live desktop. `just e2e-demo` remains the deterministic file-input command ASR/text demo for backend-only validation.
 
-For install-shape validation, use `just addon-install-smoke`; it stages the generated module and `vinput.conf` under `target/tmp/fcitx-addon-install-smoke` rather than installing into the host Fcitx prefix.
+For install-shape validation, use `just addon-install-smoke`; it stages the generated module, `vinput.conf`, and `org.fcitx.Vinput.service` under `target/tmp/fcitx-addon-install-smoke` rather than installing into the host Fcitx prefix. The activation service points at the installed Rust daemon as `vinput-daemon --dbus`, so a packaged addon trigger can activate the Rust backend without requiring the user to start it by hand first.

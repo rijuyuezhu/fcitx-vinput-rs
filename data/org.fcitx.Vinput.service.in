@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.fcitx.Vinput
+Exec=@VINPUT_DAEMON_EXECUTABLE@ --dbus
