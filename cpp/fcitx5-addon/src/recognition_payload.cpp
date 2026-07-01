@@ -348,11 +348,21 @@ private:
   }
 
   bool consumeLiteral(std::string_view literal) {
-    if (input_.substr(pos_, literal.size()) != literal) {
+    if (input_.substr(pos_, literal.size()) != literal ||
+        !isValueDelimiter(pos_ + literal.size())) {
       return false;
     }
     pos_ += literal.size();
     return true;
+  }
+
+  bool isValueDelimiter(std::size_t pos) const {
+    if (pos >= input_.size()) {
+      return true;
+    }
+    const auto ch = static_cast<unsigned char>(input_[pos]);
+    return std::isspace(ch) != 0 || input_[pos] == ',' || input_[pos] == ']' ||
+           input_[pos] == '}';
   }
 
   bool skipNumber() {
@@ -401,6 +411,10 @@ private:
         pos_ = start;
         return false;
       }
+    }
+    if (!isValueDelimiter(pos_)) {
+      pos_ = start;
+      return false;
     }
     return true;
   }
