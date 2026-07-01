@@ -75,7 +75,7 @@ AppliedOutcome FcitxVinputAddon::TriggerNormal(fcitx::InputContext *ic,
   }
 
   auto outcome = bridge_.recording() ? bridge_.Stop(client, scene_id)
-                                     : bridge_.StartNormal(client);
+                                     : bridge_.StartNormal(client, scene_id);
   return ApplyBridgeOutcome(ic, outcome);
 }
 
@@ -83,7 +83,8 @@ AppliedOutcome FcitxVinputAddon::TriggerCommand(fcitx::InputContext *ic,
                                                 std::string_view selected_text,
                                                 std::string_view scene_id) {
   if (!bridge_.recording() && selected_text.empty()) {
-    return ApplyBridgeOutcome(ic, bridge_.StartCommand(nullptr, selected_text));
+    return ApplyBridgeOutcome(ic,
+                              bridge_.StartCommand(nullptr, selected_text, scene_id));
   }
 
   std::string error;
@@ -92,8 +93,9 @@ AppliedOutcome FcitxVinputAddon::TriggerCommand(fcitx::InputContext *ic,
     return ApplyDaemonUnavailable(ic, std::move(error));
   }
 
-  auto outcome = bridge_.recording() ? bridge_.Stop(client, scene_id)
-                                     : bridge_.StartCommand(client, selected_text);
+  auto outcome = bridge_.recording()
+                     ? bridge_.Stop(client, scene_id)
+                     : bridge_.StartCommand(client, selected_text, scene_id);
   return ApplyBridgeOutcome(ic, outcome);
 }
 

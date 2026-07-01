@@ -3,6 +3,7 @@
 #include "vinput_fcitx_bridge/recognition_payload.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -31,7 +32,10 @@ struct BridgeOutcome {
 class FrontendBridge {
 public:
   BridgeOutcome StartNormal(DaemonClient *client);
+  BridgeOutcome StartNormal(DaemonClient *client, std::string_view scene_id);
   BridgeOutcome StartCommand(DaemonClient *client, std::string_view selected_text);
+  BridgeOutcome StartCommand(DaemonClient *client, std::string_view selected_text,
+                             std::string_view scene_id);
   BridgeOutcome Stop(DaemonClient *client, std::string_view scene_id);
   void Reset();
 
@@ -43,9 +47,16 @@ public:
   }
 
 private:
+  BridgeOutcome StartNormalWithScene(DaemonClient *client,
+                                     std::optional<std::string_view> scene_id);
+  BridgeOutcome StartCommandWithScene(DaemonClient *client,
+                                      std::string_view selected_text,
+                                      std::optional<std::string_view> scene_id);
+
   bool recording_ = false;
   bool command_mode_ = false;
   std::string selected_text_;
+  std::optional<std::string> active_scene_id_;
 };
 
 } // namespace vinput_fcitx_bridge

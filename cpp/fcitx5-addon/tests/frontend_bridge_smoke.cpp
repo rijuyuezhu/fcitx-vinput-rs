@@ -164,6 +164,33 @@ int main() {
 
   {
     FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    assert(
+        bridge.StartCommand(&client, "selected text", "started-command-scene").kind ==
+        BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(&client, "wrong-normal-stop-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Commit);
+    assert(stop.command_mode);
+    assert(client.last_scene_id == "started-command-scene");
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    assert(bridge.StartNormal(&client, "started-normal-scene").kind ==
+           BridgeOutcome::Kind::Preedit);
+    const auto stop = bridge.Stop(&client, "wrong-command-stop-scene");
+    assert(stop.kind == BridgeOutcome::Kind::Commit);
+    assert(!stop.command_mode);
+    assert(client.last_scene_id == "started-normal-scene");
+    assert(!bridge.recording());
+  }
+
+  {
+    FakeDaemonClient client;
     client.next_payload_json = R"({"candidates":[{"text":"","source":"cancel"}]})";
     FrontendBridge bridge;
 
