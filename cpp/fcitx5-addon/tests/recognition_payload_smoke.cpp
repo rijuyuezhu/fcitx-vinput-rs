@@ -71,6 +71,13 @@ int main() {
   }
 
   {
+    const auto payload =
+        ParseRecognitionPayload(R"({"commit_text":"bad","debug":01,"candidates":[]})");
+    assert(payload.commit_text.empty());
+    assert(payload.candidates.empty());
+  }
+
+  {
     const auto plan = MakeCommitPlan(
         R"({"commit_text":"polished 1","candidates":[{"text":"raw transcript","source":"raw"},{"text":"polished 1","source":"llm"},{"text":"polished 2","source":"llm"}]})");
     assert(plan.payload.commit_text == "polished 1");
