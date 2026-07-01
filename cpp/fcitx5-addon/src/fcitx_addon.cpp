@@ -18,6 +18,16 @@ std::string SelectedTextFromInputContext(fcitx::InputContext *ic) {
   return SelectedTextFromSurroundingText(ic->surroundingText());
 }
 
+void RequestSurroundingText(fcitx::Event &event) {
+  auto &ic_event = static_cast<fcitx::InputContextEvent &>(event);
+  auto *ic = ic_event.inputContext();
+  if (ic == nullptr) {
+    return;
+  }
+  ic->setCapabilityFlags(ic->capabilityFlags() |
+                         fcitx::CapabilityFlag::SurroundingText);
+}
+
 } // namespace
 
 FcitxVinputAddon::FcitxVinputAddon(fcitx::Instance *instance) : instance_(instance) {
@@ -26,6 +36,9 @@ FcitxVinputAddon::FcitxVinputAddon(fcitx::Instance *instance) : instance_(instan
         instance_->watchEvent(fcitx::EventType::InputContextKeyEvent,
                               fcitx::EventWatcherPhase::PostInputMethod,
                               [this](fcitx::Event &event) { HandleKeyEvent(event); }));
+    event_handlers_.emplace_back(instance_->watchEvent(
+        fcitx::EventType::InputContextCreated, fcitx::EventWatcherPhase::PreInputMethod,
+        RequestSurroundingText));
   }
 }
 

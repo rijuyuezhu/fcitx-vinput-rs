@@ -6,7 +6,7 @@ The bridge owns only Fcitx API integration and user interaction:
 
 - addon registration and metadata;
 - trigger key handling: `Control_R` release for normal recording and `F10` release for command-mode recording;
-- command-mode selection capture via `InputContext::surroundingText().selectedText()`;
+- requesting `SurroundingText` capability for input contexts and capturing command-mode selections via `InputContext::surroundingText().selectedText()`;
 - a small D-Bus client wrapper over the Rust daemon ABI;
 - minimal preedit/status/candidate presentation;
 - committing final recognition text to Fcitx.
