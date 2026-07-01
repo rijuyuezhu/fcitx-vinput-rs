@@ -49,7 +49,7 @@ int main() {
 
   {
     const auto payload = ParseRecognitionPayload(
-        R"({"commit_text":"kept","debug":true,"score":-1.25e+2,"candidates":[]})");
+        R"({"commit_text":"kept","debug":true,"disabled":false,"optional":null,"score":-1.25e+2,"candidates":[]})");
     assert(payload.commit_text == "kept");
     assert(payload.candidates.size() == 1);
     assert(payload.candidates[0].source == CandidateSource::Raw);
