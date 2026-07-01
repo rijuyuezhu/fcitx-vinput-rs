@@ -69,6 +69,24 @@ int main() {
   assert(asr_candidates->candidateFromAll(0).comment().toString() == "ASR");
 #endif
 
+  RecognitionPayload mixed_payload;
+  mixed_payload.commit_text = "second polished";
+  mixed_payload.candidates = {
+      Candidate{"raw transcript", CandidateSource::Raw},
+      Candidate{"asr transcript", CandidateSource::Asr},
+      Candidate{"first polished", CandidateSource::Llm},
+      Candidate{"second polished", CandidateSource::Llm},
+  };
+  auto mixed_candidates = BuildResultCandidateList(mixed_payload);
+  assert(mixed_candidates != nullptr);
+  assert(mixed_candidates->globalCursorIndex() == 3);
+#ifdef VINPUT_FCITX5_CORE_HAVE_CANDIDATE_COMMENT
+  assert(mixed_candidates->candidateFromAll(0).comment().toString() == "ASR raw");
+  assert(mixed_candidates->candidateFromAll(1).comment().toString() == "ASR");
+  assert(mixed_candidates->candidateFromAll(2).comment().toString() == "LLM 1");
+  assert(mixed_candidates->candidateFromAll(3).comment().toString() == "LLM 2");
+#endif
+
   RecognitionPayload missing_commit_payload;
   missing_commit_payload.commit_text = "not present";
   missing_commit_payload.candidates = {
