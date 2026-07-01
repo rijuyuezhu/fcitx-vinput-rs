@@ -255,7 +255,7 @@ fn target_architecture_pins_frontend_packaging_boundary() {
         .expect("read target architecture doc");
 
     for required in [
-        "retained C++ Fcitx5 skeleton frontend",
+        "retained C++ Fcitx5 frontend bridge",
         "existing `vinput-protocol` D-Bus ABI",
         "Fcitx API integration, menus, preedit/status presentation",
         "selected-text collection",

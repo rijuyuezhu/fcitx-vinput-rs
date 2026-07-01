@@ -86,7 +86,7 @@ See `docs/migration/e2e-port-plan.md` for the active Rust-vs-legacy gap list and
 
 ## Frontend and packaging boundary
 
-T6 uses a retained C++ Fcitx5 skeleton frontend that talks to the Rust daemon over the existing `vinput-protocol` D-Bus ABI. The skeleton owns Fcitx API integration, menus, preedit/status presentation, selected-text collection, command-mode selected-text replacement, and frontend-side cleanup. Backend logic, ASR/text processing, registry operations, and runtime state must stay in Rust crates and the daemon.
+T6 uses a retained C++ Fcitx5 frontend bridge that talks to the Rust daemon over the existing `vinput-protocol` D-Bus ABI. The bridge owns Fcitx API integration, menus, preedit/status presentation, selected-text collection, command-mode selected-text replacement, and frontend-side cleanup. Backend logic, ASR/text processing, registry operations, and runtime state must stay in Rust crates and the daemon.
 
 Do not replace the Fcitx5 addon with a Rust addon until mature Rust bindings and deployment integration have been verified separately. Packaging/service install artifacts remain future work and must not be hidden inside daemon, registry, or frontend logic.
 
