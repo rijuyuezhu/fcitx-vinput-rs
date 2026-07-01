@@ -229,10 +229,12 @@ fn development_doc_pins_optional_pipewire_recipes() {
     for required in [
         "just pipewire-check",
         "just pipewire-live",
+        "just addon-dbus-pipewire-live",
         "VINPUT_TEST_PIPEWIRE_CONTEXT=1",
         "VINPUT_TEST_PIPEWIRE_ENUMERATE=1",
         "VINPUT_TEST_PIPEWIRE_RECORD=1",
         "intentionally excluded from `just ci`",
+        "C++ bridge plus Rust daemon D-Bus path",
         "without live daemon",
         "CLI/daemon audio-device diagnostics",
         "--record-ms 100",

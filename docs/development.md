@@ -88,6 +88,7 @@ just addon-lint   # require Fcitx5Core and lint all C++ addon sources with clang
 just addon-test   # run CTest for the C++ Fcitx bridge core
 just addon-smoke  # addon-format-check plus addon-lint plus addon-test
 just addon-dbus-smoke # run C++ bridge against Rust daemon over DBus
+just addon-dbus-pipewire-live # run C++ bridge over DBus with the live PipeWire recorder
 just addon-dbus-activation-smoke # verify DBus activation starts the Rust daemon for the C++ bridge
 just addon-dbus-configured-activation-smoke # verify DBus activation starts configured command backends
 just ime-configured-activation-smoke # verify staged daemon/addon/config/WAV activate together
@@ -102,7 +103,7 @@ just dbus         # run the mock/configured legacy D-Bus service on the current 
 
 GitHub Actions runs `just ci`, then `just ime-configured-activation-smoke`, then `just pipewire-check`, so the staged daemon/addon/config/WAV activation path is covered remotely as well as locally.
 
-`just pipewire-check` is safe for machines with PipeWire development libraries because it does not require a live PipeWire daemon and covers the audio crate plus CLI/daemon audio-device diagnostics with the optional feature enabled. `just pipewire-live` is intentionally excluded from `just ci`; it sets `VINPUT_TEST_PIPEWIRE_CONTEXT=1`, `VINPUT_TEST_PIPEWIRE_ENUMERATE=1`, and `VINPUT_TEST_PIPEWIRE_RECORD=1`, and should only be run on a desktop session where live PipeWire probes are expected to work.
+`just pipewire-check` is safe for machines with PipeWire development libraries because it does not require a live PipeWire daemon and covers the audio crate plus CLI/daemon audio-device diagnostics with the optional feature enabled. `just pipewire-live` and `just addon-dbus-pipewire-live` are intentionally excluded from `just ci`; they should only be run on a desktop session where live PipeWire probes are expected to work. `just pipewire-live` sets `VINPUT_TEST_PIPEWIRE_CONTEXT=1`, `VINPUT_TEST_PIPEWIRE_ENUMERATE=1`, and `VINPUT_TEST_PIPEWIRE_RECORD=1`; `just addon-dbus-pipewire-live` adds the C++ bridge plus Rust daemon D-Bus path on top of the live recorder worker.
 
 Long-running daemon sessions default to `--audio-backend mock`. Use `cargo run -p vinput-daemon --features pipewire-backend -- audio-devices` to inspect the configured PipeWire target and pinned `S16LE`/16 kHz/mono recording plan. Use `cargo run -p vinput-daemon --features pipewire-backend -- --once --audio-backend pipewire --record-ms 100` for an explicit local start/wait/stop smoke, and use `cargo run -p vinput-daemon --features pipewire-backend -- --dbus --audio-backend pipewire` only for desktop D-Bus capture work. Both commands select the live PipeWire recorder worker without changing CI or staged mock/configured demos.
 
