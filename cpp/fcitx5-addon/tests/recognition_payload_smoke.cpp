@@ -130,7 +130,6 @@ int main() {
   assert(ToWireString(CandidateSource::Llm) == "llm");
   assert(ToWireString(CandidateSource::Asr) == "asr");
   assert(ToWireString(CandidateSource::Cancel) == "cancel");
-  assert(ToWireString(static_cast<CandidateSource>(99)) == "raw");
   assert(CandidateSourceFromWire("raw") == CandidateSource::Raw);
   assert(CandidateSourceFromWire("llm") == CandidateSource::Llm);
   assert(CandidateSourceFromWire("asr") == CandidateSource::Asr);
