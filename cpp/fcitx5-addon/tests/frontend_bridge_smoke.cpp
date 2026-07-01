@@ -169,6 +169,22 @@ int main() {
   }
 
   {
+    FakeDaemonClient client;
+    FrontendBridge bridge;
+
+    assert(bridge.StartCommand(&client, "selected text").kind ==
+           BridgeOutcome::Kind::Preedit);
+    assert(bridge.recording());
+    assert(bridge.command_mode());
+    bridge.Reset();
+    assert(!bridge.recording());
+    assert(!bridge.command_mode());
+    const auto stop = bridge.Stop(&client, "after-reset-scene");
+    assert(stop.kind == BridgeOutcome::Kind::None);
+    assert(client.stop_calls == 0);
+  }
+
+  {
     FrontendBridge bridge;
 
     const auto start = bridge.StartNormal(nullptr);
