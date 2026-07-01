@@ -79,15 +79,17 @@ ime-install-smoke: addon-fcitx-build
 ime-configured-install-smoke:
     cargo build -p vinput-daemon
     rm -rf target/cpp/fcitx5-addon-fcitx-configured target/tmp/fcitx-ime-configured-install-smoke
-    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon-fcitx-configured -DCMAKE_BUILD_TYPE=Debug -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON -DVINPUT_DAEMON_ARGS='--dbus --configured-backends --config /usr/local/share/fcitx-vinput/e2e-command-demo-config.json'
+    cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon-fcitx-configured -DCMAKE_BUILD_TYPE=Debug -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON -DVINPUT_DAEMON_ARGS='--dbus --configured-backends --config /usr/local/share/fcitx-vinput/e2e-command-demo-config.json --wav /usr/local/share/fcitx-vinput/e2e-command-demo.wav'
     cmake --build target/cpp/fcitx5-addon-fcitx-configured --target fcitx5_vinput_addon --parallel
     install -Dm755 target/debug/vinput-daemon target/tmp/fcitx-ime-configured-install-smoke/usr/local/bin/vinput-daemon
     install -Dm644 data/e2e-command-demo-config.json target/tmp/fcitx-ime-configured-install-smoke/usr/local/share/fcitx-vinput/e2e-command-demo-config.json
+    python3 scripts/write-demo-wav.py target/tmp/fcitx-ime-configured-install-smoke/usr/local/share/fcitx-vinput/e2e-command-demo.wav
     cmake --install target/cpp/fcitx5-addon-fcitx-configured --prefix target/tmp/fcitx-ime-configured-install-smoke
     test -x target/tmp/fcitx-ime-configured-install-smoke/usr/local/bin/vinput-daemon
     test -f target/tmp/fcitx-ime-configured-install-smoke/usr/local/share/fcitx-vinput/e2e-command-demo-config.json
+    test -f target/tmp/fcitx-ime-configured-install-smoke/usr/local/share/fcitx-vinput/e2e-command-demo.wav
     test -f target/tmp/fcitx-ime-configured-install-smoke/usr/local/lib/fcitx5/fcitx5-vinput.so
-    grep -qx 'Exec=/usr/local/bin/vinput-daemon --dbus --configured-backends --config /usr/local/share/fcitx-vinput/e2e-command-demo-config.json' target/tmp/fcitx-ime-configured-install-smoke/share/dbus-1/services/org.fcitx.Vinput.service
+    grep -qx 'Exec=/usr/local/bin/vinput-daemon --dbus --configured-backends --config /usr/local/share/fcitx-vinput/e2e-command-demo-config.json --wav /usr/local/share/fcitx-vinput/e2e-command-demo.wav' target/tmp/fcitx-ime-configured-install-smoke/share/dbus-1/services/org.fcitx.Vinput.service
 
 addon-lint:
     cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON

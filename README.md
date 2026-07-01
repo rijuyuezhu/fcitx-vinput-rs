@@ -104,7 +104,7 @@ just ime-install-smoke
 just ime-configured-install-smoke
 ```
 
-`just ime-configured-install-smoke` additionally stages `data/e2e-command-demo-config.json` and wires D-Bus activation to `vinput-daemon --dbus --configured-backends --config /usr/local/share/fcitx-vinput/e2e-command-demo-config.json`.
+`just ime-configured-install-smoke` additionally stages `data/e2e-command-demo-config.json` plus a deterministic demo WAV, and wires D-Bus activation to `vinput-daemon --dbus --configured-backends --config /usr/local/share/fcitx-vinput/e2e-command-demo-config.json --wav /usr/local/share/fcitx-vinput/e2e-command-demo.wav`.
 
 This staged install shape is the current local packaging spine for the input method: Fcitx loads `fcitx5-vinput.so`, the addon talks to `org.fcitx.Vinput`, and the D-Bus service activates `vinput-daemon --dbus` from the same install prefix. To activate configured command ASR/text backends from Fcitx, configure the addon CMake build with `-DVINPUT_DAEMON_ARGS="--dbus --configured-backends --config /path/to/config.json"`.
 
