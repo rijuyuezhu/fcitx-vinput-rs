@@ -63,6 +63,18 @@ addon-install-smoke: addon-fcitx-build
     grep -qx 'Name=org.fcitx.Vinput' target/tmp/fcitx-addon-install-smoke/share/dbus-1/services/org.fcitx.Vinput.service
     grep -qx 'Exec=/usr/local/bin/vinput-daemon --dbus' target/tmp/fcitx-addon-install-smoke/share/dbus-1/services/org.fcitx.Vinput.service
 
+# Stage the Rust daemon, Fcitx addon, metadata, and DBus activation service together.
+ime-install-smoke: addon-fcitx-build
+    cargo build -p vinput-daemon
+    rm -rf target/tmp/fcitx-ime-install-smoke
+    install -Dm755 target/debug/vinput-daemon target/tmp/fcitx-ime-install-smoke/usr/local/bin/vinput-daemon
+    cmake --install target/cpp/fcitx5-addon-fcitx --prefix target/tmp/fcitx-ime-install-smoke
+    test -x target/tmp/fcitx-ime-install-smoke/usr/local/bin/vinput-daemon
+    test -f target/tmp/fcitx-ime-install-smoke/usr/local/lib/fcitx5/fcitx5-vinput.so
+    test -f target/tmp/fcitx-ime-install-smoke/usr/local/share/fcitx5/addon/vinput.conf
+    test -f target/tmp/fcitx-ime-install-smoke/share/dbus-1/services/org.fcitx.Vinput.service
+    grep -qx 'Exec=/usr/local/bin/vinput-daemon --dbus' target/tmp/fcitx-ime-install-smoke/share/dbus-1/services/org.fcitx.Vinput.service
+
 addon-lint:
     cmake -S cpp/fcitx5-addon -B target/cpp/fcitx5-addon -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DVINPUT_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
     ln -sfn target/cpp/fcitx5-addon/compile_commands.json compile_commands.json

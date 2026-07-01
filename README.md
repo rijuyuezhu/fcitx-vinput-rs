@@ -97,6 +97,14 @@ just e2e-demo
 
 The recipe generates `target/tmp/vinput-demo.wav`, then runs `vinput-daemon --configured-backends --once --wav` with `data/e2e-command-demo-config.json`. This exercises the current product spine end to end: WAV input, command ASR, command text adapter, and final recognition JSON. The demo ASR reports the input byte count instead of performing real speech recognition, which keeps the path deterministic until the concrete ASR backend lands.
 
+Stage the Rust daemon, Fcitx addon module, addon metadata, and D-Bus activation service together with:
+
+```sh
+just ime-install-smoke
+```
+
+This staged install shape is the current local packaging spine for the input method: Fcitx loads `fcitx5-vinput.so`, the addon talks to `org.fcitx.Vinput`, and the D-Bus service activates `vinput-daemon --dbus` from the same install prefix.
+
 Run the mock D-Bus service inside an existing session bus with:
 
 ```sh
