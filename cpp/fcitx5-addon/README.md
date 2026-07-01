@@ -27,7 +27,7 @@ Fcitx trigger action
   -> commit payload.commit_text or show candidates when needed
 ```
 
-Normal trigger stops use the committed raw scene id `__raw__`; command-mode trigger stops pass an empty scene id so the daemon keeps its command-mode default.
+Normal trigger stops use the committed raw scene id `__raw__`; command-mode trigger stops pass an empty scene id so the daemon keeps its command-mode default. `include/vinput_fcitx_bridge/scene_defaults.h` is the single C++ source of truth for these default ids and is shared by addon-facing code and D-Bus smoke tests.
 
 `include/vinput_fcitx_bridge/dbus_contract.h` mirrors `vinput-protocol::dbus` constants used by the C++ bridge. Keep it synchronized with focused tests before adding the actual addon implementation.
 
