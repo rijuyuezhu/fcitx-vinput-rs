@@ -89,5 +89,26 @@ int main() {
   assert(selected_candidates[1].text.empty());
   assert(selected_candidates[1].source == CandidateSource::Cancel);
 
+  RecognitionPayload paged_payload;
+  paged_payload.commit_text = "choice 6";
+  paged_payload.candidates = {
+      Candidate{"choice 1", CandidateSource::Llm},
+      Candidate{"choice 2", CandidateSource::Llm},
+      Candidate{"choice 3", CandidateSource::Llm},
+      Candidate{"choice 4", CandidateSource::Llm},
+      Candidate{"choice 5", CandidateSource::Llm},
+      Candidate{"choice 6", CandidateSource::Llm},
+  };
+  auto paged_candidates = BuildResultCandidateList(paged_payload);
+  assert(paged_candidates != nullptr);
+  assert(ResultCandidateMenuTitle(paged_candidates->totalSize()) ==
+         "Choose Result (6)");
+  assert(paged_candidates->totalSize() == 6);
+  assert(paged_candidates->size() == 5);
+  assert(paged_candidates->pageSize() == 5);
+  assert(paged_candidates->layoutHint() == fcitx::CandidateLayoutHint::Vertical);
+  assert(paged_candidates->globalCursorIndex() == 5);
+  assert(paged_candidates->candidateFromAll(5).text().toString() == "choice 6");
+
   return 0;
 }
