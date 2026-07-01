@@ -24,6 +24,10 @@ struct Args {
     #[arg(long)]
     selected_text: Option<String>,
 
+    /// Milliseconds to keep recording before stopping in `--once` mode.
+    #[arg(long, default_value_t = 0)]
+    record_ms: u64,
+
     /// Serve the legacy D-Bus ABI on the session bus.
     #[arg(long)]
     dbus: bool,
@@ -99,6 +103,9 @@ async fn main() -> anyhow::Result<()> {
     if (args.pcm16le.is_some() || args.wav.is_some()) && !(args.once || args.dbus) {
         bail!("--pcm16le and --wav are only supported together with --once or --dbus");
     }
+    if args.record_ms > 0 && !args.once {
+        bail!("--record-ms is only supported together with --once");
+    }
     config.validate().context("validate daemon config")?;
     if let Some(command) = &args.command {
         match command {
@@ -136,6 +143,9 @@ async fn main() -> anyhow::Result<()> {
             runtime.start_command_recording(selected_text)?;
         } else {
             runtime.start_recording()?;
+        }
+        if args.record_ms > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(args.record_ms)).await;
         }
         if let Some(partial) = runtime.partial_text() {
             info!(partial, "mock partial recognition");

@@ -1059,6 +1059,30 @@ fn dbus_allows_wav_file_argument_for_service_runtime() {
 }
 
 #[test]
+fn record_ms_requires_once_mode() {
+    let stderr = assert_failure_stderr(
+        run_daemon(
+            &["--record-ms", "1", "print-config"],
+            "run vinput-daemon print-config with record delay",
+        ),
+        "record delay without once should be rejected",
+    );
+    assert!(stderr.contains("--record-ms is only supported together with --once"));
+}
+
+#[test]
+fn once_accepts_record_ms_delay() {
+    let value = assert_json_success(
+        run_daemon(
+            &["--once", "--record-ms", "1"],
+            "run vinput-daemon --once with record delay",
+        ),
+        "recognition payload",
+    );
+    assert_eq!(value["commit_text"], "mock recognition result");
+}
+
+#[test]
 fn once_rejects_odd_pcm_file() {
     let pcm = TempBytes::write("odd-pcm", "pcm", &[0]);
     let pcm_path = pcm.path.to_string_lossy().into_owned();
@@ -1264,6 +1288,7 @@ fn help_lists_diagnostics_commands() {
     assert!(stdout.contains("--config"));
     assert!(stdout.contains("--configured-backends"));
     assert!(stdout.contains("--audio-backend"));
+    assert!(stdout.contains("--record-ms"));
     assert!(stdout.contains("--pcm16le"));
     assert!(stdout.contains("--wav"));
     assert!(stdout.contains("--pcm-sample-rate"));
