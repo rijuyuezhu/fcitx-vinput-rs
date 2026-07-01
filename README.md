@@ -108,7 +108,7 @@ just ime-configured-install-smoke
 
 This staged install shape is the current local packaging spine for the input method: Fcitx loads `fcitx5-vinput.so`, the addon talks to `org.fcitx.Vinput`, and the D-Bus service activates `vinput-daemon --dbus` from the same install prefix. To activate configured command ASR/text backends from Fcitx, configure the addon CMake build with `-DVINPUT_DAEMON_ARGS="--dbus --configured-backends --config /path/to/config.json"`.
 
-Run `just addon-dbus-activation-smoke` to verify that a staged D-Bus service file can activate the Rust daemon for the C++ bridge client without manually starting `vinput-daemon` first. Run `just addon-dbus-configured-activation-smoke` to exercise the same activation path with `--configured-backends`, the command ASR demo config, and deterministic demo WAV input.
+Run `just addon-dbus-activation-smoke` to verify that a staged D-Bus service file can activate the Rust daemon for the C++ bridge client without manually starting `vinput-daemon` first. Run `just addon-dbus-configured-activation-smoke` to exercise the same activation path with `--configured-backends`, the command ASR demo config, and deterministic demo WAV input. Run `just ime-configured-activation-smoke` to repeat the configured activation path from a staged install tree containing the daemon, addon, config, and demo WAV.
 
 Run the mock D-Bus service inside an existing session bus with:
 

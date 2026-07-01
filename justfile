@@ -159,3 +159,6 @@ e2e-demo:
 # Run the mock legacy D-Bus service on the current session bus.
 dbus:
     cargo run -p vinput-daemon -- --dbus
+
+ime-configured-activation-smoke:
+    scripts/run-ime-configured-activation-smoke.sh
