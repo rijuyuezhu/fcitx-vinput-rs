@@ -66,7 +66,7 @@ struct Args {
 enum AudioBackendArg {
     /// Deterministic mock PCM source used by CI and non-desktop checks.
     Mock,
-    /// Live PipeWire recorder. Requires the `pipewire-backend` Cargo feature.
+    /// Live `PipeWire` recorder. Requires the `pipewire-backend` Cargo feature.
     Pipewire,
 }
 
@@ -268,23 +268,23 @@ fn build_runtime(args: &Args, config: VinputConfig) -> anyhow::Result<RuntimeSta
     }
 }
 
+#[cfg_attr(feature = "pipewire-backend", allow(clippy::unnecessary_wraps))]
 fn selected_audio_recorder(args: &Args) -> anyhow::Result<Option<Box<dyn AudioRecorder>>> {
     match args.audio_backend {
         AudioBackendArg::Mock => Ok(None),
-        AudioBackendArg::Pipewire => pipewire_audio_recorder().map(Some),
+        AudioBackendArg::Pipewire => {
+            #[cfg(feature = "pipewire-backend")]
+            {
+                Ok(Some(Box::new(
+                    vinput_audio::pipewire_backend::PipeWireAudioRecorder::new(),
+                )))
+            }
+            #[cfg(not(feature = "pipewire-backend"))]
+            {
+                bail!("--audio-backend pipewire requires the pipewire-backend Cargo feature")
+            }
+        }
     }
-}
-
-#[cfg(feature = "pipewire-backend")]
-fn pipewire_audio_recorder() -> anyhow::Result<Box<dyn AudioRecorder>> {
-    Ok(Box::new(
-        vinput_audio::pipewire_backend::PipeWireAudioRecorder::new(),
-    ))
-}
-
-#[cfg(not(feature = "pipewire-backend"))]
-fn pipewire_audio_recorder() -> anyhow::Result<Box<dyn AudioRecorder>> {
-    bail!("--audio-backend pipewire requires the pipewire-backend Cargo feature")
 }
 
 fn input_audio_source(args: &Args) -> anyhow::Result<Option<MockAudioSource>> {
