@@ -149,7 +149,7 @@ pipewire-check:
 
 # Run explicit local PipeWire probes. Requires a live user PipeWire session.
 pipewire-live:
-    VINPUT_TEST_PIPEWIRE_CONTEXT=1 VINPUT_TEST_PIPEWIRE_ENUMERATE=1 cargo test -p vinput-audio --features pipewire-backend pipewire_ -- --nocapture
+    VINPUT_TEST_PIPEWIRE_CONTEXT=1 VINPUT_TEST_PIPEWIRE_ENUMERATE=1 VINPUT_TEST_PIPEWIRE_RECORD=1 cargo test -p vinput-audio --features pipewire-backend pipewire_ -- --nocapture
 
 # Run a deterministic file-input E2E demo through command ASR and text adapter.
 e2e-demo:

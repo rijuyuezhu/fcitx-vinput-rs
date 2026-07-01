@@ -239,8 +239,8 @@ fn capture_target_json(target: &CaptureTarget) -> serde_json::Value {
 fn recording_summary(target: &CaptureTarget) -> serde_json::Value {
     let config = vinput_audio::pipewire_backend::PipeWireStreamConfig::for_target(target.clone());
     serde_json::json!({
-        "available": false,
-        "status": "stream-unimplemented",
+        "available": true,
+        "status": "live-worker",
         "target": capture_target_json(&config.target),
         "format": config.format,
         "sample_rate_hz": config.pcm_spec.sample_rate_hz,
