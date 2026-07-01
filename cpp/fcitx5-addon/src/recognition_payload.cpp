@@ -141,6 +141,9 @@ private:
       return std::nullopt;
     }
 
+    if (*high >= 0xDC00 && *high <= 0xDFFF) {
+      return std::nullopt;
+    }
     if (*high < 0xD800 || *high > 0xDBFF) {
       return high;
     }
