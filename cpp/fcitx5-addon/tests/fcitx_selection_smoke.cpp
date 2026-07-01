@@ -29,6 +29,22 @@ int main() {
   assert(backward_range->offset == 0);
   assert(backward_range->size == 8);
 
+  fcitx::SurroundingText middle_forward;
+  middle_forward.setText("left middle right", 11, 5);
+  assert(SelectedTextFromSurroundingText(middle_forward) == "middle");
+  auto middle_forward_range = SelectedTextDeletionRange(middle_forward);
+  assert(middle_forward_range.has_value());
+  assert(middle_forward_range->offset == -6);
+  assert(middle_forward_range->size == 6);
+
+  fcitx::SurroundingText middle_backward;
+  middle_backward.setText("left middle right", 5, 11);
+  assert(SelectedTextFromSurroundingText(middle_backward) == "middle");
+  auto middle_backward_range = SelectedTextDeletionRange(middle_backward);
+  assert(middle_backward_range.has_value());
+  assert(middle_backward_range->offset == 0);
+  assert(middle_backward_range->size == 6);
+
   fcitx::SurroundingText utf8;
   utf8.setText("你好abc", 2, 0);
   assert(SelectedTextFromSurroundingText(utf8) == "你好");
