@@ -27,6 +27,8 @@ int main() {
 
   fcitx::KeyEvent command_release(nullptr, fcitx::Key(FcitxKey_F10), true);
   assert(policy.IsCommandTrigger(command_release));
+  fcitx::KeyEvent command_press(nullptr, fcitx::Key(FcitxKey_F10), false);
+  assert(!policy.IsCommandTrigger(command_press));
   assert(!policy.IsCommandTrigger(control_release));
 
   const FcitxKeyTriggerPolicy shift_policy{fcitx::Key(FcitxKey_Shift_R),
