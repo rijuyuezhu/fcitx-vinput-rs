@@ -1,43 +1,19 @@
 # Installation
 
-Vinpst is preparing its first `0.1.0` release. Public release packages are not available yet, so ordinary users should not install files produced under `target/` or copied from CI test fixtures.
-
-## Supported identity and paths
-
-Vinpst uses its own names throughout:
-
-- package: `fcitx-vinpst`;
-- commands: `vinpst`, `vinpst-daemon`, and `vinpst-gui`;
-- Fcitx addon: `vinpst` / `fcitx5-vinpst.so`;
-- D-Bus service: `org.fcitx.Vinpst`;
-- systemd user service: `vinpst-daemon.service`;
-- configuration root: `${XDG_CONFIG_HOME:-$HOME/.config}/fcitx-vinpst`;
-- data root: `${XDG_DATA_HOME:-$HOME/.local/share}/fcitx-vinpst`;
-- cache root: `${XDG_CACHE_HOME:-$HOME/.cache}/fcitx-vinpst`.
-
-Vinpst does not replace or migrate another voice-input package. Do not rename its installed files or configuration directories to match another project.
+Vinpst is preparing its first `0.1.0` release. Public release packages are not published yet, so files under `target/` and CI fixtures are not end-user packages.
 
 ## Release packages
 
-The current `0.1.0` release workflow selects an Arch Linux x86_64 package, Debian 12 and Ubuntu 24.04 amd64 packages, and an x86_64 Flatpak extension bundle. These artifacts are still pre-release: the repository is validating the complete workflow before publishing them. RPM and Nix remain validated build paths rather than selected public artifacts.
+The first release is being prepared for:
 
-When release artifacts are published, download the complete checked release directory rather than an isolated package. From that directory, verify every listed file before installation:
+- Arch Linux x86_64;
+- Debian 12 amd64;
+- Ubuntu 24.04 amd64;
+- an x86_64 Flatpak extension preview for `org.fcitx.Fcitx5//stable`.
 
-```sh
-sha256sum -c SHA256SUMS
-```
-
-The checksum file detects corruption or mismatched artifacts. The release workflow also creates signed GitHub/Sigstore provenance attestations for every asset. Verify a downloaded artifact against the release workflow identity with:
-
-```sh
-gh attestation verify ./fcitx-vinpst-0.1.0.tar.gz \
-  --repo rijuyuezhu/fcitx-vinpst \
-  --signer-workflow rijuyuezhu/fcitx-vinpst/.github/workflows/release.yml
-```
+When those artifacts are published, install the package built for your distribution.
 
 ### Arch Linux
-
-Install the native x86_64 package with pacman:
 
 ```sh
 sudo pacman -U ./fcitx-vinpst-0.1.0-1-x86_64.pkg.tar.zst
@@ -45,55 +21,42 @@ sudo pacman -U ./fcitx-vinpst-0.1.0-1-x86_64.pkg.tar.zst
 
 ### Debian 12
 
-Install the Debian 12 amd64 package with APT so dependencies are resolved:
-
 ```sh
 sudo apt install ./fcitx-vinpst_0.1.0-1_debian12_amd64.deb
 ```
 
 ### Ubuntu 24.04
 
-Install the Ubuntu 24.04 amd64 package with APT:
-
 ```sh
 sudo apt install ./fcitx-vinpst_0.1.0-1_ubuntu24.04_amd64.deb
 ```
 
-### Flatpak extension preview
+### Flatpak preview
 
-The Flatpak artifact extends `org.fcitx.Fcitx5//stable`; it does not attach to a system-installed Fcitx. Check that the matching Fcitx Flatpak is installed before installing the bundle:
+The Flatpak build extends the Fcitx Flatpak; it does not attach to a system-installed Fcitx.
 
 ```sh
 flatpak info --user org.fcitx.Fcitx5
 flatpak install --user --bundle ./fcitx-vinpst-0.1.0-x86_64.flatpak
 ```
 
-The Flatpak path remains a preview until host-session Fcitx discovery, PipeWire capture, service lifecycle, and GUI interaction are validated on an unrelated desktop. System Fcitx users should use the native package for their distribution.
+If you use the system Fcitx package, prefer the native Vinpst package for your distribution.
 
-Do not use a package produced for another distribution merely because it contains Linux binaries. After native package installation, continue with [Quick start](quick-start.md).
+## Development checkout
 
-## Development checkout installation
+Use this only when intentionally testing or developing the current source tree.
 
-This is a contributor and early-testing path, not the final end-user installation method.
+You need Rust 1.88 or newer, Cargo, CMake, a C++ compiler, Fcitx 5 development files, PipeWire development files, gettext, and `just`.
 
-Required build tools include Rust 1.88 or newer, `cargo`, CMake, a C++ compiler, Fcitx 5 development files, PipeWire development files, gettext, and `just`. Exact package names vary by distribution.
-
-Build the Rust workspace and real Fcitx addon:
+Build and install for the current user:
 
 ```sh
 just build
 just addon-fcitx-build
-```
-
-Install the current checkout into the active user's XDG/Fcitx directories:
-
-```sh
 just install-user
 ```
 
-The installer prints the exact files it writes and the commands required to restart the daemon and Fcitx. It does not install a system package.
-
-Remove that per-user checkout installation with:
+The installer prints the files it writes and the commands needed to refresh the current session. Remove this per-user installation with:
 
 ```sh
 just user-remove
@@ -101,7 +64,7 @@ just user-remove
 
 ## After installation
 
-Initialize user state, start the daemon, and reload Fcitx:
+Initialize the user configuration, start the daemon, and reload Fcitx:
 
 ```sh
 vinpst init
@@ -109,14 +72,12 @@ systemctl --user enable --now vinpst-daemon.service
 fcitx5 -r
 ```
 
-Then follow [Quick start](quick-start.md) to install an ASR model and verify the setup.
+Then follow the [Quick start](quick-start.md) to install a model and try dictation.
 
-## Uninstalling a release package
+## Uninstall
 
-Before removing a release package, finish any active recording and stop the user service:
+Finish any active recording and remove Vinpst through the same package manager that installed it. Package removal stops the daemon safely but keeps your configuration, downloaded models, provider/adapter scripts, hotwords, and caches.
 
-```sh
-vinpst daemon prepare-remove
-```
+Delete those user files manually only when you intentionally want to discard all Vinpst state.
 
-Remove the package through the package manager that installed it. Package removal must not delete user configuration, downloaded models, provider scripts, adapter scripts, hotword files, or caches. Remove those directories manually only when you intentionally want to discard all Vinpst user state.
+For release integrity/provenance details and maintainer procedures, see the **Development → Publishing and rollback** documentation rather than the normal installation guide.

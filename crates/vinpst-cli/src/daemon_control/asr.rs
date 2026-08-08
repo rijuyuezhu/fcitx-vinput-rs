@@ -1,4 +1,4 @@
-use super::status::{DaemonAsrBackendStateTuple, empty_as_dash};
+use super::status::DaemonAsrBackendStateTuple;
 use super::{Context, daemon_owner_probe_plan_json, daemon_service_proxy, dbus};
 
 pub(super) fn print_daemon_reload_asr_plan(dry_run: bool, json_output: bool) -> anyhow::Result<()> {
@@ -10,25 +10,31 @@ pub(super) fn print_daemon_reload_asr_plan(dry_run: bool, json_output: bool) -> 
     let output = daemon_reload_asr_output(dry_run, asr_state.as_ref());
     if json_output {
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
-        println!("dry_run: {dry_run}");
-        println!("will_call_dbus: {}", !dry_run);
-        println!("called: {}", !dry_run);
-        println!("service: {}", dbus::SERVICE_BUS_NAME);
-        println!("object_path: {}", dbus::SERVICE_OBJECT_PATH);
-        println!("interface: {}", dbus::SERVICE_INTERFACE);
-        println!("method: {}", dbus::method::RELOAD_ASR_BACKEND);
-        if let Some(asr) = asr_state {
-            println!("reload_in_progress: {}", asr.5);
-            println!("target_provider_id: {}", empty_as_dash(&asr.0));
-            println!("target_model_id: {}", empty_as_dash(&asr.1));
-            println!("effective_provider_id: {}", empty_as_dash(&asr.2));
-            println!("effective_model_id: {}", empty_as_dash(&asr.3));
-            println!("last_error: {}", empty_as_dash(&asr.4));
+    } else if dry_run {
+        println!("Would reload the selected ASR backend.");
+        println!("No daemon will be contacted.");
+    } else if let Some(asr) = asr_state {
+        if asr.6 {
+            println!("ASR backend reloaded: {}", display_value(&asr.2));
+            if !asr.3.is_empty() {
+                println!("Model: {}", asr.3);
+            }
+        } else {
+            println!("ASR backend reload completed, but no backend is ready.");
         }
-        println!("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline");
+        if !asr.4.is_empty() {
+            println!("ASR error: {}", asr.4);
+        }
     }
     Ok(())
+}
+
+fn display_value(value: &str) -> &str {
+    if value.is_empty() {
+        "not selected"
+    } else {
+        value
+    }
 }
 
 fn daemon_reload_asr_output(

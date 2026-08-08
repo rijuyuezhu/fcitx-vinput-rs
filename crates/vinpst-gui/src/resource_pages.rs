@@ -11,14 +11,19 @@ use vinpst_registry::InstalledModelInfo;
 
 use crate::{
     App, GuiLocale, GuiText, Message, model_is_active, model_is_selected_by_active_provider,
-    model_management::{ModelCatalogState, RegistryModelSummary},
+    model_management::{
+        ModelCatalogState, RegistryModelSummary, active_provider_can_use_managed_models,
+    },
     script_management::{managed_adapter_script_path, managed_provider_script_path},
 };
 
 impl App {
     pub(super) fn resources_page(&self) -> Element<'_, Message> {
         let busy = self.is_busy();
-        let resource_controls_busy = busy || self.asr_provider_editor.is_some();
+        let resource_controls_busy = busy
+            || self.asr_provider_editor.is_some()
+            || self.adapter_config_editor.is_some()
+            || self.ensure_no_unsaved_config_draft().is_err();
         let mut body = column![
             text(self.locale.text(GuiText::Resources)).size(30),
             text(self.locale.text(GuiText::ManagedAsrModels)).size(22),
@@ -40,27 +45,33 @@ impl App {
             self.available_models_view(resource_controls_busy),
             text(self.locale.text(GuiText::ManagedCommandAsrProviders)).size(22),
             self.provider_install_controls(resource_controls_busy),
-            text_input(
-                self.locale.text(GuiText::FilterProvidersAndScenes),
-                &self.filter
-            )
-            .on_input(Message::FilterChanged),
+            text(self.locale.text(GuiText::ManagedTextAdapters)).size(22),
+            self.adapter_install_controls(resource_controls_busy),
         ]
         .spacing(12);
         if let Some(notice) = self.operation_notice() {
             body = body.push(notice);
         }
-        body = body.push(self.configured_asr_resources_view(busy, resource_controls_busy));
         scrollable(body).into()
     }
 
     fn installed_models_view(&self, busy: bool) -> Element<'_, Message> {
         let mut body = column![].spacing(12);
+        let can_select_model = self
+            .config
+            .as_ref()
+            .is_ok_and(|document| active_provider_can_use_managed_models(&document.config));
         match &self.installed_models {
             Ok(models) if models.is_empty() => {
                 body = body.push(text(self.locale.text(GuiText::NoManagedModelsInstalled)));
             }
             Ok(models) => {
+                if self.config.is_ok() && !can_select_model {
+                    body = body.push(text(
+                        self.locale
+                            .text(GuiText::SelectLocalProviderForManagedModel),
+                    ));
+                }
                 for model in models {
                     let (selected, referenced) =
                         self.config.as_ref().map_or((false, false), |document| {
@@ -76,13 +87,20 @@ impl App {
                         self.locale,
                         model,
                         selected,
-                        referenced,
-                        busy,
+                        !busy && can_select_model && !selected,
+                        !busy && !referenced,
                     ));
                 }
             }
-            Err(error) => {
-                body = body.push(text(self.locale.installed_model_scan_failed(error)));
+            Err(_) => {
+                body = body.push(
+                    row![
+                        text(self.locale.text(GuiText::CatalogUnavailable)),
+                        keyboard_button(self.locale.text(GuiText::Retry))
+                            .on_press_maybe((!busy).then_some(Message::RefreshInstalledModels)),
+                    ]
+                    .spacing(10),
+                );
             }
         }
         body.into()
@@ -93,8 +111,8 @@ impl App {
             ModelCatalogState::Loading => {
                 text(self.locale.text(GuiText::LoadingModelCatalog)).into()
             }
-            ModelCatalogState::Failed(error) => column![
-                text(error),
+            ModelCatalogState::Failed(_) => column![
+                text(self.locale.text(GuiText::CatalogUnavailable)),
                 keyboard_button(self.locale.text(GuiText::RefreshCatalog))
                     .on_press_maybe((!busy).then_some(Message::RefreshModelCatalog)),
             ]
@@ -125,11 +143,10 @@ impl App {
         }
     }
 
-    fn configured_asr_resources_view(
-        &self,
-        busy: bool,
-        resource_controls_busy: bool,
-    ) -> Element<'_, Message> {
+    pub(super) fn configured_asr_providers_view(&self, busy: bool) -> Element<'_, Message> {
+        let provider_controls_busy = busy
+            || self.asr_provider_editor.is_some()
+            || self.ensure_no_unsaved_config_draft().is_err();
         let mut body = column![].spacing(12);
         match &self.config {
             Ok(document) => {
@@ -139,13 +156,12 @@ impl App {
                             .size(22)
                             .width(Length::Fill),
                         keyboard_button(self.locale.text(GuiText::AddCustomProvider))
-                            .on_press_maybe((!resource_controls_busy).then_some(
+                            .on_press_maybe((!provider_controls_busy).then_some(
                                 Message::AsrProvider(crate::AsrProviderMessage::BeginAdd,)
                             ),),
                     ]
                     .spacing(10),
                 );
-                let filter = self.filter.to_ascii_lowercase();
                 for provider in &document.config.asr.providers {
                     let kind = self.locale.text(match provider.kind {
                         AsrProviderKind::Local => GuiText::Local,
@@ -156,17 +172,22 @@ impl App {
                         .model
                         .as_deref()
                         .unwrap_or_else(|| self.locale.text(GuiText::UnselectedModel));
-                    let label = format!("{} · {kind} · {model}", provider.id);
-                    if !label.to_ascii_lowercase().contains(&filter) {
-                        continue;
-                    }
                     let active = provider.id == document.config.asr.active_provider;
+                    let label = if active {
+                        format!(
+                            "{} · {kind} · {model} · {}",
+                            provider.id,
+                            self.locale.text(GuiText::Active)
+                        )
+                    } else {
+                        format!("{} · {kind} · {model}", provider.id)
+                    };
                     let managed = managed_provider_script_path(provider).is_some();
                     body = body.push(provider_row(
                         self.locale,
                         label,
                         &provider.id,
-                        resource_controls_busy,
+                        provider_controls_busy,
                         managed,
                         active,
                     ));
@@ -174,7 +195,6 @@ impl App {
                 if let Some(editor) = self.asr_provider_editor_view(busy) {
                     body = body.push(editor);
                 }
-                body = body.push(self.scene_management_view(resource_controls_busy));
             }
             Err(error) => body = body.push(text(self.locale.config_error(error))),
         }
@@ -185,12 +205,7 @@ impl App {
         let busy = self.is_busy();
         let adapter_controls_busy =
             busy || self.llm_provider_editor.is_some() || self.adapter_config_editor.is_some();
-        let mut body = column![
-            text(self.locale.text(GuiText::Llm)).size(30),
-            text(self.locale.text(GuiText::ManagedTextAdapters)).size(22),
-            self.adapter_install_controls(adapter_controls_busy),
-        ]
-        .spacing(12);
+        let mut body = column![text(self.locale.text(GuiText::Llm)).size(30)].spacing(12);
         if let Some(notice) = self.operation_notice() {
             body = body.push(notice);
         }
@@ -229,6 +244,14 @@ impl App {
                 if document.config.llm.adapters.is_empty() {
                     body = body.push(text(self.locale.text(GuiText::NoTextAdaptersConfigured)));
                 }
+                body = body.push(
+                    text_input(
+                        self.locale.text(GuiText::FilterProvidersAndScenes),
+                        &self.filter,
+                    )
+                    .on_input(Message::FilterChanged),
+                );
+                body = body.push(self.scene_management_view(adapter_controls_busy));
             }
             Err(error) => body = body.push(text(self.locale.config_error(error))),
         }
@@ -304,7 +327,12 @@ fn registry_model_row(
     }
     details = details.push(text(metadata));
 
-    let action = keyboard_button(locale.text(GuiText::InstallOrUpdate)).on_press_maybe(
+    let action = keyboard_button(locale.text(if installed {
+        GuiText::Update
+    } else {
+        GuiText::Install
+    }))
+    .on_press_maybe(
         (!busy && model.supported)
             .then(|| Message::InstallRegistryModel(model.selector().to_owned())),
     );
@@ -340,8 +368,8 @@ fn installed_model_row(
     locale: GuiLocale,
     model: &InstalledModelInfo,
     selected: bool,
-    referenced: bool,
-    busy: bool,
+    use_enabled: bool,
+    remove_enabled: bool,
 ) -> Element<'static, Message> {
     let locale_code = locale.code().to_owned();
     let title = model
@@ -358,12 +386,11 @@ fn installed_model_row(
         keyboard_button(locale.text(GuiText::Details))
             .on_press(Message::SelectInstalledModelDetail(model.model_dir.clone())),
         keyboard_button(locale.text(GuiText::Use)).on_press_maybe(
-            (!busy && !selected).then_some(Message::UseInstalledModel(model.model_dir.clone())),
+            use_enabled.then_some(Message::UseInstalledModel(model.model_dir.clone())),
         ),
-        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe(
-            (!busy && !referenced)
-                .then_some(Message::RemoveInstalledModel(model.model_dir.clone())),
-        ),
+        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe(remove_enabled.then_some(
+            Message::RequestRemoveInstalledModel(model.model_dir.clone())
+        ),),
     ]
     .spacing(10)
     .into()
@@ -387,15 +414,15 @@ fn provider_row(
         keyboard_button(locale.text(GuiText::EditScript)).on_press_maybe(
             (!busy && managed).then_some(Message::EditProviderScript(provider_id.to_owned())),
         ),
-        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe((!busy && !active).then(
-            || {
-                if managed {
-                    Message::RemoveProvider(provider_id.to_owned())
-                } else {
-                    Message::AsrProvider(crate::AsrProviderMessage::Remove(provider_id.to_owned()))
-                }
+        keyboard_button(locale.text(GuiText::Use)).on_press_maybe(
+            (!busy && !active).then_some(Message::UseAsrProvider(provider_id.to_owned())),
+        ),
+        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe((!busy && !active).then_some(
+            Message::RequestRemoveAsrProvider {
+                id: provider_id.to_owned(),
+                managed,
             }
-        )),
+        ),),
     ]
     .spacing(10)
     .into()
@@ -429,13 +456,12 @@ fn adapter_row(
                 crate::AdapterRuntimeMessage::Stop(stop_id),
             )),
         ),
-        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe((!busy).then(|| {
-            if managed {
-                Message::RemoveAdapter(adapter_id.to_owned())
-            } else {
-                Message::AdapterConfig(crate::AdapterConfigMessage::Remove(adapter_id.to_owned()))
+        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe((!busy).then_some(
+            Message::RequestRemoveTextAdapter {
+                id: adapter_id.to_owned(),
+                managed,
             }
-        })),
+        ),),
     ]
     .spacing(10)
     .into()

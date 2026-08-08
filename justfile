@@ -2,11 +2,11 @@ set dotenv-load := false
 
 # Format Rust and the retained Fcitx C++ boundary.
 fmt:
-    scripts/tests/format.sh
+    scripts/tools/format.sh
 
 # Verify formatting without changing files.
 fmt-check:
-    scripts/tests/format.sh --check
+    scripts/tools/format.sh --check
 
 # Run Rust, C++, shell, and Python static analysis.
 lint:
@@ -30,7 +30,7 @@ build:
 
 # Build the user and developer documentation site strictly.
 docs:
-    scripts/tests/docs-build.sh
+    scripts/tools/docs-build.sh
 
 # Serve the documentation site for local preview.
 docs-serve:

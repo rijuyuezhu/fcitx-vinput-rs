@@ -135,7 +135,12 @@ impl VinpstDbusService {
             .object_server()
             .at(dbus::SERVICE_OBJECT_PATH, self.clone())
             .await?;
-        connection.request_name(dbus::SERVICE_BUS_NAME).await?;
+        connection
+            .request_name_with_flags(
+                dbus::SERVICE_BUS_NAME,
+                zbus::fdo::RequestNameFlags::DoNotQueue.into(),
+            )
+            .await?;
         Ok(connection)
     }
 

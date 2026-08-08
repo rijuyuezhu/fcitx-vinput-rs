@@ -10,7 +10,7 @@ pub(crate) enum ConfigCommand {
         /// Path to a config JSON file.
         path: PathBuf,
         /// Explicitly print only summary fields.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         summary_only: bool,
     },
     /// Read a config value by JSON pointer.
@@ -59,6 +59,7 @@ pub(crate) enum ConfigCommand {
         json: bool,
     },
     /// Open a config in an editor, then validate and write it back safely.
+    #[command(alias = "e")]
     Edit {
         /// Optional config JSON file. Omitted to edit the user config, or create it from the bundled default.
         #[arg(long)]
@@ -74,6 +75,7 @@ pub(crate) enum ConfigCommand {
         json: bool,
     },
     /// Print, list, or write a bundled example config JSON file.
+    #[command(hide = true)]
     Example {
         /// Example config to export. Omit with --list to show available examples.
         #[arg(value_enum, required_unless_present = "list")]

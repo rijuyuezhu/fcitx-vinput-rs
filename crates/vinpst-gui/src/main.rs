@@ -38,6 +38,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if offline && !check {
         return Err("--offline requires --check".into());
     }
+    if config.is_some() && !check {
+        return Err("--config requires --check".into());
+    }
     if check {
         if page != Page::Control {
             return Err("--page cannot be combined with --check".into());
@@ -65,15 +68,12 @@ fn parse_page(value: &str) -> Result<Page, Box<dyn std::error::Error>> {
 }
 
 fn print_help() {
-    println!("Vinpst Rust management GUI");
+    println!("Vinpst management application");
     println!();
     println!("Usage: vinpst-gui [OPTIONS]");
     println!();
     println!("Options:");
     println!("  --page <PAGE>    Open control, resources, llm, or hotwords");
-    println!("  --config <PATH>  Read an explicit config for --check");
-    println!("  --check          Print a redacted GUI/config/daemon snapshot and exit");
-    println!("  --offline        Skip D-Bus probing during --check");
     println!("  -V, --version    Print version");
     println!("  -h, --help       Print help");
 }

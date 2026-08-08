@@ -48,7 +48,6 @@ Then run `vinpst doctor`. It checks common addon metadata and library locations.
 
 ```sh
 vinpst doctor
-vinpst asr-state
 vinpst model list --installed
 vinpst provider list
 ```
@@ -65,7 +64,6 @@ If a new provider fails to load, the previous working provider should remain act
 
 ```sh
 vinpst device list
-vinpst audio-devices
 ```
 
 Select another target and restart the daemon:

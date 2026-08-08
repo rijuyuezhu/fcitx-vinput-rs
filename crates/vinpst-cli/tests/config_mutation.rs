@@ -307,9 +307,19 @@ fn config_set_string_flag_text_reports_force_string() {
         .expect("run vinpst config set --string dry-run text");
 
     let stdout = assert_stdout_success(output, "config set --string dry-run text");
-    assert!(stdout.contains("force_string: true"));
-    assert!(stdout.contains("parsed_value_kind: string"));
-    assert!(stdout.contains("after: true"));
+    assert!(stdout.contains("Would update config `/global/capture_device`."));
+    for internal in [
+        "force_string:",
+        "parsed_value_kind:",
+        "before:",
+        "after:",
+        "dry_run:",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal config detail: {internal}"
+        );
+    }
 }
 
 #[test]

@@ -89,25 +89,20 @@ fn load_device_list_context(config_path: Option<&PathBuf>) -> anyhow::Result<Dev
     })
 }
 
-fn print_device_list_text(config_path: Option<&PathBuf>, source: &str, audio: &serde_json::Value) {
-    println!("source: {source}");
-    if let Some(path) = config_path {
-        println!("config_path: {}", path.display());
-    }
-    println!(
-        "capture_device: {}",
-        audio["capture_device"].as_str().unwrap_or("")
-    );
-    println!(
-        "backend: {}",
-        audio["backend"].as_str().unwrap_or("unknown")
-    );
-    println!("live: {}", audio["live"].as_bool().unwrap_or(false));
+fn print_device_list_text(
+    _config_path: Option<&PathBuf>,
+    _source: &str,
+    audio: &serde_json::Value,
+) {
+    let selected = audio["capture_device"].as_str().unwrap_or("default");
     if let Some(error) = audio["enumeration_error"].as_str() {
-        println!("enumeration_error: {error}");
+        println!("Live device discovery unavailable: {error}");
     }
-    println!("target\tid\tname\tdescription");
-    println!("default\t-\tdefault\tDefault capture source");
+    println!("TARGET\tID\tNAME\tDESCRIPTION\tSTATUS");
+    println!(
+        "default\t-\tdefault\tDefault capture source\t{}",
+        if selected == "default" { "active" } else { "" }
+    );
     if let Some(devices) = audio["devices"].as_array() {
         for device in devices {
             let id = device["id"]
@@ -115,7 +110,10 @@ fn print_device_list_text(config_path: Option<&PathBuf>, source: &str, audio: &s
                 .map_or_else(|| "-".to_owned(), |id| id.to_string());
             let name = device["name"].as_str().unwrap_or("");
             let description = device["description"].as_str().unwrap_or("");
-            println!("{name}\t{id}\t{name}\t{description}");
+            println!(
+                "{name}\t{id}\t{name}\t{description}\t{}",
+                if selected == name { "active" } else { "" }
+            );
         }
     }
 }
@@ -219,26 +217,16 @@ fn device_use_outcome_json(outcome: &DeviceUseOutcome) -> serde_json::Value {
 }
 
 fn print_device_use_text(outcome: &DeviceUseOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("before: {}", outcome.before);
-    println!("after: {}", outcome.after);
-    println!(
-        "capture_target: {}",
-        capture_target_label(&outcome.capture_target)
+    let target = capture_target_label(&outcome.capture_target);
+    let preview = format!("Would select capture device `{target}`.");
+    let applied = format!("Selected capture device `{target}`.");
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
     );
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
 }
 
 fn capture_target_label(target: &CaptureTarget) -> String {

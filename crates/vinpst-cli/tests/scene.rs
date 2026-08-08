@@ -75,14 +75,23 @@ fn scene_list_text_prints_table_and_active_marker() {
     fs::remove_file(&path).expect("remove temporary scene config");
 
     let stdout = assert_stdout_success(output, "scene list text");
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("active_scene: rewrite"));
-    assert!(stdout.contains("scene_count: 5"));
-    assert!(stdout.contains(
-        "active\tid\tlabel\tprompt\tprovider\tmodel\tcandidates\ttimeout_ms\tcontext_lines"
-    ));
-    assert!(stdout.contains("\traw\tRaw\tno\t-\t-\t0\t-\t0"));
-    assert!(stdout.contains("*\trewrite\tRewrite\tyes\topenai\tgpt-scene\t2\t2500\t4"));
+    assert!(stdout.contains("ID\tLABEL\tPROVIDER\tMODEL\tCANDIDATES\tSTATUS"));
+    assert!(stdout.contains("raw\tRaw\t-\t-\t0\t"));
+    assert!(stdout.contains("rewrite\tRewrite\topenai\tgpt-scene\t2\tactive"));
+    for internal in [
+        "source:",
+        "config_path:",
+        "active_scene:",
+        "scene_count:",
+        "prompt",
+        "timeout_ms",
+        "context_lines",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal list detail: {internal}"
+        );
+    }
 }
 
 #[test]
@@ -300,13 +309,20 @@ fn scene_edit_text_dry_run_outputs_expected_fields() {
     fs::remove_file(&path).expect("remove temporary scene config");
 
     let stdout = assert_stdout_success(output, "scene edit text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("scene_id: rewrite"));
-    assert!(stdout.contains("active_scene: rewrite"));
-    assert!(stdout.contains("changed_fields: label"));
-    assert!(stdout.contains("will_write_config: false"));
-    assert!(stdout.contains("wrote_config: false"));
+    assert!(stdout.contains("Would update scene `rewrite`."));
+    for internal in [
+        "dry_run:",
+        "source:",
+        "active_scene:",
+        "changed_fields",
+        "will_write_config",
+        "wrote_config",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal mutation detail: {internal}"
+        );
+    }
 }
 
 #[test]
@@ -498,12 +514,20 @@ fn scene_use_text_dry_run_outputs_expected_fields() {
     fs::remove_file(&path).expect("remove temporary scene config");
 
     let stdout = assert_stdout_success(output, "scene use text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("before: rewrite"));
-    assert!(stdout.contains("after: command"));
-    assert!(stdout.contains("will_write_config: false"));
-    assert!(stdout.contains("wrote_config: false"));
+    assert!(stdout.contains("Would select scene `command`."));
+    for internal in [
+        "dry_run:",
+        "source:",
+        "before:",
+        "after:",
+        "will_write_config",
+        "wrote_config",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal mutation detail: {internal}"
+        );
+    }
 }
 
 #[test]

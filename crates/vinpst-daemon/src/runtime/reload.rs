@@ -141,6 +141,15 @@ impl RuntimeState {
                 .clone_from(&config.global.default_language);
         }
 
+        if let Some(reason) = self.asr_disabled_reason.clone() {
+            self.pending_asr_reload = None;
+            self.pending_asr_reload_config = None;
+            self.asr_reload_worker_running = false;
+            self.asr_reload_preparing = false;
+            self.asr_reload_last_error = Some(reason);
+            return Ok(false);
+        }
+
         self.asr_reload_generation = self.asr_reload_generation.wrapping_add(1);
         let generation = self.asr_reload_generation;
         self.pending_asr_reload = Some(PendingAsrReload::ConfiguredBackend);
@@ -262,6 +271,10 @@ impl RuntimeState {
         self.config
             .validate()
             .map_err(RuntimeError::InvalidConfig)?;
+        if let Some(reason) = self.asr_disabled_reason.clone() {
+            self.asr_reload_last_error = Some(reason);
+            return Ok(self.asr_backend_state());
+        }
         self.asr_reload_last_error = None;
         Ok(self.asr_backend_state())
     }
@@ -270,6 +283,10 @@ impl RuntimeState {
         self.config
             .validate()
             .map_err(RuntimeError::InvalidConfig)?;
+        if let Some(reason) = self.asr_disabled_reason.clone() {
+            self.asr_reload_last_error = Some(reason);
+            return Ok(self.asr_backend_state());
+        }
         match AsrBackendFactory::build_active_prepared(
             &self.config.asr,
             Some(self.config.global.default_language.clone()),

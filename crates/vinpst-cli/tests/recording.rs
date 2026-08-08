@@ -40,22 +40,25 @@ fn recording_status_dry_run_json_reports_get_status_plan() {
 }
 
 #[test]
-fn recording_status_dry_run_text_reports_expected_fields() {
+fn recording_status_text_hides_transport_details() {
     let output = vinpst_command()
         .args(["recording", "status", "--dry-run"])
         .output()
         .expect("run vinpst recording status dry-run text");
 
     let stdout = assert_stdout_success(output, "recording status dry-run text");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("action: status"));
-    assert!(stdout.contains("will_call_dbus: false"));
-    assert!(stdout.contains("called: false"));
-    assert!(stdout.contains("method: GetStatus"));
-    assert!(
-        stdout
-            .contains("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline")
-    );
+    assert!(!stdout.trim().is_empty());
+    for internal in [
+        "org.fcitx.Vinpst",
+        "GetStatus",
+        "owner_probe",
+        "will_call_dbus",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal detail: {internal}"
+        );
+    }
 }
 
 #[test]

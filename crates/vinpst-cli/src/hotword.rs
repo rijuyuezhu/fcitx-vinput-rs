@@ -10,9 +10,9 @@ use clap::Subcommand;
 use vinpst_config::{AsrProviderConfig, VinpstConfig};
 
 use crate::{
-    asr_provider_kind_label, config_set_write_target, configured_label, default_config_path,
-    hotword_supported, load_config_json, normalize_provider_id, split_editor_argv,
-    validate_config_json_value, write_config_set_document,
+    asr_provider_kind_label, config_set_write_target, default_config_path, hotword_supported,
+    load_config_json, normalize_provider_id, split_editor_argv, validate_config_json_value,
+    write_config_set_document,
 };
 
 /// Hotword configuration inspection commands.
@@ -75,6 +75,7 @@ pub(crate) enum HotwordCommand {
         json: bool,
     },
     /// Open the configured hotwords file in an editor.
+    #[command(alias = "e")]
     Edit {
         /// Optional ASR provider id. Defaults to the active provider.
         #[arg(long)]
@@ -275,26 +276,26 @@ fn hotword_get_json(context: &HotwordGetContext) -> serde_json::Value {
 }
 
 fn print_hotword_get_text(context: &HotwordGetContext) {
-    println!("source: {}", context.source);
-    if let Some(path) = &context.config_path {
-        println!("config_path: {}", path.display());
+    if !hotword_supported(&context.provider.kind) {
+        println!(
+            "ASR provider `{}` does not support hotwords.",
+            context.provider.id
+        );
+        return;
     }
-    println!("active_provider: {}", context.active_provider);
-    println!("provider_id: {}", context.provider.id);
-    println!(
-        "provider_type: {}",
-        asr_provider_kind_label(&context.provider.kind)
-    );
-    println!("active: {}", context.provider.id == context.active_provider);
-    println!("supported: {}", hotword_supported(&context.provider.kind));
-    println!(
-        "configured: {}",
-        configured_label(context.provider.hotwords_file.as_deref())
-    );
-    println!(
-        "hotwords_file: {}",
-        context.provider.hotwords_file.as_deref().unwrap_or("-")
-    );
+    if let Some(path) = context
+        .provider
+        .hotwords_file
+        .as_deref()
+        .filter(|path| !path.trim().is_empty())
+    {
+        println!("{path}");
+    } else {
+        println!(
+            "No hotwords file is configured for `{}`.",
+            context.provider.id
+        );
+    }
 }
 
 fn print_hotword_edit(request: HotwordEditRequest<'_>) -> anyhow::Result<()> {
@@ -372,19 +373,13 @@ fn hotword_edit_json(outcome: &HotwordEditOutcome) -> serde_json::Value {
 }
 
 fn print_hotword_edit_text(outcome: &HotwordEditOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("active_provider: {}", outcome.active_provider);
-    println!("provider_id: {}", outcome.provider_id);
-    println!("provider_type: {}", outcome.provider_type);
-    println!("hotwords_file: {}", outcome.hotwords_file.display());
-    println!("editor: {}", outcome.editor_argv.join(" "));
-    println!("edited: {}", outcome.edited);
-    if let Some(exit_status) = outcome.exit_status {
-        println!("exit_status: {exit_status}");
+    if outcome.dry_run {
+        println!(
+            "Would open hotwords file: {}",
+            outcome.hotwords_file.display()
+        );
+    } else {
+        println!("Edited hotwords file: {}", outcome.hotwords_file.display());
     }
 }
 
@@ -546,23 +541,25 @@ fn hotword_mutation_json(outcome: &HotwordMutationOutcome) -> serde_json::Value 
 }
 
 fn print_hotword_mutation_text(outcome: &HotwordMutationOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("active_provider: {}", outcome.active_provider);
-    println!("provider_id: {}", outcome.provider_id);
-    println!("provider_type: {}", outcome.provider_type);
-    println!("before: {}", outcome.before.as_deref().unwrap_or("-"));
-    println!("after: {}", outcome.after.as_deref().unwrap_or("-"));
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let (preview, applied) = if let Some(path) = outcome.after.as_deref() {
+        (
+            format!(
+                "Would set hotwords for `{}` to `{path}`.",
+                outcome.provider_id
+            ),
+            format!("Set hotwords for `{}` to `{path}`.", outcome.provider_id),
+        )
+    } else {
+        (
+            format!("Would clear hotwords for `{}`.", outcome.provider_id),
+            format!("Cleared hotwords for `{}`.", outcome.provider_id),
+        )
+    };
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }

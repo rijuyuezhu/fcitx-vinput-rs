@@ -1,90 +1,95 @@
 # Scenes and text processing
 
-A **scene** controls how recognized text is post-processed. The raw scene commits ASR text directly; other scenes can call an OpenAI-compatible LLM provider or a command text adapter.
+ASR produces raw text. A **scene** decides whether that text should be used as-is or sent through an LLM for rewriting.
 
-## List and select scenes
-
-```sh
-vinpst scene list
-vinpst scene use <scene-id> --in-place
+```text
+ASR raw text → scene → optional LLM/adapter → final text
 ```
 
-The active scene can also be changed from the Fcitx scene menu or the management GUI.
+The three pieces have different jobs:
 
-## Add a scene
+- a **scene** says what to do with the text;
+- an **LLM provider** says which OpenAI-compatible model/API should do it;
+- an **LLM adapter** is an optional local bridge for software that does not already expose a compatible API.
 
-```sh
-vinpst scene add my-scene \
-  --label "My scene" \
-  --prompt "Rewrite the input clearly." \
-  --provider-id my-llm \
-  --candidate-count 1 \
-  --timeout-ms 10000 \
-  --in-place
-```
+## Built-in scenes
 
-Important scene fields:
+- **Raw (`__raw__`)** — commits recognized text without LLM rewriting.
+- **Command (`__command__`)** — combines selected text with a spoken instruction for command mode.
 
-- `prompt`: instruction/template supplied to the text processor;
-- `provider_id`: explicit LLM provider for the scene;
-- `model`: optional model override;
-- `candidate_count`: number of alternatives requested;
-- `timeout_ms`: processing deadline;
-- `context_lines`: recent committed-input lines included as context.
+Use **Right Shift** to open the Fcitx scene menu and switch the active ordinary scene.
 
-Use `vinpst scene edit --help` to change an existing explicit scene. Built-in scene identities are retained by normalization and cannot be removed like ordinary custom scenes.
+## Set up an LLM scene
+
+The normal GUI flow is all on the **LLM** page:
+
+1. Add an LLM provider and test its connection.
+2. Add a scene.
+3. Choose the provider and model for that scene.
+4. Write the prompt that describes the transformation.
+5. Click **Use** on the scene when you want it active.
+
+Common scene ideas include polishing dictated text, translating it, fixing formatting, or matching a preferred writing style.
+
+`context_lines` controls how much recently committed text is supplied as extra context. Keep it at `0` unless the task benefits from nearby text.
 
 ## LLM providers
 
-Add an OpenAI-compatible chat provider:
+An LLM provider is an OpenAI-compatible chat endpoint. Different scenes may use different providers or models.
+
+Example CLI setup:
 
 ```sh
-vinpst llm add my-llm \
-  --base-url https://provider.example/v1 \
-  --api-key '$MY_LLM_API_KEY' \
-  --model example-model \
+vinpst llm add local \
+  --base-url http://127.0.0.1:11434/v1 \
+  --model qwen2.5:7b \
   --in-place
+vinpst llm test local
 ```
 
-Test it before selecting it in a scene:
+Avoid storing or sharing literal API keys when the provider can read them from a deployment-specific environment source.
 
-```sh
-MY_LLM_API_KEY=secret vinpst llm test my-llm
-```
+Removing a provider leaves its scenes in place, but clears their provider and model choices so they can be configured again.
 
-Do not paste real API keys into issue reports or retained command output. Prefer an environment-reference expression or another deployment-specific secret source instead of storing a literal key in shared configuration.
+## LLM adapters
 
-## Text adapters
+If a local model or service needs a bridge process:
 
-A text adapter is an external command managed separately from an LLM HTTP provider.
+1. install the adapter under **Resources → LLM adapters**;
+2. configure, start, stop, and inspect it from the **LLM** page;
+3. point an LLM provider at the adapter's compatible endpoint when required by that adapter.
 
-List registry adapters and install one:
+CLI equivalents:
 
 ```sh
 vinpst adapter list --available
-vinpst adapter install <adapter-id-or-short-id> --dry-run --json
-vinpst adapter install <adapter-id-or-short-id> --in-place
-```
-
-Control configured adapter processes through the daemon:
-
-```sh
+vinpst adapter install <adapter-id> --in-place
 vinpst adapter start <adapter-id>
 vinpst adapter status <adapter-id>
 vinpst adapter stop <adapter-id>
 ```
 
-Manually configured adapters are added with `vinpst adapter add`; registry resources use `vinpst adapter install`.
+## Manage scenes from the CLI
 
-## Command scene
+```sh
+vinpst scene list
+vinpst scene add --help
+vinpst scene edit <scene-id> --help
+vinpst scene use <scene-id> --in-place
+vinpst scene remove <scene-id> --in-place
+```
 
-The built-in command scene combines selected text and recognized speech. It is used by command mode even when another ordinary scene is active.
+Built-in scene identities are retained by configuration normalization and are not removed like normal custom scenes.
 
-Command processing must be fail-safe:
+## Command mode
 
-- processing failure does not delete the selected text;
-- zero available adapters/providers returns an explicit configuration error;
-- multiple implicit choices are rejected rather than guessed;
-- the original selection is replaced only after a candidate succeeds and is selected.
+Command mode is for editing existing text with your voice:
 
-See [Dictation and command mode](usage.md) for the desktop workflow.
+1. select text in an application;
+2. press or hold **F10**;
+3. say an instruction such as “translate to English” or “add comments”;
+4. stop recording and accept the result.
+
+The built-in command scene keeps the selected text and spoken instruction in separate scoped inputs before they reach the text processor. If processing fails, Vinpst keeps the original selection rather than replacing it with an error or empty result.
+
+See [Dictation and command mode](usage.md) for the desktop interaction details.

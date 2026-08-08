@@ -6,9 +6,11 @@
 
 - `crates/vinpst-protocol/src/dbus.rs` owns shared wire constants, method names, and signal names.
 - `crates/vinpst-daemon/src/dbus_service.rs` wraps `RuntimeState` in a `zbus` interface named `org.fcitx.Vinpst.Service`.
-- `vinpst-daemon --dbus` registers the canonical Vinpst bus/object/interface on the session bus.
+- Direct `vinpst-daemon` startup registers the canonical Vinpst bus/object/interface, loads configured backends, and uses PipeWire when the packaged `pipewire-backend` feature is available. `--no-asr` preserves that service mode while disabling ASR for the lifetime of the process, including later reload requests.
+- Explicit `--dbus`, `--configured-backends`, audio/file-input switches, executable-replacement watching, and diagnostic subcommands remain internal/package test seams and are hidden from normal daemon help.
+- The default CMake-generated activation service invokes the daemon without `--dbus`, so source installs use the same direct-start service defaults as upstream. Distribution packages may still pass explicit configured-backend/PipeWire arguments to pin their build/runtime contract.
 - `crates/vinpst-daemon/tests/dbus_integration.rs` exercises real bus calls under `dbus-run-session`.
-- The default runtime still uses deterministic mock ASR/text/audio seams, while explicit configured paths can exercise configured command ASR/text seams. This is not full backend parity.
+- Explicit test modes keep deterministic mock defaults unless they request configured backends. This is separate from normal direct service startup.
 
 ## Current wire names
 
@@ -18,6 +20,8 @@
 - Fcitx bus: `org.fcitx.Fcitx5`
 - Frontend notifier object: `/org/fcitx/Fcitx5/Vinpst`
 - Frontend notifier interface: `org.fcitx.Fcitx5.Vinpst1`
+
+The upstream daemon requests its well-known name with replacement allowed. Vinpst deliberately does not preserve that ownership policy: the service requests the name with `DoNotQueue` only, so an accidental second daemon cannot replace the current owner or wait to take ownership later. Upgrade/removal replacement must go through the guarded handoff path, which verifies owner identity, UID, process state, active-session state, and the replacement executable before and after termination/restart. A real session-bus integration test pins `NameTaken` for a second service while the first owner remains unchanged.
 
 ## Service methods
 
@@ -86,6 +90,9 @@ That test starts the Rust service, builds a `zbus::Proxy`, calls the current met
 The Rust service pins these current Vinpst behaviors with unit and D-Bus integration tests:
 
 - operation failures use the Vinpst error name `org.fcitx.Vinpst.Error.OperationFailed`;
+- the eight legacy method signatures and four legacy signal signatures are kept byte-for-byte compatible after applying the independent Vinpst bus/interface identity; live introspection pins `GetAsrBackendState` as the legacy `sssssbbas` tuple rather than a JSON transport;
+- direct `vinpst-daemon` startup uses service defaults, while `--no-asr` keeps D-Bus/config/text behavior active and permanently blocks ASR construction/reload with the legacy-compatible reason `ASR disabled by command line.`;
+- a second daemon cannot replace or queue behind the current owner; guarded handoff is the only supported replacement boundary;
 - `GetAsrBackendState` combines the configured target provider/model with the descriptor of the backend that is actually effective in the runtime; it must not report a merely constructible configured backend as already active;
 - `ReloadAsrBackend` re-reads the daemon config file when an explicit startup path exists, updates the ASR/default-language target, and queues the configured backend through the prepare-before-swap path rather than refreshing metadata only;
 - one non-blocking reload worker performs backend construction and warmup outside the runtime mutex, while `reload_in_progress` covers both queued and physical preparation;

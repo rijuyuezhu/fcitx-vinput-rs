@@ -283,7 +283,7 @@ fn edit_rejects_stale_provider_and_validates_complete_config() {
 
 #[test]
 fn dirty_provider_form_blocks_navigation_and_resource_mutations() {
-    let (mut app, _) = App::boot();
+    let mut app = crate::test_support::GuiHarness::new();
     let provider = app
         .config
         .as_ref()

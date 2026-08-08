@@ -10,6 +10,7 @@ use vinpst_config::redact_url_for_diagnostics;
 
 use super::{
     LlmProviderEditorField, LlmProviderEditorState, LlmProviderMessage, extra_body_input_is_secure,
+    llm_provider_test_target,
 };
 use crate::{App, GuiLocale, GuiText, Message, SecretInput};
 
@@ -48,6 +49,11 @@ impl App {
         match &self.config {
             Ok(document) => {
                 for provider in &document.config.llm.providers {
+                    let test_target = llm_provider_test_target(&document.config, &provider.id).ok();
+                    let model = test_target
+                        .as_ref()
+                        .and_then(|provider| provider.model.as_deref())
+                        .unwrap_or_else(|| self.locale.text(GuiText::NotConfigured));
                     let endpoint = if provider.base_url.is_empty() {
                         self.locale.text(GuiText::AdapterLocal).to_owned()
                     } else {
@@ -55,18 +61,11 @@ impl App {
                     };
                     body = body.push(llm_provider_row(
                         self.locale,
-                        format!(
-                            "{} · {} · {}",
-                            provider.id,
-                            provider
-                                .model
-                                .as_deref()
-                                .unwrap_or_else(|| self.locale.text(GuiText::DefaultModelFallback)),
-                            endpoint
-                        ),
+                        format!("{} · {} · {}", provider.id, model, endpoint),
                         &provider.id,
                         !busy && !editor_open,
                         !self.llm_provider_test_text.as_str().trim().is_empty(),
+                        test_target.is_some(),
                     ));
                 }
                 if document.config.llm.providers.is_empty() {
@@ -89,22 +88,23 @@ fn llm_provider_row(
     provider_id: &str,
     controls_enabled: bool,
     test_input_present: bool,
+    test_target_available: bool,
 ) -> Element<'static, Message> {
     row![
         text(label).width(Length::Fill),
         keyboard_button(locale.text(GuiText::Details))
             .on_press(Message::SelectLlmProviderDetail(provider_id.to_owned())),
         keyboard_button(locale.text(GuiText::Test)).on_press_maybe(
-            (controls_enabled && test_input_present).then_some(Message::LlmProvider(
-                LlmProviderMessage::Test(provider_id.to_owned()),
-            )),
+            (controls_enabled && test_input_present && test_target_available).then_some(
+                Message::LlmProvider(LlmProviderMessage::Test(provider_id.to_owned())),
+            ),
         ),
         keyboard_button(locale.text(GuiText::Edit)).on_press_maybe(controls_enabled.then_some(
             Message::LlmProvider(LlmProviderMessage::BeginEdit(provider_id.to_owned())),
         )),
-        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe(controls_enabled.then_some(
-            Message::LlmProvider(LlmProviderMessage::Remove(provider_id.to_owned())),
-        )),
+        keyboard_button(locale.text(GuiText::Remove)).on_press_maybe(
+            controls_enabled.then_some(Message::RequestRemoveLlmProvider(provider_id.to_owned()),)
+        ),
     ]
     .spacing(10)
     .into()

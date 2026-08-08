@@ -57,6 +57,7 @@ pub(crate) enum SceneCommand {
         json: bool,
     },
     /// Edit an explicitly configured recognition scene.
+    #[command(alias = "e")]
     Edit {
         /// Existing scene id to edit.
         id: String,
@@ -130,6 +131,7 @@ pub(crate) enum SceneCommand {
         json: bool,
     },
     /// Remove an inactive explicitly configured recognition scene.
+    #[command(alias = "rm")]
     Remove {
         /// Existing inactive scene id to remove.
         id: String,

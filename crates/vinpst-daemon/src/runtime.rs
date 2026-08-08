@@ -64,6 +64,7 @@ pub struct RuntimeState {
     asr_reload_preparing: bool,
     asr_reload_generation: u64,
     asr_reload_last_error: Option<String>,
+    asr_disabled_reason: Option<String>,
     config_path: Option<PathBuf>,
     model_root: Option<PathBuf>,
     adapter_runtime_paths: AdapterRuntimePaths,
@@ -227,6 +228,21 @@ impl RuntimeState {
         }
     }
 
+    /// Disables ASR for this runtime until the process exits.
+    ///
+    /// Config and text-adapter reloads remain available, but ASR reloads keep
+    /// the unavailable backend instead of constructing a configured backend.
+    pub fn disable_asr(&mut self, reason: impl Into<String>) {
+        let reason = reason.into();
+        self.asr_backend = Box::new(UnavailableAsrBackend::new(&reason));
+        self.asr_disabled_reason = Some(reason.clone());
+        self.asr_reload_last_error = Some(reason);
+        self.pending_asr_reload = None;
+        self.pending_asr_reload_config = None;
+        self.asr_reload_worker_running = false;
+        self.asr_reload_preparing = false;
+    }
+
     /// Builds an idle runtime from validated config and injected component seams.
     pub fn with_components(
         config: VinpstConfig,
@@ -283,6 +299,7 @@ impl RuntimeState {
             asr_reload_preparing: false,
             asr_reload_generation: 0,
             asr_reload_last_error: None,
+            asr_disabled_reason: None,
             config_path: None,
             model_root: None,
             adapter_runtime_paths: AdapterRuntimePaths::for_current_user(),

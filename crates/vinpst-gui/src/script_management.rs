@@ -293,6 +293,16 @@ fn fetch_live_script_registry_from(
     control: &RegistryOperationControl,
     source: &impl RegistryTextSource,
 ) -> Result<LiveScriptRegistry, String> {
+    fetch_live_script_registry_with_base_from(config, kind, control, source)
+        .map(|(registry, _)| registry)
+}
+
+pub(crate) fn fetch_live_script_registry_with_base_from(
+    config: &VinpstConfig,
+    kind: LiveScriptKind,
+    control: &RegistryOperationControl,
+    source: &impl RegistryTextSource,
+) -> Result<(LiveScriptRegistry, String), String> {
     let filename = match kind {
         LiveScriptKind::AsrProvider => "providers.json",
         LiveScriptKind::LlmAdapter => "adapters.json",
@@ -313,12 +323,17 @@ fn fetch_live_script_registry_from(
         }
         match source.fetch_registry_text(url) {
             Ok(text) => {
-                return LiveScriptRegistry::from_json_str(&text, kind).map_err(|error| {
+                let registry = LiveScriptRegistry::from_json_str(&text, kind).map_err(|error| {
                     format!(
                         "{} registry catalog is invalid: {error}",
                         resource_title(kind)
                     )
-                });
+                })?;
+                let base = url
+                    .strip_suffix(&format!("/registry/{filename}"))
+                    .unwrap_or(url)
+                    .to_owned();
+                return Ok((registry, base));
             }
             Err(_) => failure_count += 1,
         }

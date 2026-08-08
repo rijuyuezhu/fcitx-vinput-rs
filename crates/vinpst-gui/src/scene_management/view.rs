@@ -11,7 +11,7 @@ use iced::{
 use vinpst_config::VinpstConfig;
 
 use super::{
-    SceneEditorField, SceneEditorState, SceneMessage, SceneProviderSelection,
+    SceneEditorField, SceneEditorState, SceneMessage, SceneProviderSelection, scene_is_built_in,
     scene_provider_selections,
 };
 use crate::{App, GuiLocale, GuiText, Message};
@@ -62,6 +62,7 @@ impl App {
                 let mut visible = 0_usize;
                 for scene in &document.config.scenes.definitions {
                     let active = scene.id == document.config.scenes.active_scene;
+                    let removable = !active && !scene_is_built_in(&scene.id);
                     let marker = self.locale.text(if active {
                         GuiText::Active
                     } else {
@@ -77,6 +78,7 @@ impl App {
                         label,
                         &scene.id,
                         active,
+                        removable,
                         !busy && !editor_open,
                     ));
                 }
@@ -113,6 +115,7 @@ fn scene_row(
     label: String,
     scene_id: &str,
     active: bool,
+    removable: bool,
     controls_enabled: bool,
 ) -> Element<'static, Message> {
     row![
@@ -126,8 +129,8 @@ fn scene_row(
                 .then_some(Message::Scene(SceneMessage::BeginEdit(scene_id.to_owned()))),
         ),
         keyboard_button(locale.text(GuiText::Remove)).on_press_maybe(
-            (controls_enabled && !active)
-                .then_some(Message::Scene(SceneMessage::Remove(scene_id.to_owned()))),
+            (controls_enabled && removable)
+                .then_some(Message::RequestRemoveScene(scene_id.to_owned())),
         ),
     ]
     .spacing(10)

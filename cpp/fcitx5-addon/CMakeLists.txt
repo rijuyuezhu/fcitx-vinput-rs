@@ -169,7 +169,7 @@ set(VINPST_DAEMON_EXECUTABLE
     "${CMAKE_INSTALL_FULL_BINDIR}/vinpst-daemon"
     CACHE FILEPATH "Installed vinpst-daemon executable used by DBus activation")
 set(VINPST_DAEMON_ARGS
-    "--dbus"
+    ""
     CACHE STRING "Arguments used by the DBus activation service for vinpst-daemon")
 set(VINPST_DAEMON_ARGS_SUFFIX "")
 if(NOT "${VINPST_DAEMON_ARGS}" STREQUAL "")

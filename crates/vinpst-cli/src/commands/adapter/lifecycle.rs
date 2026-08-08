@@ -73,28 +73,17 @@ pub(super) fn print_adapter_lifecycle(
     let output = adapter_lifecycle_output(action, &resolution, method, dry_run);
     if json_output {
         println!("{}", serde_json::to_string_pretty(&output)?);
+    } else if dry_run {
+        println!("Would {action} text adapter `{}`.", resolution.adapter_id);
+        println!("No daemon will be contacted.");
     } else {
-        println!("dry_run: {dry_run}");
-        println!("selector: {}", resolution.selector);
-        println!("adapter_id: {}", resolution.adapter_id);
-        println!("config_source: {}", resolution.config_source);
-        if let Some(config_path) = &resolution.config_path {
-            println!("config_path: {}", config_path.display());
-        }
-        println!("action: {action}");
-        println!("will_call_dbus: {}", !dry_run);
-        println!("called: {}", !dry_run);
-        println!("service: {}", dbus::SERVICE_BUS_NAME);
-        println!("object_path: {}", dbus::SERVICE_OBJECT_PATH);
-        println!("interface: {}", dbus::SERVICE_INTERFACE);
-        println!("method: {method}");
-        println!("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline");
-        if let Some(next_step) = output["next_steps"]
-            .as_array()
-            .and_then(|steps| steps.first())
-            .and_then(serde_json::Value::as_str)
-        {
-            println!("next_step: {next_step}");
+        match action {
+            "start" => println!("Text adapter `{}` started.", resolution.adapter_id),
+            "stop" => println!("Text adapter `{}` stopped.", resolution.adapter_id),
+            _ => println!(
+                "Text adapter `{}`: {action} completed.",
+                resolution.adapter_id
+            ),
         }
     }
     Ok(())
@@ -248,48 +237,27 @@ fn adapter_status_state_json(
 }
 
 fn print_adapter_status_text(output: &serde_json::Value) {
-    println!("dry_run: {}", output["dry_run"].as_bool().unwrap_or(false));
-    println!("action: status");
-    println!("selector: {}", output["selector"].as_str().unwrap_or("-"));
-    println!(
-        "adapter_id: {}",
-        output["adapter_id"].as_str().unwrap_or("-")
-    );
-    if let Some(config_source) = output["config_source"].as_str() {
-        println!("config_source: {config_source}");
-    }
-    if let Some(config_path) = output["config_path"].as_str() {
-        println!("config_path: {config_path}");
-    }
     if output["dry_run"].as_bool().unwrap_or(false) {
-        println!(
-            "will_call_dbus: {}",
-            output["will_call_dbus"].as_bool().unwrap_or(false)
-        );
-        println!("called: {}", output["called"].as_bool().unwrap_or(false));
-        println!("service: {}", dbus::SERVICE_BUS_NAME);
-        println!("object_path: {}", dbus::SERVICE_OBJECT_PATH);
-        println!("interface: {}", dbus::SERVICE_INTERFACE);
-        println!("method: {}", dbus::method::GET_TEXT_ADAPTER_STATE);
-        println!("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline");
-        if let Some(next_step) = output["next_steps"]
-            .as_array()
-            .and_then(|steps| steps.first())
-            .and_then(serde_json::Value::as_str)
-        {
-            println!("next_step: {next_step}");
+        if let Some(adapter_id) = output["adapter_id"].as_str() {
+            println!("Would query text adapter `{adapter_id}`.");
+        } else {
+            println!("Would query configured text adapters.");
         }
+        println!("No daemon will be contacted.");
         return;
     }
-    println!(
-        "adapter_count: {}",
-        output["state"]["adapter_count"].as_u64().unwrap_or(0)
-    );
+
     if let Some(adapter) = output.get("adapter") {
         print_adapter_status_row(adapter);
         return;
     }
-    println!("id	kind	running	pid	args	env	working_dir");
+
+    let count = output["state"]["adapter_count"].as_u64().unwrap_or(0);
+    println!("Text adapters: {count}");
+    if count == 0 {
+        return;
+    }
+    println!("ID\tKIND\tSTATE\tPID");
     if let Some(adapters) = output["adapters"].as_array() {
         for adapter in adapters {
             print_adapter_status_row(adapter);
@@ -298,16 +266,15 @@ fn print_adapter_status_text(output: &serde_json::Value) {
 }
 
 fn print_adapter_status_row(adapter: &serde_json::Value) {
+    let running = adapter["is_running"].as_bool().unwrap_or(false);
+    let pid = adapter["pid"]
+        .as_u64()
+        .map_or_else(|| "-".to_owned(), |pid| pid.to_string());
     println!(
-        "{}	{}	{}	{}	{}	{}	{}",
+        "{}\t{}\t{}\t{}",
         adapter["id"].as_str().unwrap_or("-"),
         adapter["kind"].as_str().unwrap_or("-"),
-        adapter["is_running"].as_bool().unwrap_or(false),
-        adapter["pid"]
-            .as_u64()
-            .map_or_else(|| "-".to_owned(), |pid| pid.to_string()),
-        adapter["args_count"].as_u64().unwrap_or(0),
-        adapter["env_count"].as_u64().unwrap_or(0),
-        adapter["has_working_dir"].as_bool().unwrap_or(false),
+        if running { "running" } else { "stopped" },
+        pid,
     );
 }

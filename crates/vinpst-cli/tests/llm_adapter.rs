@@ -82,11 +82,21 @@ fn llm_list_text_prints_table_without_secret_values() {
     fs::remove_file(&path).expect("remove temporary llm config");
 
     let stdout = assert_stdout_success(output, "llm list text");
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("provider_count: 2"));
-    assert!(stdout.contains("id	base_url	api_key	model	extra_body	extra_fields"));
-    assert!(stdout.contains("openai	yes	yes	gpt-4o-mini	yes	0"));
-    assert!(stdout.contains("local	yes	no	-	no	0"));
+    assert!(stdout.contains("ID\tBASE URL\tMODEL\tAPI KEY"));
+    assert!(stdout.contains("openai\thttps://llm.example.test/v1\tgpt-4o-mini\tset"));
+    assert!(stdout.contains("local\thttp://127.0.0.1:11434/v1\t-\tnot set"));
+    for internal in [
+        "source:",
+        "config_path:",
+        "provider_count:",
+        "extra_body",
+        "extra_fields",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal list detail: {internal}"
+        );
+    }
     assert!(!stdout.contains("secret-token"));
 }
 
@@ -153,13 +163,20 @@ fn llm_add_text_dry_run_outputs_expected_fields() {
     fs::remove_file(&path).expect("remove temporary llm config");
 
     let stdout = assert_stdout_success(output, "llm add text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("provider_id: anthropic"));
-    assert!(stdout.contains("before_provider_count: 2"));
-    assert!(stdout.contains("after_provider_count: 3"));
-    assert!(stdout.contains("will_write_config: false"));
-    assert!(stdout.contains("wrote_config: false"));
+    assert!(stdout.contains("Would add LLM provider `anthropic`."));
+    for internal in [
+        "dry_run:",
+        "source:",
+        "before_provider_count",
+        "after_provider_count",
+        "will_write_config",
+        "wrote_config",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal mutation detail: {internal}"
+        );
+    }
     assert!(!stdout.contains("secret-token"));
 }
 
@@ -267,12 +284,19 @@ fn llm_edit_text_dry_run_outputs_expected_fields_without_secrets() {
     fs::remove_file(&path).expect("remove temporary llm config");
 
     let stdout = assert_stdout_success(output, "llm edit text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("provider_id: openai"));
-    assert!(stdout.contains("changed_fields: api_key"));
-    assert!(stdout.contains("will_write_config: false"));
-    assert!(stdout.contains("wrote_config: false"));
+    assert!(stdout.contains("Would update LLM provider `openai`."));
+    for internal in [
+        "dry_run:",
+        "source:",
+        "changed_fields",
+        "will_write_config",
+        "wrote_config",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal mutation detail: {internal}"
+        );
+    }
     assert!(!stdout.contains("new-secret-token"));
 }
 
@@ -437,6 +461,7 @@ fn llm_remove_dry_run_json_validates_without_writing() {
     assert_eq!(value["dry_run"], true);
     assert_eq!(value["source"], "file");
     assert_eq!(value["removed_provider_id"], "local");
+    assert_eq!(value["cleared_scene_references"], 0);
     assert_eq!(value["before_provider_count"], 2);
     assert_eq!(value["after_provider_count"], 1);
     assert_eq!(value["wrote_config"], false);
@@ -476,6 +501,45 @@ fn llm_remove_in_place_writes_backup() {
         .clone();
     assert!(providers.iter().all(|provider| provider["id"] != "local"));
     fs::remove_dir_all(root).expect("remove llm remove in-place fixture dir");
+}
+
+#[test]
+fn llm_remove_clears_scene_binding_and_preserves_unknown_fields() {
+    let root = unique_temp_dir("vinpst-llm-remove-scene-binding");
+    let config_path = root.join("config.json");
+    let mut config: serde_json::Value = serde_json::from_str(llm_fixture_json()).unwrap();
+    config["scenes"]["definitions"][0]["model"] = serde_json::json!("scene-model");
+    config["scenes"]["definitions"][0]["future_field"] = serde_json::json!({"keep": true});
+    fs::write(
+        &config_path,
+        serde_json::to_vec_pretty(&config).expect("serialize scene-bound config"),
+    )
+    .expect("write scene-bound config");
+
+    let output = vinpst_command()
+        .args(["llm", "remove", "openai", "--config"])
+        .arg(&config_path)
+        .args(["--in-place", "--json"])
+        .output()
+        .expect("run vinpst llm remove referenced provider");
+
+    let value = assert_json_success(output, "llm remove referenced provider json");
+    assert_eq!(value["cleared_scene_references"], 1);
+    let updated = read_json(&config_path);
+    let scene = updated["scenes"]["definitions"][0]
+        .as_object()
+        .expect("scene object");
+    assert!(scene.get("provider_id").is_none());
+    assert!(scene.get("model").is_none());
+    assert_eq!(scene["future_field"], serde_json::json!({"keep": true}));
+    assert!(
+        updated["llm"]["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|provider| provider["id"] != "openai")
+    );
+    fs::remove_dir_all(root).expect("remove scene binding removal fixture dir");
 }
 
 #[test]
@@ -538,16 +602,6 @@ fn llm_mutations_reject_invalid_inputs() {
     let stderr = String::from_utf8(missing.stderr).expect("stderr should be utf8");
     assert!(stderr.contains("LLM provider `missing` not found"));
 
-    let referenced = vinpst_command()
-        .args(["llm", "remove", "openai", "--config"])
-        .arg(&path)
-        .arg("--dry-run")
-        .output()
-        .expect("run vinpst llm remove provider used by scene");
-    assert!(!referenced.status.success());
-    let stderr = String::from_utf8(referenced.stderr).expect("stderr should be utf8");
-    assert!(stderr.contains("references unknown LLM provider `openai`"));
-
     let missing_target = vinpst_command()
         .args([
             "llm",
@@ -568,14 +622,14 @@ fn llm_mutations_reject_invalid_inputs() {
 }
 
 #[test]
-fn adapter_add_dry_run_json_validates_without_writing() {
+fn adapter_create_dry_run_json_validates_without_writing() {
     let path = write_llm_fixture("vinpst-adapter-add-dry-run");
     let before = fs::read_to_string(&path).expect("read original adapter config");
 
     let output = vinpst_command()
         .args([
             "adapter",
-            "add",
+            "create",
             "extra-adapter",
             "--command",
             "extra-helper",
@@ -592,7 +646,7 @@ fn adapter_add_dry_run_json_validates_without_writing() {
             "--json",
         ])
         .output()
-        .expect("run vinpst adapter add dry-run");
+        .expect("run vinpst adapter create dry-run");
 
     let value = assert_json_success(output, "adapter add dry-run json");
     assert_eq!(value["ok"], true);
@@ -610,13 +664,13 @@ fn adapter_add_dry_run_json_validates_without_writing() {
 }
 
 #[test]
-fn adapter_add_text_dry_run_outputs_expected_fields_without_secrets() {
+fn adapter_create_text_dry_run_outputs_expected_fields_without_secrets() {
     let path = write_llm_fixture("vinpst-adapter-add-text-dry-run");
 
     let output = vinpst_command()
         .args([
             "adapter",
-            "add",
+            "create",
             "extra-adapter",
             "--command",
             "extra-helper",
@@ -625,22 +679,29 @@ fn adapter_add_text_dry_run_outputs_expected_fields_without_secrets() {
         .arg(&path)
         .args(["--env", "TOKEN=secret-token", "--dry-run"])
         .output()
-        .expect("run vinpst adapter add text dry-run");
+        .expect("run vinpst adapter create text dry-run");
     fs::remove_file(&path).expect("remove temporary adapter config");
 
     let stdout = assert_stdout_success(output, "adapter add text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("adapter_id: extra-adapter"));
-    assert!(stdout.contains("before_adapter_count: 2"));
-    assert!(stdout.contains("after_adapter_count: 3"));
-    assert!(stdout.contains("will_write_config: false"));
-    assert!(stdout.contains("wrote_config: false"));
+    assert!(stdout.contains("Would add text adapter `extra-adapter`."));
+    for internal in [
+        "dry_run:",
+        "source:",
+        "before_adapter_count",
+        "after_adapter_count",
+        "will_write_config",
+        "wrote_config",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal mutation detail: {internal}"
+        );
+    }
     assert!(!stdout.contains("secret-token"));
 }
 
 #[test]
-fn adapter_add_output_writes_valid_config_without_overwriting_input() {
+fn adapter_create_output_writes_valid_config_without_overwriting_input() {
     let root = unique_temp_dir("vinpst-adapter-add-output");
     let config_path = root.join("config.json");
     fs::write(&config_path, llm_fixture_json()).expect("write adapter config");
@@ -650,7 +711,7 @@ fn adapter_add_output_writes_valid_config_without_overwriting_input() {
     let output = vinpst_command()
         .args([
             "adapter",
-            "add",
+            "create",
             "extra-adapter",
             "--command",
             "extra-helper",
@@ -661,7 +722,7 @@ fn adapter_add_output_writes_valid_config_without_overwriting_input() {
         .arg(&output_path)
         .arg("--json")
         .output()
-        .expect("run vinpst adapter add --output");
+        .expect("run vinpst adapter create --output");
 
     let value = assert_json_success(output, "adapter add output json");
     assert_eq!(value["wrote_config"], true);
@@ -935,7 +996,7 @@ fn adapter_mutations_reject_invalid_inputs() {
     let duplicate = vinpst_command()
         .args([
             "adapter",
-            "add",
+            "create",
             "simple-adapter",
             "--command",
             "helper",
@@ -944,17 +1005,17 @@ fn adapter_mutations_reject_invalid_inputs() {
         .arg(&path)
         .arg("--dry-run")
         .output()
-        .expect("run vinpst adapter add duplicate id");
+        .expect("run vinpst adapter create duplicate id");
     assert!(!duplicate.status.success());
     let stderr = String::from_utf8(duplicate.stderr).expect("stderr should be utf8");
     assert!(stderr.contains("text adapter `simple-adapter` already exists"));
 
     let empty_command = vinpst_command()
-        .args(["adapter", "add", "new", "--command", "   ", "--config"])
+        .args(["adapter", "create", "new", "--command", "   ", "--config"])
         .arg(&path)
         .arg("--dry-run")
         .output()
-        .expect("run vinpst adapter add empty command");
+        .expect("run vinpst adapter create empty command");
     assert!(!empty_command.status.success());
     let stderr = String::from_utf8(empty_command.stderr).expect("stderr should be utf8");
     assert!(stderr.contains("text adapter command cannot be empty"));
@@ -962,7 +1023,7 @@ fn adapter_mutations_reject_invalid_inputs() {
     let bad_env = vinpst_command()
         .args([
             "adapter",
-            "add",
+            "create",
             "new",
             "--command",
             "helper",
@@ -973,7 +1034,7 @@ fn adapter_mutations_reject_invalid_inputs() {
         .arg(&path)
         .arg("--dry-run")
         .output()
-        .expect("run vinpst adapter add invalid env");
+        .expect("run vinpst adapter create invalid env");
     assert!(!bad_env.status.success());
     let stderr = String::from_utf8(bad_env.stderr).expect("stderr should be utf8");
     assert!(stderr.contains("text adapter env `TOKEN` is not KEY=VALUE"));
@@ -989,10 +1050,17 @@ fn adapter_mutations_reject_invalid_inputs() {
     assert!(stderr.contains("text adapter `missing` not found"));
 
     let missing_target = vinpst_command()
-        .args(["adapter", "add", "new", "--command", "helper", "--config"])
+        .args([
+            "adapter",
+            "create",
+            "new",
+            "--command",
+            "helper",
+            "--config",
+        ])
         .arg(&path)
         .output()
-        .expect("run vinpst adapter add without write target");
+        .expect("run vinpst adapter create without write target");
     assert!(!missing_target.status.success());
     let stderr = String::from_utf8(missing_target.stderr).expect("stderr should be utf8");
     assert!(stderr.contains("config set writes require --output <path> or --in-place"));
@@ -1059,12 +1127,19 @@ fn adapter_edit_text_dry_run_outputs_expected_fields_without_secrets() {
     fs::remove_file(&path).expect("remove temporary adapter config");
 
     let stdout = assert_stdout_success(output, "adapter edit text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("adapter_id: command-adapter"));
-    assert!(stdout.contains("changed_fields: env"));
-    assert!(stdout.contains("will_write_config: false"));
-    assert!(stdout.contains("wrote_config: false"));
+    assert!(stdout.contains("Would update text adapter `command-adapter`."));
+    for internal in [
+        "dry_run:",
+        "source:",
+        "changed_fields",
+        "will_write_config",
+        "wrote_config",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal mutation detail: {internal}"
+        );
+    }
     assert!(!stdout.contains("new-secret"));
 }
 
@@ -1256,45 +1331,30 @@ fn adapter_start_stop_dry_run_json_reports_dbus_plan() {
 }
 
 #[test]
-fn adapter_start_stop_text_dry_run_outputs_expected_fields() {
+fn adapter_lifecycle_text_hides_transport_details() {
     let path = write_llm_fixture("vinpst-adapter-lifecycle-text");
-    let start = vinpst_command()
-        .args(["adapter", "start", "command-adapter", "--config"])
-        .arg(&path)
-        .arg("--dry-run")
-        .output()
-        .expect("run vinpst adapter start text dry-run");
-    let stdout = assert_stdout_success(start, "adapter start text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("selector: command-adapter"));
-    assert!(stdout.contains("adapter_id: command-adapter"));
-    assert!(stdout.contains("config_source: file"));
-    assert!(stdout.contains("action: start"));
-    assert!(stdout.contains("will_call_dbus: false"));
-    assert!(stdout.contains("called: false"));
-    assert!(stdout.contains("method: StartAdapter"));
-    assert!(
-        stdout
-            .contains("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline")
-    );
-    assert!(stdout.contains("next_step: run vinpst daemon status --dry-run --json"));
-
-    let stop = vinpst_command()
-        .args(["adapter", "stop", "command-adapter", "--config"])
-        .arg(&path)
-        .arg("--dry-run")
-        .output()
-        .expect("run vinpst adapter stop text dry-run");
-    let stdout = assert_stdout_success(stop, "adapter stop text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("adapter_id: command-adapter"));
-    assert!(stdout.contains("action: stop"));
-    assert!(stdout.contains("method: StopAdapter"));
-    assert!(
-        stdout
-            .contains("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline")
-    );
-    assert!(stdout.contains("next_step: run vinpst daemon status --dry-run --json"));
+    for action in ["start", "stop"] {
+        let output = vinpst_command()
+            .args(["adapter", action, "command-adapter", "--config"])
+            .arg(&path)
+            .arg("--dry-run")
+            .output()
+            .expect("run adapter lifecycle text dry-run");
+        let stdout = assert_stdout_success(output, "adapter lifecycle text dry-run");
+        assert!(stdout.contains("command-adapter"));
+        for internal in [
+            "org.fcitx.Vinpst",
+            "StartAdapter",
+            "StopAdapter",
+            "owner_probe",
+            "will_call_dbus",
+        ] {
+            assert!(
+                !stdout.contains(internal),
+                "leaked internal detail: {internal}"
+            );
+        }
+    }
     fs::remove_file(path).expect("remove adapter lifecycle text fixture");
 }
 
@@ -1323,24 +1383,25 @@ fn adapter_status_dry_run_json_reports_text_adapter_state_plan() {
 }
 
 #[test]
-fn adapter_status_dry_run_text_outputs_expected_fields() {
+fn adapter_status_text_hides_transport_details() {
     let output = vinpst_command()
         .args(["adapter", "status", "--dry-run"])
         .output()
         .expect("run vinpst adapter status text dry-run");
 
     let stdout = assert_stdout_success(output, "adapter status text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("action: status"));
-    assert!(stdout.contains("adapter_id: -"));
-    assert!(stdout.contains("will_call_dbus: false"));
-    assert!(stdout.contains("called: false"));
-    assert!(stdout.contains("method: GetTextAdapterState"));
-    assert!(
-        stdout
-            .contains("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline")
-    );
-    assert!(stdout.contains("next_step: run vinpst adapter status without --dry-run"));
+    assert!(!stdout.is_empty());
+    for internal in [
+        "org.fcitx.Vinpst",
+        "GetTextAdapterState",
+        "owner_probe",
+        "will_call_dbus",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal detail: {internal}"
+        );
+    }
 }
 
 #[test]
@@ -1522,13 +1583,20 @@ fn llm_test_text_dry_run_outputs_expected_fields_without_secrets() {
     fs::remove_file(&path).expect("remove temporary llm config");
 
     let stdout = assert_stdout_success(output, "llm test text dry-run");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("provider_id: openai"));
-    assert!(stdout.contains("timeout_ms: 1500"));
-    assert!(stdout.contains("will_call_http: false"));
-    assert!(stdout.contains("called: false"));
-    assert!(stdout.contains("url: https://llm.example.test/v1/chat/completions"));
+    assert!(stdout.contains("Would test LLM provider `openai`."));
+    assert!(stdout.contains("Request: https://llm.example.test/v1/chat/completions"));
+    for internal in [
+        "dry_run:",
+        "source:",
+        "timeout_ms:",
+        "will_call_http",
+        "called:",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal request detail: {internal}"
+        );
+    }
     assert!(!stdout.contains("secret-token"));
 }
 
@@ -1738,13 +1806,23 @@ fn adapter_list_available_text_prints_live_registry_table() {
     fs::remove_file(&i18n_path).expect("remove temporary i18n");
 
     let stdout = assert_stdout_success(output, "adapter list available text");
-    assert!(stdout.contains("registry_source:"));
-    assert!(stdout.contains("config_source: file"));
-    assert!(stdout.contains("adapter_count: 2"));
-    assert!(stdout.contains("title\tmachine_id\tstatus\tcommand\tenvs\treadme\tdescription"));
-    assert!(stdout.contains("MTranServer 代理\tadapter.mtranserver.proxy\tinstalled\tpython3\t2"));
-    assert!(stdout.contains("本地翻译代理"));
-    assert!(stdout.contains("other\tadapter.other.proxy\tavailable\tpython3\t0"));
+    assert!(stdout.contains("ID\tTITLE\tSTATUS"));
+    assert!(stdout.contains("adapter.mtranserver.proxy\tMTranServer 代理\tinstalled"));
+    assert!(stdout.contains("adapter.other.proxy\tother\tavailable"));
+    for internal in [
+        "registry_source:",
+        "config_source:",
+        "adapter_count:",
+        "command",
+        "envs",
+        "readme",
+        "description",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal list detail: {internal}"
+        );
+    }
 }
 
 #[test]
@@ -1952,11 +2030,24 @@ fn adapter_list_text_prints_table_without_secret_values() {
     fs::remove_file(&path).expect("remove temporary adapter config");
 
     let stdout = assert_stdout_success(output, "adapter list text");
-    assert!(stdout.contains("source: file"));
-    assert!(stdout.contains("adapter_count: 2"));
-    assert!(stdout.contains("id	command	args	env	working_dir	extra_fields"));
-    assert!(stdout.contains("command-adapter	yes	2	1	yes	0"));
-    assert!(stdout.contains("simple-adapter	yes	0	0	no	0"));
+    assert!(stdout.contains("ID\tSTATUS"));
+    assert!(stdout.contains("command-adapter\tconfigured"));
+    assert!(stdout.contains("simple-adapter\tconfigured"));
+    for internal in [
+        "source:",
+        "config_path:",
+        "adapter_count:",
+        "command\t",
+        "args\t",
+        "env\t",
+        "working_dir",
+        "extra_fields",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal list detail: {internal}"
+        );
+    }
     assert!(!stdout.contains("secret-token"));
 }
 

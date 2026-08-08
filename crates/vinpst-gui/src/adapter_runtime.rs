@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn runtime_view_projects_running_stopped_and_unavailable_states() {
-        let (mut app, _) = App::boot();
+        let mut app = crate::test_support::GuiHarness::new();
         app.daemon = DaemonLoadState::Ready(snapshot("adapter-a", true, Some(42)));
         let running = app.adapter_runtime_view_state("adapter-a");
         assert!(!running.can_start);
@@ -508,7 +508,7 @@ mod tests {
 
     #[test]
     fn unconfigured_adapter_is_rejected_before_dbus() {
-        let (mut app, _) = App::boot();
+        let mut app = crate::test_support::GuiHarness::new();
         let _ = app.handle_adapter_runtime_message(AdapterRuntimeMessage::Start(
             "missing-adapter".to_owned(),
         ));
@@ -530,13 +530,14 @@ mod tests {
 
     #[test]
     fn accepted_action_refreshes_current_owner_without_installing_worker_snapshot() {
-        let (mut app, _) = App::boot();
+        let mut app = crate::test_support::GuiHarness::new();
         app.daemon = DaemonLoadState::Failed("refresh pending".to_owned());
         app.operation = OperationState::Running("Starting text adapter…");
+        let owner_generation = app.daemon_owner_generation;
         let _ = app.finish_adapter_runtime_action(Ok(AdapterRuntimeOutcome {
             adapter_id: "adapter-a".to_owned(),
             action: AdapterRuntimeAction::Start,
-            owner_generation: app.daemon_owner_generation,
+            owner_generation,
             confirmation: AdapterRuntimeConfirmation::Confirmed,
             snapshot: Some(snapshot("adapter-a", true, Some(42))),
         }));
@@ -604,7 +605,7 @@ mod tests {
 
     #[test]
     fn stale_owner_completion_restarts_current_owner_refresh() {
-        let (mut app, _) = App::boot();
+        let mut app = crate::test_support::GuiHarness::new();
         let old_generation = app.daemon_owner_generation;
         app.daemon_owner_generation = old_generation.wrapping_add(1);
         app.daemon = DaemonLoadState::Failed("owner changed".to_owned());

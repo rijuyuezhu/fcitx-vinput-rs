@@ -117,7 +117,7 @@ pub(crate) fn handle_config_set(request: ConfigSetRequest<'_>) -> anyhow::Result
             serde_json::to_string_pretty(&config_set_outcome_json(&outcome))?
         );
     } else {
-        print_config_set_outcome_text(&outcome)?;
+        print_config_set_outcome_text(&outcome);
     }
     Ok(())
 }
@@ -192,29 +192,16 @@ fn config_set_outcome_json(outcome: &ConfigSetOutcome) -> serde_json::Value {
     })
 }
 
-fn print_config_set_outcome_text(outcome: &ConfigSetOutcome) -> anyhow::Result<()> {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("pointer: {}", outcome.pointer);
-    println!("force_string: {}", outcome.force_string);
-    println!("parsed_value_kind: {}", outcome.parsed_value_kind);
-    print!("before: ");
-    print_config_value_inline(&outcome.before)?;
-    print!("after: ");
-    print_config_value_inline(&outcome.after)?;
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
-    Ok(())
+fn print_config_set_outcome_text(outcome: &ConfigSetOutcome) {
+    let preview = format!("Would update config `{}`.", outcome.pointer);
+    let applied = format!("Updated config `{}`.", outcome.pointer);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 fn ensure_json_pointer(pointer: &str) -> anyhow::Result<()> {
@@ -253,15 +240,6 @@ fn print_config_value(value: &serde_json::Value) -> anyhow::Result<()> {
         println!("{value}");
     } else {
         println!("{}", serde_json::to_string_pretty(value)?);
-    }
-    Ok(())
-}
-
-fn print_config_value_inline(value: &serde_json::Value) -> anyhow::Result<()> {
-    if let Some(value) = value.as_str() {
-        println!("{value}");
-    } else {
-        println!("{}", serde_json::to_string(value)?);
     }
     Ok(())
 }
@@ -413,22 +391,18 @@ fn config_edit_outcome_json(outcome: &ConfigEditOutcome) -> serde_json::Value {
 }
 
 fn print_config_edit_outcome_text(outcome: &ConfigEditOutcome) {
-    println!("dry_run: {}", outcome.plan.dry_run);
-    println!("source: {}", outcome.plan.source);
-    println!("config_path: {}", outcome.plan.config_path.display());
-    println!("existed: {}", outcome.plan.existed);
-    println!("editor: {}", outcome.plan.editor_argv.join(" "));
-    if let Some(backup_path) = &outcome.plan.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    if let Some(temp_path) = &outcome.temp_path {
-        println!("temp_path: {}", temp_path.display());
-    }
-    println!("changed: {}", outcome.changed);
-    println!("will_write_config: {}", !outcome.plan.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
-    if let Some(exit_status) = outcome.exit_status {
-        println!("exit_status: {exit_status}");
+    if outcome.plan.dry_run {
+        println!(
+            "Would open config for editing: {}",
+            outcome.plan.config_path.display()
+        );
+    } else if outcome.changed {
+        println!("Updated config: {}", outcome.plan.config_path.display());
+        if let Some(path) = &outcome.plan.backup_path {
+            println!("Backup: {}", path.display());
+        }
+    } else {
+        println!("No config changes.");
     }
 }
 

@@ -1,35 +1,34 @@
 # Vinpst
 
-Vinpst adds voice input and voice-driven editing to Fcitx 5.
+Vinpst adds voice input and voice-driven text editing to Fcitx 5.
 
-The project combines:
-
-- a Rust daemon for audio capture, ASR, post-processing, and runtime state;
-- a Rust CLI for setup, resource management, diagnostics, and automation;
-- a Rust/Iced management GUI for common configuration tasks;
-- a thin C++ Fcitx addon for key events, preedit, candidates, commits, selected text, and desktop notifications.
-
-## What you can do
-
-- Dictate into Fcitx-compatible applications.
-- Select text, speak an instruction, and replace the selection with the processed result.
-- Use local sherpa-onnx models, external command providers, or OpenAI-compatible remote ASR.
-- Switch ASR providers/models and post-processing scenes from Fcitx menus.
-- Configure capture devices, gain, VAD, output ducking, hotwords, scenes, LLM providers, and text adapters.
-- Install managed models, providers, and adapters from registry metadata.
-- Diagnose configuration, daemon, audio, ASR, activation, and addon problems with `vinpst doctor`.
+Use it to dictate into normal text fields, switch between local or remote speech-recognition backends, and optionally rewrite recognized or selected text with an LLM.
 
 ## Start here
 
-1. Read [Installation](user/installation.md).
-2. Follow the [Quick start](user/quick-start.md).
-3. Learn the [dictation and command workflows](user/usage.md).
-4. Use [Troubleshooting](user/troubleshooting.md) when setup does not work.
+1. [Install Vinpst](user/installation.md).
+2. Follow the [Quick start](user/quick-start.md) to install a model and dictate your first sentence.
+3. Read [ASR models and providers](user/asr.md) when you want another recognition backend.
+4. Read [Scenes and text processing](user/scenes.md) for polishing, translation, and voice-driven editing.
+
+If something does not work, start with [Troubleshooting](user/troubleshooting.md) or run:
+
+```sh
+vinpst doctor
+```
+
+## Main features
+
+- Local sherpa-onnx speech recognition.
+- Command and remote ASR providers.
+- Fcitx preedit, candidate selection, and text commit.
+- Voice commands that rewrite selected text.
+- LLM scenes for polishing, translation, formatting, and other post-processing.
+- Hotwords for supported ASR backends.
+- A management GUI for everyday setup and a CLI for scripting and advanced configuration.
 
 ## Release status
 
-Vinpst is preparing its first `0.1.0` release. The supported artifact matrix is frozen, release packages are built from one checked source archive, and the remaining work is the final release-candidate rehearsal, artifact-installed check, tag publication, and post-publication smoke.
+Vinpst is preparing its first `0.1.0` release. Until public release packages are published, use the development-install instructions only if you are intentionally testing the current checkout.
 
-## Independent project identity
-
-All user-visible identities and paths use `vinpst` or `fcitx-vinpst`. Vinpst does not replace, import, or migrate another voice-input package. Feature comparisons with other implementations are development input only; they do not change Vinpst package names, commands, D-Bus names, services, or XDG paths.
+Contributor, architecture, migration, and release-maintenance documents are under the **Development** section of this site; they are not required for normal use.

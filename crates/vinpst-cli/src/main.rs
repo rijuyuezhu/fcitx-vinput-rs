@@ -7,8 +7,8 @@ mod config_examples;
 mod config_io;
 mod daemon_control;
 mod hotword;
+mod human_output;
 mod live_i18n;
-mod output;
 mod paths;
 mod recording_control;
 mod registry_support;
@@ -31,7 +31,7 @@ use cli::{
     force_json_output, parse_args_with_global_json_alias,
 };
 use commands::{
-    ConfigEditRequest, ConfigSetRequest, InitRequest, asr_provider_kind_label, configured_label,
+    ConfigEditRequest, ConfigSetRequest, InitRequest, asr_provider_kind_label,
     handle_adapter_command, handle_config_edit, handle_config_example, handle_config_get,
     handle_config_set, handle_device_command, handle_init, handle_llm_command,
     handle_model_command, handle_provider_command, handle_scene_command, normalize_provider_id,
@@ -53,7 +53,6 @@ use daemon_control::{
 };
 use hotword::handle_hotword_command;
 use live_i18n::{LoadedLiveI18n, load_live_i18n};
-use output::bool_label;
 use paths::{
     default_adapter_root, default_cache_root, default_config_path,
     default_model_install_staging_root, default_model_root, default_provider_root, quote_exec_arg,

@@ -1,68 +1,44 @@
 # Quick start
 
-This guide assumes Vinpst is installed and the `vinpst` command is available.
+This guide assumes Vinpst is installed and `vinpst` is available in your shell.
 
-## 1. Initialize user state
-
-Preview the paths first:
-
-```sh
-vinpst init --dry-run --json
-```
-
-Create the default configuration and managed data/cache directories:
+## 1. Initialize and start Vinpst
 
 ```sh
 vinpst init
-```
-
-The main configuration file is:
-
-```text
-${XDG_CONFIG_HOME:-$HOME/.config}/fcitx-vinpst/config.json
-```
-
-`vinpst init` does not overwrite an existing configuration unless `--force` is explicitly passed.
-
-## 2. Start Vinpst and reload Fcitx
-
-```sh
 systemctl --user enable --now vinpst-daemon.service
 fcitx5 -r
 ```
 
-Check the daemon and installation:
+Open the Fcitx configuration tool and make sure the **Vinpst** addon is enabled.
 
-```sh
-vinpst daemon status
-vinpst doctor
-```
+## 2. Install a speech-recognition model
 
-A fresh configuration intentionally has no selected ASR model yet. The daemon remains available in this setup state so the GUI can install resources and reload the backend. Before model selection, `vinpst doctor` reports `"ok": false` with `"status": "setup-required"`; treat that as an incomplete setup rather than a daemon startup failure. Resolve any additional audio, activation, or addon errors before testing dictation.
-
-## 3. Install and select an ASR model
-
-The easiest path is the **Vinpst Configuration** desktop application:
+Open **Vinpst Configuration** from your application menu, or run:
 
 ```sh
 vinpst-gui
 ```
 
-Open **Resources**, choose a compatible model, install it, and make it active.
+On **Resources**:
 
-The equivalent CLI flow is:
+1. Find a model under **Models**.
+2. Install it.
+3. Click **Use** on the installed model.
+
+That is enough for local dictation. The default configuration already contains the local `sherpa-onnx` provider and the raw scene.
+
+CLI alternative:
 
 ```sh
-vinpst model list --available
-vinpst model install <model-id-or-short-id>
-vinpst model use <model-id-or-short-id> --in-place --reload-daemon
+vinpst model list -a
+vinpst model install <model-id>
+vinpst model use <model-id> --in-place --reload-daemon
 ```
 
-Use `--dry-run --json` on install or selection commands when you want to inspect the planned paths and changes first.
+## 3. Dictate
 
-## 4. Dictate
-
-Default Fcitx keys in the current Vinpst configuration are:
+Focus a text field and use the normal dictation key.
 
 | Action | Default key |
 | --- | --- |
@@ -71,22 +47,30 @@ Default Fcitx keys in the current Vinpst configuration are:
 | ASR provider/model menu | F8 |
 | Scene menu | Right Shift |
 
-The default trigger mode is **Both**:
+The default trigger mode supports both tap-to-toggle and hold-to-talk behavior.
 
-- a short press toggles recording;
-- holding the key uses push-to-talk behavior.
+For ordinary dictation, press or hold **Right Control**, speak, then stop recording. Streaming backends may show partial text before the final result is committed through Fcitx.
 
-Focus a text field, press the normal dictation key, speak, and stop recording. Partial recognition appears as preedit when the active backend supports streaming; the final result is committed through Fcitx.
+## 4. Optional: voice-edit selected text
 
-## 5. Try command editing
+Command mode needs an LLM provider or compatible text adapter.
 
 1. Select text in an application.
-2. Press or hold `F10` according to the configured trigger mode.
-3. Speak an instruction such as “translate this into English” or “make this more concise.”
-4. Stop recording and choose a candidate when multiple results are returned.
+2. Press or hold **F10**.
+3. Say an instruction such as “translate this to English” or “make this shorter.”
+4. Stop recording and choose a candidate if more than one is returned.
 
-Command mode requires a configured command scene and either a text adapter or an LLM provider. See [Scenes and text processing](scenes.md).
+See [Scenes and text processing](scenes.md) for setup.
 
-## 6. Customize keys
+## If setup does not work
 
-Open the Fcitx configuration tool, find the **Vinpst** addon, and edit the trigger, command, scene-menu, ASR-menu, paging, and trigger-mode options. The frontend settings are stored by Fcitx under its own `conf/vinpst.conf` path, separate from the daemon JSON configuration.
+Run:
+
+```sh
+vinpst doctor
+vinpst daemon status
+```
+
+A fresh installation without a selected model is reported as **setup required** rather than a daemon crash. For other problems, see [Troubleshooting](troubleshooting.md).
+
+To change trigger keys or tap/hold behavior, open the **Vinpst** addon in the Fcitx configuration tool. See [Settings](settings.md) for the rest of the everyday options.

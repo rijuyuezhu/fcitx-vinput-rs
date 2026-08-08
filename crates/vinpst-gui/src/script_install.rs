@@ -18,14 +18,6 @@ use crate::{
     script_recovery::recover_registry_script_config,
 };
 
-pub(crate) fn provider_selector_id() -> Id {
-    Id::new("vinpst-gui-provider-selector")
-}
-
-pub(crate) fn adapter_selector_id() -> Id {
-    Id::new("vinpst-gui-adapter-selector")
-}
-
 pub(crate) fn script_primary_action_id() -> Id {
     Id::new("vinpst-gui-script-primary-action")
 }
@@ -549,20 +541,19 @@ impl ScriptInstallState {
 }
 
 impl App {
-    pub(crate) fn begin_provider_install(&mut self) -> Task<Message> {
-        self.begin_script_install(LiveScriptKind::AsrProvider)
+    pub(crate) fn begin_provider_install(&mut self, selector: String) -> Task<Message> {
+        self.begin_script_install(LiveScriptKind::AsrProvider, selector)
     }
 
-    pub(crate) fn begin_adapter_install(&mut self) -> Task<Message> {
-        self.begin_script_install(LiveScriptKind::LlmAdapter)
+    pub(crate) fn begin_adapter_install(&mut self, selector: String) -> Task<Message> {
+        self.begin_script_install(LiveScriptKind::LlmAdapter, selector)
     }
 
-    pub(crate) fn begin_script_install(&mut self, kind: LiveScriptKind) -> Task<Message> {
-        let selector = match kind {
-            LiveScriptKind::AsrProvider => self.provider_selector.trim(),
-            LiveScriptKind::LlmAdapter => self.adapter_selector.trim(),
-        }
-        .to_owned();
+    pub(crate) fn begin_script_install(
+        &mut self,
+        kind: LiveScriptKind,
+        selector: String,
+    ) -> Task<Message> {
         self.begin_script_preparation_for(kind, selector)
     }
 
@@ -572,10 +563,6 @@ impl App {
         };
         match retry {
             ScriptRetryRequest::Prepare { kind, selector } => {
-                match kind {
-                    LiveScriptKind::AsrProvider => self.provider_selector.clone_from(&selector),
-                    LiveScriptKind::LlmAdapter => self.adapter_selector.clone_from(&selector),
-                }
                 self.begin_script_preparation_for(kind, selector)
             }
             ScriptRetryRequest::Install(plan) => self.begin_resolved_script_install(*plan),

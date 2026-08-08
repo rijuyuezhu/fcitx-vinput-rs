@@ -169,45 +169,85 @@ fn init_outcome_json(outcome: &InitOutcome) -> serde_json::Value {
             "command_argv": outcome.activation_command_argv,
         },
         "next_steps": [
+            "browse available models with vinpst model list --available",
             "install a model with vinpst model install <id-or-short-id>",
-            "select it with vinpst model use <id-or-short-id> --config <path> --in-place",
-            "install D-Bus activation with the suggested activation-service command"
+            "select it with vinpst model use <id-or-short-id> --in-place --reload-daemon",
+            "check setup with vinpst doctor"
         ],
     })
 }
 
 fn print_init_outcome_text(outcome: &InitOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("force: {}", outcome.force);
-    println!("config_path: {}", outcome.config_path.display());
-    println!("config_existed: {}", outcome.config_existed);
-    println!(
-        "config_will_write: {}",
-        outcome.dry_run && (!outcome.config_existed || outcome.force)
-    );
-    println!("config_wrote: {}", outcome.wrote_config);
-    println!("model_root: {}", outcome.model_root.display());
-    println!("model_root_existed: {}", outcome.model_root_existed);
-    println!(
-        "model_root_will_create: {}",
-        outcome.dry_run && !outcome.model_root_existed
-    );
-    println!("model_root_created: {}", outcome.created_model_root);
-    println!("cache_root: {}", outcome.cache_root.display());
-    println!("cache_root_existed: {}", outcome.cache_root_existed);
-    println!(
-        "cache_root_will_create: {}",
-        outcome.dry_run && !outcome.cache_root_existed
-    );
-    println!("cache_root_created: {}", outcome.created_cache_root);
-    if let Some(path) = &outcome.activation_service_path {
-        println!("activation_service_path: {}", path.display());
+    if outcome.dry_run {
+        println!("Initialization preview");
+    } else {
+        println!("Vinpst is initialized.");
     }
+    println!();
     println!(
-        "activation_service_command: {}",
-        outcome.activation_command_argv.join(" ")
+        "Config: {} ({})",
+        outcome.config_path.display(),
+        init_config_state(outcome)
     );
-    println!("next: vinpst model install <id-or-short-id>");
+    println!(
+        "Models: {} ({})",
+        outcome.model_root.display(),
+        init_directory_state(
+            outcome.dry_run,
+            outcome.model_root_existed,
+            outcome.created_model_root
+        )
+    );
+    println!(
+        "Cache:  {} ({})",
+        outcome.cache_root.display(),
+        init_directory_state(
+            outcome.dry_run,
+            outcome.cache_root_existed,
+            outcome.created_cache_root
+        )
+    );
+    if outcome.dry_run {
+        println!();
+        println!("No files were changed.");
+        return;
+    }
+    println!();
+    println!("Next:");
+    println!("  1. Browse models:  vinpst model list --available");
+    println!("  2. Install a model: vinpst model install <id-or-short-id>");
+    println!("  3. Select it:       vinpst model use <id-or-short-id> --in-place --reload-daemon");
+    println!("  4. Check setup:     vinpst doctor");
+}
+
+fn init_config_state(outcome: &InitOutcome) -> &'static str {
+    if outcome.dry_run {
+        if outcome.config_existed && outcome.force {
+            "would replace"
+        } else if outcome.config_existed {
+            "kept"
+        } else {
+            "would create"
+        }
+    } else if outcome.wrote_config {
+        if outcome.config_existed {
+            "replaced"
+        } else {
+            "created"
+        }
+    } else {
+        "kept"
+    }
+}
+
+const fn init_directory_state(dry_run: bool, existed: bool, created: bool) -> &'static str {
+    if dry_run {
+        if existed { "ready" } else { "would create" }
+    } else if created {
+        "created"
+    } else {
+        "ready"
+    }
 }
 
 fn init_activation_command_argv(config_path: &Path) -> Vec<String> {

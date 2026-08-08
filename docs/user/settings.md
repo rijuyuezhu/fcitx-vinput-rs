@@ -1,121 +1,82 @@
 # Settings
 
-Vinpst has two configuration surfaces:
-
-1. the daemon/application JSON configuration;
-2. the Fcitx addon configuration for trigger keys and trigger mode.
-
-They are intentionally separate.
-
-## Main configuration
-
-Default path:
-
-```text
-${XDG_CONFIG_HOME:-$HOME/.config}/fcitx-vinpst/config.json
-```
-
-Initialize it with:
-
-```sh
-vinpst init
-```
-
-Validate it at any time:
-
-```sh
-vinpst config validate \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/fcitx-vinpst/config.json"
-```
-
-Read or update an existing value with a JSON pointer:
-
-```sh
-vinpst config get /global/default_language
-vinpst config set /global/default_language '"en"' --in-place
-```
-
-Preview mutations before writing:
-
-```sh
-vinpst config set /global/duck_output_while_recording true \
-  --dry-run --json
-```
-
-`--in-place` writes an adjacent `.bak` when replacing an existing file. The GUI also detects external file changes and refuses to overwrite a configuration that changed after it was loaded.
-
-## Common settings
-
-### Capture device
-
-```sh
-vinpst device list
-vinpst device use <target> --in-place
-vinpst daemon restart
-```
-
-The default target is `default`. Device names come from the active PipeWire environment.
-
-### Input gain and normalization
-
-- `asr.input_gain` multiplies captured samples before recognition.
-- `asr.normalize_audio` enables peak normalization for completed audio.
-
-Excessive gain can clip audio and reduce recognition quality. Start near `1.0` and change it gradually.
-
-### VAD
-
-VAD settings live under `asr.vad`:
-
-- `enabled`;
-- `threshold`;
-- `min_speech_duration`;
-- `min_silence_duration`;
-- `speech_pad_ms`.
-
-Use the GUI for ordinary adjustment. Validate manual JSON edits before restarting the daemon.
-
-### Output ducking
-
-Set `global.duck_output_while_recording` to reduce output volume while recording. `global.duck_output_volume` is a scale from `0.0` to `1.0`.
-
-Vinpst records the previous default-sink volume and restores it after recording. Ducking is best-effort and depends on the desktop audio control path being available.
-
-### Language
-
-`global.default_language` is the default recognition language hint. Provider/model capabilities still determine which languages are actually supported.
-
-## Fcitx addon settings
-
-Open the Fcitx configuration tool and select the **Vinpst** addon. Available settings include:
-
-- normal dictation keys;
-- command dictation keys;
-- scene-menu keys;
-- ASR-menu keys;
-- previous/next-page keys;
-- Tap/Hold/Both trigger mode.
-
-Fcitx stores these values under its own package configuration root as `conf/vinpst.conf`. They are not part of `fcitx-vinpst/config.json`.
-
-## GUI
-
-Run:
+Most everyday Vinpst settings are on the **Control** page of Vinpst Configuration.
 
 ```sh
 vinpst-gui
 ```
 
-The GUI provides Control, Resources, LLM, and Hotwords pages. It uses the same typed configuration and resource-management libraries as the CLI. A display-independent check is available for package validation:
+Vinpst's speech/LLM settings and Fcitx trigger-key settings are separate. Use Vinpst Configuration for the former and the Fcitx configuration tool for the latter.
+
+## Audio
+
+### Capture device
+
+Choose the microphone/capture target used by PipeWire. Select **Default** to follow the current system default.
+
+To list devices from the CLI:
 
 ```sh
-vinpst-gui --check --offline
+vinpst device list
 ```
 
-The GUI is keyboard-operable, but `0.1.0` does not claim screen-reader or assistive-technology semantic-tree support. See [Accessibility](accessibility.md) for the exact keyboard contract and CLI/Fcitx fallback paths.
+### Normalize audio
 
-## Environment variables
+**Normalize audio** evens out completed recordings before recognition. It is useful when microphone levels vary between recordings.
 
-Remote provider HTTP clients use standard proxy environment variables such as `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. `SSL_CERT_FILE` may point to an additional PEM CA bundle.
+### Input gain
 
-Set daemon-specific environment through a systemd user-service drop-in rather than exporting secrets globally. Keep environment files mode `0600` and do not include them in bug reports.
+**Input gain** multiplies the captured signal before recognition. Start near `1.0×` and raise it gradually if the microphone is too quiet. Excessive gain can clip audio and reduce recognition quality.
+
+### Voice activity detection
+
+**Enable voice activity detection** trims silence for supported local recognition paths. The normal GUI exposes the on/off choice; advanced threshold/timing values remain available in the JSON configuration.
+
+### Reduce output volume while recording
+
+Enable **Reduce output volume while recording** when speaker audio is leaking back into the microphone. The volume slider controls how much of the current output level remains during recording; Vinpst restores the previous volume afterward.
+
+## ASR provider
+
+The Control page shows the configured ASR providers and the current provider. Use **Resources → ASR providers** when you want to install another registry provider; return to Control to configure or select it.
+
+See [ASR models and providers](asr.md) for the full workflow.
+
+## Daemon
+
+The daemon controls are at the bottom of the Control page. In normal use you should only need **Start**, **Stop**, or **Restart** when changing setup or recovering from a problem. If the daemon behaves unexpectedly, run `vinpst doctor`.
+
+## Fcitx keys and trigger mode
+
+Open the Fcitx configuration tool and select the **Vinpst** addon. You can change:
+
+- normal dictation keys;
+- command-mode keys;
+- scene-menu and ASR-menu keys;
+- candidate paging keys;
+- Tap/Hold/Both trigger behavior.
+
+Current defaults are Right Control for normal dictation, F10 for command mode, Right Shift for the scene menu, and F8 for the ASR menu.
+
+## Advanced configuration
+
+The main configuration file is:
+
+```text
+${XDG_CONFIG_HOME:-$HOME/.config}/fcitx-vinpst/config.json
+```
+
+For values not exposed by the normal GUI, use the CLI or edit the JSON deliberately:
+
+```sh
+vinpst config get /global/default_language
+vinpst config set /asr/vad/threshold 0.45 --in-place
+vinpst config validate \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/fcitx-vinpst/config.json"
+```
+
+In-place CLI mutations create a nearby backup when replacing an existing file. Vinpst Configuration also refuses to overwrite a file that changed externally after it was loaded.
+
+Fcitx stores addon key settings separately under its own `conf/vinpst.conf`; those settings are not part of the daemon JSON file.
+
+For command-by-command syntax, see [CLI overview](cli.md). For service, audio, or configuration failures, see [Troubleshooting](troubleshooting.md).

@@ -17,7 +17,7 @@ pub(crate) use device::handle_device_command;
 pub(crate) use llm::handle_llm_command;
 pub(crate) use model::handle_model_command;
 pub(crate) use provider::{
-    asr_provider_kind_label, configured_label, handle_provider_command, normalize_provider_id,
+    asr_provider_kind_label, handle_provider_command, normalize_provider_id,
 };
 pub(crate) use registry::{
     print_registry_install_plan, print_registry_plan, print_registry_summary,

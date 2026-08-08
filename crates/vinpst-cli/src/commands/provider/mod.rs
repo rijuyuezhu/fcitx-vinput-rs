@@ -386,7 +386,3 @@ pub(crate) fn normalize_provider_id(input: &str) -> anyhow::Result<String> {
 pub(crate) fn asr_provider_kind_label(kind: &AsrProviderKind) -> &'static str {
     mutation::asr_provider_kind_label(kind)
 }
-
-pub(crate) fn configured_label(value: Option<&str>) -> &'static str {
-    mutation::configured_label(value)
-}

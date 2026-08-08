@@ -29,7 +29,7 @@ This is practical functional parity, not identity or implementation compatibilit
 | M2 Native and provider ASR | complete for the current registry families | Local offline/online models, command providers, remote providers, failure preservation, and representative real-WAV/live paths pass. |
 | M3 Real desktop input | complete for the core 0.1.0 path | Normal dictation, command replacement, menus, localization, notifications, focus/owner recovery, model/provider switching, physical microphone, and representative applications are live-proven. |
 | M4 Resource management | complete for ordinary workflows | CLI and GUI manage models, providers, adapters, scenes, LLM providers, devices, and hotwords without manual JSON editing. |
-| M5 Rust management GUI | complete for 0.1.0 | Control, Resources, LLM, and Hotwords workflows are typed, conflict-aware, redacted, keyboard-operable, packaged, and deterministically covered. Positional focus-order desktop collectors are retired and are not release evidence. Screen-reader semantic trees are explicitly unsupported for 0.1.0 with CLI/Fcitx fallbacks; future desktop GUI automation requires stable semantic control identities. |
+| M5 Rust management GUI | complete for 0.1.0 | Control, Resources, LLM, and Hotwords workflows are typed, conflict-aware, redacted, keyboard-operable, packaged, and deterministically covered. Positional focus-order desktop collectors are retired and are not release evidence. Screen-reader semantic trees are explicitly unsupported for 0.1.0 with CLI/Fcitx fallbacks; management-GUI interaction is manual-only and automated coverage stops below the Iced window/widget boundary. |
 | M6 Exhaustive user-capability audit | complete for the frozen release baseline | The 164-file/1,559-callable upstream inventory was refreshed unchanged on 2026-08-07, and every meaningful user task is mapped to Vinpst implementation/evidence or an explicit product rationale. |
 | M7 User documentation | complete for the release candidate | Strict MkDocs covers installation, quick start, usage, ASR, scenes, settings, accessibility, CLI, troubleshooting, limitations, release readiness, notes, publication, and rollback using Vinpst identities. |
 | M8 Release readiness | active | Selected artifacts build from one checked source archive, package transactions run on clean hosted runners, manifest/checksum/provenance and draft-first publication are wired, and the final candidate still needs exact-commit rehearsal plus artifact-installed desktop verification. |
@@ -49,7 +49,7 @@ This is practical functional parity, not identity or implementation compatibilit
 
 - Keep normal dictation, command replacement, provider failure preservation, owner recovery, menus, localization, deterministic GUI management, and package transactions green.
 - Add implementation or deterministic regression work only when a concrete release-blocking defect is found.
-- Do not use positional focus-order management-GUI collectors as a release condition; future GUI automation must use stable semantic control identities.
+- Do not automate management-GUI interaction as a release condition. Validate the real GUI manually and keep automated coverage in crate-internal semantic state/message/persistence tests below the Iced window/widget boundary.
 
 ### P2: user documentation
 

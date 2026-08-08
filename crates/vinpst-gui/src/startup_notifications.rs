@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn app_loaded_acknowledge_and_details_transitions_match_dialog_semantics() {
-        let (mut app, _) = App::boot();
+        let mut app = crate::test_support::GuiHarness::new();
         let notification = parse_notification(&feed(4), "en_US")
             .expect("notification")
             .into_notification();

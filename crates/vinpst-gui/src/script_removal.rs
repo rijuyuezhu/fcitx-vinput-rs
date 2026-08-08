@@ -9,6 +9,22 @@ use crate::{
 };
 
 impl App {
+    pub(crate) fn intercept_script_removal_message(
+        &mut self,
+        message: &Message,
+    ) -> Option<Task<Message>> {
+        match message {
+            Message::RemoveProvider(id) => {
+                Some(self.begin_script_remove(LiveScriptKind::AsrProvider, id.clone()))
+            }
+            Message::RemoveAdapter(id) => {
+                Some(self.begin_script_remove(LiveScriptKind::LlmAdapter, id.clone()))
+            }
+            Message::ScriptRemoved(result) => Some(self.finish_script_remove(result.clone())),
+            _ => None,
+        }
+    }
+
     pub(crate) fn begin_script_remove(
         &mut self,
         kind: LiveScriptKind,
@@ -28,6 +44,11 @@ impl App {
         }
         if let Err(error) = self.ensure_no_open_asr_provider_editor() {
             self.operation = OperationState::Failed(error);
+            return Task::none();
+        }
+        if kind == LiveScriptKind::AsrProvider
+            && !self.guard_hotword_changes("removing an ASR provider")
+        {
             return Task::none();
         }
         let Ok(document) = &self.config else {
@@ -73,5 +94,23 @@ impl App {
             Err(error) => self.operation = OperationState::Failed(error),
         }
         self.begin_daemon_refresh(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{HotwordMessage, SecretInput};
+
+    #[test]
+    fn managed_asr_removal_cannot_discard_unsaved_hotword_changes() {
+        let mut app = crate::test_support::GuiHarness::new();
+        app.send(Message::Hotword(HotwordMessage::PathChanged(
+            SecretInput::new("/tmp/pending-hotwords.txt".to_owned()),
+        )));
+
+        app.send(Message::RemoveProvider("managed-provider".to_owned()));
+
+        assert!(matches!(app.operation, crate::OperationState::Failed(_)));
     }
 }

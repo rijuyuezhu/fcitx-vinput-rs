@@ -6,7 +6,7 @@ use super::{
 };
 use super::{
     catalog::load_live_model_catalog,
-    support::{managed_model_dir_name, optional_str, safe_path_component},
+    support::{managed_model_dir_name, safe_path_component},
 };
 
 fn model_use_write_target(request: &ModelUseRequest<'_>) -> anyhow::Result<ModelUseWriteTarget> {
@@ -222,28 +222,30 @@ fn model_use_preview_json(preview: &ModelUsePreview) -> serde_json::Value {
 }
 
 fn print_model_use_preview_text(preview: &ModelUsePreview) {
-    println!("dry_run: {}", !preview.wrote_config);
-    println!("selector: {}", preview.selector);
-    println!("selector_kind: {}", preview.selector_kind);
-    println!("provider_id: {}", preview.provider_id);
-    println!("active_provider_before: {}", preview.before_active_provider);
-    println!("active_provider_after: {}", preview.after_active_provider);
-    println!(
-        "model_before: {}",
-        optional_str(preview.before_model.as_deref())
+    let display_name = preview
+        .resolved_title
+        .as_deref()
+        .or(preview.resolved_short_id.as_deref())
+        .or(preview.resolved_model_id.as_deref())
+        .unwrap_or(&preview.selector);
+    let preview_message = format!(
+        "Would select model `{display_name}` for ASR provider `{}`.",
+        preview.provider_id
     );
-    println!("model_after: {}", preview.after_model);
-    println!("will_write_config: {}", preview.wrote_config);
-    println!("wrote_config: {}", preview.wrote_config);
-    if let Some(output_path) = &preview.output_path {
-        println!("output_path: {}", output_path.display());
+    let applied_message = format!(
+        "Selected model `{display_name}` for ASR provider `{}`.",
+        preview.provider_id
+    );
+    crate::human_output::print_config_mutation(
+        !preview.wrote_config,
+        &preview_message,
+        &applied_message,
+        preview.output_path.as_deref(),
+        preview.backup_path.as_deref(),
+    );
+    if preview.reloaded_daemon {
+        println!("Reloaded the ASR backend.");
     }
-    if let Some(backup_path) = &preview.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("in_place: {}", preview.in_place);
-    println!("reload_daemon_requested: {}", preview.reload_daemon);
-    println!("daemon_reloaded: {}", preview.reloaded_daemon);
 }
 
 fn write_model_use_config(

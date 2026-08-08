@@ -30,15 +30,9 @@ const fn english_core(key: GuiText) -> &'static str {
         GuiText::Llm => "LLM",
         GuiText::Hotwords => "Hotwords",
         GuiText::OpenConfig => "Open config",
-        GuiText::KeyboardHint => {
-            "Ctrl+1–4: pages · Esc: clear focus · Tab: controls · Enter/Space: actions · Arrows: values"
-        }
         GuiText::DaemonService => "Daemon service",
-        GuiText::Recording => "Recording",
         GuiText::ReloadConfig => "Reload config",
-        GuiText::StartRecording => "Start recording",
-        GuiText::StopRecording => "Stop recording",
-        GuiText::SavingConfiguration => "Saving configuration…",
+        GuiText::SavingConfiguration => "Saving…",
         GuiText::StartingRecording => "Starting recording…",
         GuiText::StoppingRecording => "Stopping recording…",
         GuiText::RecordingStarted => "Recording started.",
@@ -46,8 +40,7 @@ const fn english_core(key: GuiText) -> &'static str {
             "Recording stopped; the recognition result was delivered to the frontend."
         }
         GuiText::DaemonLoading => "Daemon: loading…",
-        GuiText::OwnerMonitorConnecting => "Owner monitoring: connecting to D-Bus signals…",
-        GuiText::OwnerMonitorReady => "Owner monitoring: signal-driven reconciliation active.",
+        GuiText::DaemonStatusUnavailable => "Daemon: status unavailable",
         GuiText::RefreshDaemon => "Refresh daemon",
         GuiText::StartDaemon => "Start daemon",
         GuiText::StopDaemon => "Stop daemon",
@@ -55,23 +48,18 @@ const fn english_core(key: GuiText) -> &'static str {
         GuiText::StartingDaemon => "Starting daemon…",
         GuiText::StoppingDaemon => "Stopping daemon…",
         GuiText::RestartingDaemon => "Restarting daemon…",
-        GuiText::General => "General",
-        GuiText::AudioAndVad => "Audio and VAD",
-        GuiText::DefaultLanguage => "Default language",
-        GuiText::DefaultLanguagePlaceholder => "for example en-US or zh-CN",
+        GuiText::AudioAndVad => "Audio",
+        GuiText::NormalizeAudio => "Normalize audio",
         GuiText::CaptureDevice => "Capture device",
-        GuiText::PipeWireTarget => "PipeWire target",
-        GuiText::ActiveAsrProvider => "Active ASR provider",
-        GuiText::ActiveScene => "Active scene",
-        GuiText::LockedWhileFinishing => "Locked while operation finishes",
+        GuiText::AudioDevicesUnavailable => "Could not refresh the microphone list.",
+        GuiText::LockedWhileFinishing => "Finish the current operation first",
         GuiText::DuckOutput => "Duck output while recording",
         GuiText::EnableVad => "Enable voice activity detection",
-        GuiText::SaveConfiguration => "Save configuration",
-        GuiText::ResetChanges => "Reset changes",
+        GuiText::SaveConfiguration => "Save",
+        GuiText::ResetChanges => "Reset",
         GuiText::UnsavedChanges => "Unsaved changes",
-        GuiText::ConfigurationUpToDate => "Configuration is up to date",
+        GuiText::ConfigurationUpToDate => "Saved",
         GuiText::ConfigDraftUnavailable => "Config draft is unavailable.",
-        GuiText::SourceUserFile => "user file",
         GuiText::SourceBundledDefault => "bundled default; Save creates the user file",
         _ => unreachable!(),
     }
@@ -132,25 +120,21 @@ const fn english_hotwords(key: GuiText) -> &'static str {
         GuiText::HotwordFile => "Hotword file",
         GuiText::HotwordPathPlaceholder => "Path to a UTF-8 hotword file",
         GuiText::Browse => "Browse…",
-        GuiText::SetPath => "Set path",
-        GuiText::ClearPath => "Clear path",
-        GuiText::LoadContent => "Load content",
-        GuiText::SaveContent => "Save content",
-        GuiText::RetryActivation => "Retry activation",
-        GuiText::OneHotwordPerLine => "One hotword entry per line",
-        GuiText::HotwordActivationRetryable => {
-            "Hotword configuration is saved; daemon activation can be retried"
-        }
+        GuiText::SetPath => "Use file",
+        GuiText::ClearPath => "Disable",
+        GuiText::LoadContent => "Reload file",
+        GuiText::SaveContent => "Save",
+        GuiText::RetryActivation => "Apply to ASR",
+        GuiText::OneHotwordPerLine => "One hotword per line; optional score: word 2.0",
+        GuiText::HotwordActivationRetryable => "Saved; apply the hotwords to ASR again",
         GuiText::UnsavedHotwordContent => "Unsaved hotword content",
-        GuiText::HotwordContentUnchanged => "Hotword content is unchanged",
-        GuiText::LoadConfiguredHotwordFile => "Load the configured file to edit its contents",
+        GuiText::HotwordContentUnchanged => "Saved",
+        GuiText::LoadConfiguredHotwordFile => "Reload the file to edit it",
         GuiText::SelectHotwordsFile => "Select Hotwords File",
         GuiText::TextFiles => "Text Files",
         GuiText::AllFiles => "All Files",
         GuiText::SelectingHotwordFile => "Selecting hotword file…",
-        GuiText::SelectedHotwordFile => {
-            "Selected a hotword file; use Set path to validate and apply it."
-        }
+        GuiText::SelectedHotwordFile => "File selected; choose Use file to validate and apply it.",
         GuiText::InvalidUtf8HotwordPath => "The selected hotword path is not valid UTF-8.",
         _ => unreachable!(),
     }
@@ -183,24 +167,30 @@ const fn english_desktop(key: GuiText) -> &'static str {
 
 const fn english_resources(key: GuiText) -> &'static str {
     match key {
-        GuiText::FilterProvidersAndScenes => "Filter providers and scenes",
+        GuiText::FilterProvidersAndScenes => "Filter scenes",
         GuiText::FilterModels => "Filter models",
-        GuiText::ManagedAsrModels => "Managed ASR models",
+        GuiText::ManagedAsrModels => "Models",
         GuiText::InstalledModels => "Installed models",
         GuiText::AvailableModels => "Available models",
         GuiText::RefreshCatalog => "Refresh catalog",
         GuiText::LoadingModelCatalog => "Loading model catalog…",
-        GuiText::NoRegistryModelsAvailable => "No registry models match the current filter.",
-        GuiText::InstallOrUpdate => "Install or update",
-        GuiText::ManagedCommandAsrProviders => "Managed command ASR providers",
-        GuiText::NoManagedModelsInstalled => "No managed ASR models installed.",
-        GuiText::AsrProviders => "ASR providers",
+        GuiText::LoadingCatalog => "Loading…",
+        GuiText::CatalogUnavailable => "Could not load this list.",
+        GuiText::NoCatalogItems => "Nothing available.",
+        GuiText::NoRegistryModelsAvailable => "No models match the current filter.",
+        GuiText::Install => "Install",
+        GuiText::Update => "Update",
+        GuiText::Continue => "Continue",
+        GuiText::ManagedCommandAsrProviders | GuiText::AsrProviders => "ASR providers",
+        GuiText::NoManagedModelsInstalled => "No models installed.",
+        GuiText::SelectLocalProviderForManagedModel => {
+            "Select a local ASR provider before choosing an installed model."
+        }
         GuiText::AddCustomProvider => "Add custom provider",
-        GuiText::ManagedTextAdapters => "Managed text adapters",
-        GuiText::Adapters => "Adapters",
+        GuiText::ManagedTextAdapters | GuiText::Adapters => "LLM adapters",
         GuiText::AddCustomAdapter => "Add custom adapter",
-        GuiText::RefreshRuntime => "Refresh runtime",
-        GuiText::NoTextAdaptersConfigured => "No text adapters configured.",
+        GuiText::RefreshRuntime => "Refresh status",
+        GuiText::NoTextAdaptersConfigured => "No LLM adapters configured.",
         GuiText::Remove => "Remove",
         GuiText::Edit => "Edit",
         GuiText::EditScript => "Edit script",
@@ -213,7 +203,7 @@ const fn english_resources(key: GuiText) -> &'static str {
         GuiText::Active => "active",
         GuiText::Inactive => "inactive",
         GuiText::CommandAdapter => "command adapter",
-        GuiText::RuntimeUnavailable => "runtime unavailable",
+        GuiText::RuntimeUnavailable => "status unavailable",
         GuiText::NotReportedByDaemon => "not reported by daemon",
         GuiText::Running => "running",
         GuiText::Stopped => "stopped",
@@ -299,7 +289,7 @@ const fn english_forms(key: GuiText) -> &'static str {
         GuiText::ProviderCommandPlaceholder => "/path/to/provider",
         GuiText::JsonStringArray => "JSON string array",
         GuiText::AddVariable => "Add variable",
-        GuiText::NoEnvironmentVariables => "No environment variables configured.",
+        GuiText::NoEnvironmentVariables => "No environment variables.",
         GuiText::VariableName => "Variable name",
         GuiText::Value => "Value",
         GuiText::SavingAsrProvider => "Saving ASR provider…",
@@ -318,8 +308,7 @@ const fn english_llm_adapter_forms(key: GuiText) -> &'static str {
         GuiText::ProvidersTitle => "Providers",
         GuiText::TestInput => "Test input",
         GuiText::TestInputPlaceholder => "short connectivity-test text",
-        GuiText::DefaultModelFallback => "default model",
-        GuiText::NoLlmProviders => "No LLM providers configured.",
+        GuiText::NoLlmProviders => "No LLM providers.",
         GuiText::Test => "Test",
         GuiText::BaseUrl => "Base URL",
         GuiText::BaseUrlPlaceholder => "https://provider.example/v1",
@@ -364,7 +353,7 @@ const fn english_install(key: GuiText) -> &'static str {
         GuiText::VerifyingModelChecksum => "Verifying model checksum…",
         GuiText::WritingModelMetadata => "Writing model metadata…",
         GuiText::PublishingModelAtomically => "Publishing model atomically…",
-        GuiText::UpdatingConfigurationProgress => "Updating configuration…",
+        GuiText::UpdatingConfigurationProgress => "Saving settings…",
         GuiText::ModelInstallationCompleted => "Model installation completed.",
         GuiText::ValuesStoredHidden => {
             "Values are stored in the user configuration and hidden in diagnostics."
@@ -376,19 +365,17 @@ const fn english_install(key: GuiText) -> &'static str {
             "The published script is being reused; no download is running."
         }
         GuiText::ScriptPublishedConfigurationIncomplete => {
-            "Script published; configuration incomplete"
+            "Script installed, but settings were not saved"
         }
         GuiText::RecoveryInstructions => {
             "Reload after resolving external changes or permissions, then retry. The script will not be downloaded again; dismissing keeps the published file."
         }
-        GuiText::RetryConfigurationUpdate => "Retry configuration update",
+        GuiText::RetryConfigurationUpdate => "Retry saving settings",
         GuiText::DismissKeepScript => "Dismiss (keep script)",
         GuiText::ScriptInstallationCancelled => "Script installation cancelled.",
-        GuiText::RegistryProviderSelector => "Registry provider id or short id",
-        GuiText::RegistryAdapterSelector => "Registry adapter id or short id",
         GuiText::AsrProviderResource => "ASR provider",
         GuiText::TextAdapterResource => "text adapter",
-        GuiText::EditingManagedProviderScript => "Editing managed provider script…",
+        GuiText::EditingManagedProviderScript => "Opening provider script…",
         GuiText::StartingTextAdapter => "Starting text adapter…",
         GuiText::StoppingTextAdapter => "Stopping text adapter…",
         _ => unreachable!(),
@@ -406,7 +393,7 @@ const fn english_install_tail(key: GuiText) -> &'static str {
             "The saved hotword path configuration was not applied to the active daemon; activation can be retried."
         }
         GuiText::ChecksumVerified => "checksum verified",
-        GuiText::RegistryNoChecksum => "registry provided no checksum",
+        GuiText::RegistryNoChecksum => "checksum unavailable",
         GuiText::SelectingModel => "Selecting model…",
         _ => unreachable!(),
     }

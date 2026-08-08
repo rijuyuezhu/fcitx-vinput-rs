@@ -2,55 +2,47 @@
 
 ## Normal dictation
 
-Normal dictation records audio, sends it to the active ASR backend, and commits the final text through Fcitx.
+1. Focus a text field.
+2. Press or hold the normal dictation key (Right Control by default).
+3. Speak.
+4. Stop recording.
 
-When the backend supports streaming, Vinpst shows partial recognition as preedit before the final commit. A batch-only backend returns only the final result.
-
-You can also control recording from a terminal:
-
-```sh
-vinpst recording status
-vinpst recording start
-vinpst recording stop
-```
-
-The Fcitx trigger is the normal desktop path; CLI recording commands are useful for diagnostics and automation.
+Vinpst sends the final result through Fcitx. Streaming ASR backends may show partial recognition as preedit while you are speaking.
 
 ## Trigger modes
 
-The Fcitx addon supports three trigger modes:
+The Vinpst Fcitx addon supports:
 
-- **Tap**: press once to start and press again to stop;
-- **Hold**: recording starts after the hold threshold and stops on release;
-- **Both**: short presses toggle, while a sustained press behaves as push-to-talk.
+- **Tap** — press once to start and again to stop;
+- **Hold** — hold to record and release to stop;
+- **Both** — short presses toggle while a sustained press behaves as push-to-talk.
 
-Change the mode and keys in the Fcitx addon configuration. The daemon JSON configuration does not own these frontend keys.
+Change the trigger mode and keys in the Fcitx configuration tool under the **Vinpst** addon.
 
 ## Command editing
 
-Command mode combines:
+Command mode edits text that is already selected:
 
-1. the selected text from the focused application;
-2. speech recognized by the active ASR backend;
-3. the built-in command scene;
-4. a configured LLM provider or text adapter.
+1. Select text in the focused application.
+2. Press or hold the command key (F10 by default).
+3. Say what you want to do, for example “translate this to English” or “make this more concise.”
+4. Stop recording and choose a result if multiple candidates are offered.
 
-The result replaces the selected text only after processing succeeds. When the application does not expose selected surrounding text, Vinpst can fall back to the Wayland primary selection where available. If both are empty, command mode refuses to start rather than deleting unrelated text.
+Command mode needs the built-in command scene plus a configured LLM provider or compatible text adapter. Vinpst replaces the selection only after processing succeeds.
 
-## Candidates
+See [Scenes and text processing](scenes.md) for setup.
 
-A scene can request multiple candidates. Vinpst shows them through the Fcitx candidate list; select a candidate to commit it. Escape closes filters and menus without committing.
+## Switch ASR or scene while typing
 
-## Scene and ASR menus
+- **F8** opens the ASR provider/model menu.
+- **Right Shift** opens the scene menu.
+- Use the configured paging keys if a menu has more than one page.
+- Press **Esc** to close a menu without committing a choice.
 
-- Open the ASR menu with the configured ASR-menu key, currently `F8` by default.
-- Open the scene menu with the configured scene-menu key, currently Right Shift by default.
-- Use the configured previous/next-page keys when a menu spans multiple pages.
+If a requested ASR backend cannot be prepared, Vinpst keeps the previous working backend rather than switching to a broken one.
 
-Provider/model switches are applied through the daemon. If a requested backend cannot be prepared, Vinpst keeps the previous working backend active and reports the failure.
+## Application compatibility
 
-## Application behavior
+Normal dictation works anywhere ordinary Fcitx text commits work. Command editing additionally depends on the application exposing selected/surrounding text or a usable primary selection.
 
-Vinpst relies on Fcitx application integration. Normal dictation works wherever ordinary Fcitx commits work. Selected-text replacement additionally depends on the application's surrounding-text support or a usable primary selection.
-
-The project has live evidence for GTK, Qt, Chromium/Ozone, GNOME Text Editor, kitty, and VS Code/Electron paths. Application-specific behavior can still vary; see [Known limitations](limitations.md).
+GTK, Qt, Chromium/Ozone, GNOME Text Editor, kitty, and VS Code/Electron paths have live coverage, but application behavior can still differ. See [Known limitations](limitations.md) when selection replacement behaves differently in one application.

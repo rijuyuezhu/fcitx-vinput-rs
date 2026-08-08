@@ -1,4 +1,4 @@
-//! ASR backend state JSON shared with the frontend and CLI.
+//! Typed ASR backend state shared by the legacy D-Bus tuple and JSON diagnostics.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

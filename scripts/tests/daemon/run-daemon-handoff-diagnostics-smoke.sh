@@ -125,10 +125,11 @@ jq -e \
    and .handoff.automatic_restart_performed == false
    and .handoff.next_step == "run vinpst daemon handoff"' \
   "${deleted_root}/status.json" >/dev/null
-grep -qx 'handoff_owner_exe_deleted: true' "${deleted_root}/status.json.txt"
-grep -qx 'handoff_path_matches: true' "${deleted_root}/status.json.txt"
-grep -qx 'handoff_restart_recommended: true' "${deleted_root}/status.json.txt"
-grep -qx 'handoff_reason: owner-executable-deleted' "${deleted_root}/status.json.txt"
-grep -qx 'handoff_next_step: run vinpst daemon handoff' "${deleted_root}/status.json.txt"
+grep -Fqx 'The running daemon belongs to an older installation.' "${deleted_root}/status.json.txt"
+grep -Fqx 'Run `vinpst daemon handoff` to switch to the current daemon safely.' "${deleted_root}/status.json.txt"
+if grep -Eq 'handoff_|owner_exe|path_matches|restart_recommended' "${deleted_root}/status.json.txt"; then
+  echo "daemon status text leaked handoff internals" >&2
+  exit 1
+fi
 
 echo "daemon handoff diagnostics smoke passed"

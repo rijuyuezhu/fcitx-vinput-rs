@@ -18,6 +18,13 @@ pub enum GuiLocale {
 }
 
 impl GuiLocale {
+    pub(crate) const fn default_capture_device(self) -> &'static str {
+        match self {
+            Self::EnUs => "Default",
+            Self::ZhCn => "默认",
+        }
+    }
+
     /// Detects the preferred GUI locale using the legacy environment priority.
     #[must_use]
     pub fn detect() -> Self {
@@ -66,13 +73,6 @@ impl GuiLocale {
             .unwrap_or(Self::EnUs)
     }
 
-    pub(crate) fn config_path(self, path: impl std::fmt::Display) -> String {
-        match self {
-            Self::EnUs => format!("Config: {path}"),
-            Self::ZhCn => format!("配置：{path}"),
-        }
-    }
-
     pub(crate) fn config_error(self, error: &str) -> String {
         match self {
             Self::EnUs => format!("Config error: {error}"),
@@ -87,24 +87,6 @@ impl GuiLocale {
         }
     }
 
-    pub(crate) fn daemon_unavailable(self, error: &str) -> String {
-        match self {
-            Self::EnUs => format!("Daemon unavailable: {error}"),
-            Self::ZhCn => format!("守护进程不可用：{error}"),
-        }
-    }
-
-    pub(crate) fn owner_monitor_degraded(self, error: &str) -> String {
-        match self {
-            Self::EnUs => format!(
-                "Owner monitoring degraded; using a 30-second non-activating fallback: {error}"
-            ),
-            Self::ZhCn => {
-                format!("所有者监控已降级；正在使用 30 秒一次且不会激活服务的回退查询：{error}")
-            }
-        }
-    }
-
     pub(crate) fn duck_volume(self, percent: f32) -> String {
         match self {
             Self::EnUs => format!("Duck volume: {percent:.0}%"),
@@ -112,10 +94,10 @@ impl GuiLocale {
         }
     }
 
-    pub(crate) fn vad_threshold(self, threshold: f32) -> String {
+    pub(crate) fn input_gain(self, gain: f32) -> String {
         match self {
-            Self::EnUs => format!("VAD threshold: {threshold:.2}"),
-            Self::ZhCn => format!("VAD 阈值：{threshold:.2}"),
+            Self::EnUs => format!("Input gain: {gain:.1}×"),
+            Self::ZhCn => format!("输入增益：{gain:.1}×"),
         }
     }
 
@@ -187,13 +169,6 @@ impl GuiLocale {
             (Self::ZhCn, true) => format!(
                 "守护进程{action}请求已接受；当前所有者状态不可用，将由 D-Bus 监控进行协调。"
             ),
-        }
-    }
-
-    pub(crate) fn installed_model_scan_failed(self, error: &str) -> String {
-        match self {
-            Self::EnUs => format!("Installed model scan failed: {error}"),
-            Self::ZhCn => format!("已安装模型扫描失败：{error}"),
         }
     }
 
@@ -373,6 +348,22 @@ impl GuiLocale {
             (Self::ZhCn, "add") => format!("已添加 LLM 提供商“{provider_id}”。"),
             (Self::ZhCn, "update") => format!("已更新 LLM 提供商“{provider_id}”。"),
             (Self::ZhCn, _) => format!("已移除 LLM 提供商“{provider_id}”。"),
+        }
+    }
+
+    pub(crate) fn llm_provider_removed(self, provider_id: &str, cleared_scenes: usize) -> String {
+        if cleared_scenes == 0 {
+            return self.llm_provider_changed("remove", provider_id);
+        }
+        match self {
+            Self::EnUs => format!(
+                "Removed LLM provider `{provider_id}` and cleared it from {cleared_scenes} scene(s)."
+            ),
+            Self::ZhCn => {
+                format!(
+                    "已移除 LLM 提供商“{provider_id}”，并从 {cleared_scenes} 个场景中清除其引用。"
+                )
+            }
         }
     }
 
@@ -757,10 +748,8 @@ impl GuiLocale {
 
     pub(crate) fn registry_selector_required(self, resource: &str) -> String {
         match self {
-            Self::EnUs => {
-                format!("Enter a {resource} registry id or short id before installing.")
-            }
-            Self::ZhCn => format!("安装前请输入{resource}注册表 ID 或短 ID。"),
+            Self::EnUs => format!("Choose a {resource} to install."),
+            Self::ZhCn => format!("请选择要安装的{resource}。"),
         }
     }
 

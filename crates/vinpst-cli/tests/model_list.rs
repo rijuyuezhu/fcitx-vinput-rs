@@ -347,12 +347,22 @@ fn model_list_text_prints_source_columns_and_support_marker() {
         .expect("run vinpst model list");
 
     let stdout = assert_stdout_success(output, "model list text");
-    assert!(stdout.contains("registry_source: file:"));
-    assert!(stdout.contains("i18n_source: file:"));
-    assert!(stdout.contains("id\tshort_id\tlanguage\tsize\tbackend\tfamily\tsupport\ttitle"));
-    assert!(stdout.contains("model.sherpa-onnx.sense-voice-zh-en-ja-ko-yue-int8"));
-    assert!(stdout.contains("onnx-sv-zh-int8-off"));
-    assert!(stdout.contains("sherpa-offline\tsense_voice\tsupported\tSenseVoice 五语"));
+    assert!(stdout.contains("ID\tTITLE\tLANGUAGE\tSIZE\tTYPE\tHOTWORDS\tSTATUS"));
+    assert!(stdout.contains("model.sherpa-onnx.sense-voice-zh-en-ja-ko-yue-int8\tSenseVoice 五语"));
+    assert!(stdout.contains("sense_voice"));
+    assert!(stdout.contains("available"));
+    for internal in [
+        "registry_source:",
+        "i18n_source:",
+        "short_id",
+        "backend",
+        "support:",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal list detail: {internal}"
+        );
+    }
 }
 
 #[test]
@@ -364,8 +374,8 @@ fn model_list_text_falls_back_to_short_id_without_i18n() {
         .expect("run vinpst model list without i18n");
 
     let stdout = assert_stdout_success(output, "model list text without i18n");
-    assert!(stdout.contains("i18n_source: none"));
     assert!(stdout.contains("onnx-sv-zh-int8-off"));
+    assert!(!stdout.contains("i18n_source:"));
     assert!(!stdout.contains("SenseVoice 五语"));
 }
 
@@ -518,13 +528,22 @@ fn model_install_dry_run_text_reports_no_side_effects() {
         .expect("run vinpst model install --dry-run");
 
     let stdout = assert_stdout_success(output, "model install dry-run text");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("target_model_dir: /tmp/vinpst-models/onnx-sv-zh-int8-off"));
-    assert!(stdout.contains("archive_format: tar_bz2"));
-    assert!(stdout.contains("archive_supported: true"));
-    assert!(stdout.contains("will_download: false"));
-    assert!(stdout.contains("will_extract: false"));
-    assert!(stdout.contains("will_write_config: false"));
+    assert!(stdout.contains("Would install model"));
+    assert!(stdout.contains("onnx-sv-zh-int8-off"));
+    assert!(stdout.contains("Location: /tmp/vinpst-models/onnx-sv-zh-int8-off"));
+    for internal in [
+        "dry_run:",
+        "archive_format:",
+        "archive_supported:",
+        "will_download",
+        "will_extract",
+        "will_write_config",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal install detail: {internal}"
+        );
+    }
 }
 
 #[test]
@@ -851,18 +870,27 @@ fn model_use_dry_run_text_accepts_installed_path_without_registry() {
         .expect("run vinpst model use path --dry-run");
 
     let stdout = assert_stdout_success(output, "model use path dry-run text");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("selector_kind: path"));
-    assert!(stdout.contains("provider_id: sherpa-onnx"));
-    assert!(stdout.contains("model_before: -"));
-    assert!(stdout.contains("model_after: /tmp/vinpst-models/custom"));
-    assert!(stdout.contains("will_write_config: false"));
-    assert!(stdout.contains("reload_daemon_requested: true"));
-    assert!(stdout.contains("daemon_reloaded: false"));
+    assert!(stdout.contains(
+        "Would select model `/tmp/vinpst-models/custom` for ASR provider `sherpa-onnx`."
+    ));
+    for internal in [
+        "dry_run:",
+        "selector_kind:",
+        "model_before:",
+        "model_after:",
+        "will_write_config",
+        "reload_daemon_requested",
+        "daemon_reloaded",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal model-use detail: {internal}"
+        );
+    }
 }
 
 #[test]
-fn model_use_without_dry_run_is_rejected_until_config_mutation_exists() {
+fn model_use_without_write_target_requires_output_or_in_place() {
     let output = vinpst_command()
         .args(["model", "use", "/tmp/vinpst-models/custom"])
         .output()
@@ -1096,15 +1124,24 @@ fn model_rm_alias_dry_run_text_accepts_managed_dir_name() {
         .expect("run vinpst model rm --dry-run");
 
     let stdout = assert_stdout_success(output, "model rm dry-run text");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("selector_kind: managed-dir"));
-    assert!(stdout.contains(&format!("model_root: {}", model_root.display())));
+    assert!(stdout.contains("Would remove model `custom-model`."));
     assert!(stdout.contains(&format!(
-        "target_path: {}",
+        "Location: {}",
         model_root.join("custom-model").display()
     )));
-    assert!(stdout.contains("exists: false"));
-    assert!(stdout.contains("will_remove: false"));
+    for internal in [
+        "dry_run:",
+        "selector_kind:",
+        "model_root:",
+        "target_path:",
+        "exists:",
+        "will_remove:",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal removal detail: {internal}"
+        );
+    }
     let _ = std::fs::remove_dir_all(temp_root);
 }
 
@@ -1180,7 +1217,7 @@ fn model_remove_dry_run_rejects_path_outside_model_root() {
 }
 
 #[test]
-fn model_remove_without_dry_run_is_rejected_until_real_remove_exists() {
+fn model_remove_without_yes_requires_confirmation() {
     let output = vinpst_command()
         .args(["model", "remove", "custom-model"])
         .output()
@@ -1647,11 +1684,21 @@ fn model_list_installed_text_prints_local_rows() {
         .expect("run vinpst model list --installed");
 
     let stdout = assert_stdout_success(output, "model list installed text");
-    assert!(stdout.contains(&format!("model_root: {}", model_root.display())));
-    assert!(stdout.contains("models: 1"));
-    assert!(stdout.contains("id\tpath\tlanguage\tsize\tbackend\tfamily\truntime\thotwords\tfiles"));
-    assert!(stdout.contains("installed-text"));
-    assert!(stdout.contains("sherpa-offline\tsense_voice\toffline\tfalse\t2"));
+    assert!(stdout.contains("ID\tLANGUAGE\tSIZE\tTYPE\tHOTWORDS\tSTATUS"));
+    assert!(stdout.contains("installed-text\tzh\t42 B\tsense_voice\tno\tinstalled"));
+    for internal in [
+        "model_root:",
+        "models:",
+        "path\t",
+        "backend",
+        "runtime",
+        "files",
+    ] {
+        assert!(
+            !stdout.contains(internal),
+            "leaked internal list detail: {internal}"
+        );
+    }
     let _ = std::fs::remove_dir_all(temp_root);
 }
 

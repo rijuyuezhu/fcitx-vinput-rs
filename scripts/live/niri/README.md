@@ -17,11 +17,10 @@ scripts/live/niri/run-ime-chromium-virtual-live.sh command
 scripts/live/niri/run-ime-kitty-live.sh command
 ```
 
-Management-GUI collectors that discovered controls by counting `Tab` or `Shift+Tab`
-focus steps are intentionally not retained. GUI behavior is covered by deterministic
-state, widget-action, persistence, and protocol tests; any future desktop GUI
-automation must target a stable semantic control identity instead of positional
-focus order.
+Management-GUI desktop automation is intentionally not retained. Real GUI window,
+widget, focus, dialog, and visual behavior is validated manually. Automated coverage
+stops below the Iced window/widget boundary and uses crate-internal semantic state,
+typed-message, persistence, and protocol tests.
 
 Do not claim portability from these results. A new compositor/backend needs its
 own focus, key-injection, selection, and cleanup implementation or a shared

@@ -146,6 +146,9 @@ fn normalization_inserts_legacy_builtin_scenes_for_minimal_configs() {
     assert_eq!(raw.candidate_count, 0);
     assert_eq!(command.label, "__label_command__");
     assert_eq!(command.candidate_count, 1);
+    assert!(command.prompt.as_deref().is_some_and(|prompt| {
+        prompt.contains("<vinput-selected>") && prompt.contains("{{asr}}")
+    }));
 }
 
 #[test]

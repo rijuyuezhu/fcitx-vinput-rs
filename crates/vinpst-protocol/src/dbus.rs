@@ -28,7 +28,7 @@ pub mod method {
     pub const STOP_RECORDING: &str = "StopRecording";
     /// Return the current daemon status string.
     pub const GET_STATUS: &str = "GetStatus";
-    /// Return a JSON snapshot of the selected/effective ASR backend.
+    /// Return the legacy selected/effective ASR backend tuple.
     pub const GET_ASR_BACKEND_STATE: &str = "GetAsrBackendState";
     /// Return a JSON snapshot of configured text adapters.
     pub const GET_TEXT_ADAPTER_STATE: &str = "GetTextAdapterState";

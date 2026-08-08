@@ -8,7 +8,7 @@ use std::{
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
-use vinpst_asr::{AsrBackendFactory, MockAsrBackend};
+use vinpst_asr::{AsrBackendFactory, MockAsrBackend, UnavailableAsrBackend};
 use vinpst_audio::{
     AudioRecorder, CaptureTarget, CapturedAudio, MockAudioSource, PcmBuffer, PcmSpec,
 };
@@ -18,59 +18,68 @@ use vinpst_daemon::{
     remote::{RemoteTextServer, remote_text_settings},
 };
 
-/// Rust daemon prototype for fcitx-vinpst.
+/// Vinpst background service for recognition and text processing.
 #[derive(Debug, Parser)]
-#[command(version, about)]
+#[command(version, about, disable_help_subcommand = true)]
+#[allow(clippy::struct_excessive_bools)] // Clap models independent command-line switches as bools.
 struct Args {
-    /// Print one mock recognition cycle and exit instead of running forever.
+    /// Start without constructing an ASR backend.
     #[arg(long)]
+    no_asr: bool,
+
+    /// Print one mock recognition cycle and exit instead of running forever.
+    #[arg(long, hide = true)]
     once: bool,
 
     /// Command-mode selected text for `--once`.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     selected_text: Option<String>,
 
     /// Milliseconds to keep recording before stopping in `--once` mode.
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 0, hide = true)]
     record_ms: u64,
 
     /// Serve the legacy D-Bus ABI on the session bus.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     dbus: bool,
 
     /// Use configured ASR and command text adapters instead of mock runtime backends.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     configured_backends: bool,
 
     /// Audio recorder backend used for long-running daemon sessions.
-    #[arg(long, value_enum, default_value_t = AudioBackendArg::Mock)]
-    audio_backend: AudioBackendArg,
+    #[arg(long, value_enum, hide = true)]
+    audio_backend: Option<AudioBackendArg>,
 
     #[command(flatten)]
     upgrade: UpgradeArgs,
 
     /// Optional config JSON file. Omitted to use the bundled default config.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     config: Option<PathBuf>,
 
     /// Installed model root exposed to the ASR selection menu.
-    #[arg(long, value_name = "DIR")]
+    #[arg(long, value_name = "DIR", hide = true)]
     model_root: Option<PathBuf>,
 
     /// Raw signed 16-bit little-endian PCM file to use for `--once`.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", hide = true)]
     pcm16le: Option<PathBuf>,
 
     /// Uncompressed RIFF/WAVE signed 16-bit PCM file to use for `--once`.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", hide = true)]
     wav: Option<PathBuf>,
 
     /// Sample rate of `--pcm16le` input.
-    #[arg(long, default_value_t = vinpst_audio::DEFAULT_SAMPLE_RATE_HZ)]
+    #[arg(
+        long,
+        default_value_t = vinpst_audio::DEFAULT_SAMPLE_RATE_HZ,
+        hide = true
+    )]
     pcm_sample_rate: u32,
 
     /// Channel count of `--pcm16le` input.
-    #[arg(long, default_value_t = vinpst_audio::DEFAULT_CHANNELS)]
+    #[arg(long, default_value_t = vinpst_audio::DEFAULT_CHANNELS, hide = true)]
     pcm_channels: u16,
 
     /// Utility command.
@@ -82,7 +91,7 @@ struct Args {
 #[derive(Debug, clap::Args)]
 struct UpgradeArgs {
     /// Exit with failure after the running executable is replaced on disk.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     exit_when_executable_replaced: bool,
 }
 
@@ -96,6 +105,7 @@ enum AudioBackendArg {
 }
 
 const DEFAULT_FILE_AUDIO_FRAMES: usize = 4;
+const ASR_DISABLED_REASON: &str = "ASR disabled by command line.";
 
 impl AudioBackendArg {
     const fn as_str(self) -> &'static str {
@@ -106,20 +116,60 @@ impl AudioBackendArg {
     }
 }
 
+impl Args {
+    fn uses_implicit_service_defaults(&self) -> bool {
+        self.command.is_none() && !self.once && !self.dbus
+    }
+
+    fn serves_dbus(&self) -> bool {
+        self.dbus || self.uses_implicit_service_defaults()
+    }
+
+    fn uses_configured_backends(&self) -> bool {
+        self.configured_backends || self.uses_implicit_service_defaults()
+    }
+
+    fn effective_audio_backend(&self) -> AudioBackendArg {
+        self.audio_backend.unwrap_or_else(|| {
+            if self.uses_implicit_service_defaults() {
+                default_service_audio_backend()
+            } else {
+                AudioBackendArg::Mock
+            }
+        })
+    }
+}
+
+#[cfg(feature = "pipewire-backend")]
+const fn default_service_audio_backend() -> AudioBackendArg {
+    AudioBackendArg::Pipewire
+}
+
+#[cfg(not(feature = "pipewire-backend"))]
+const fn default_service_audio_backend() -> AudioBackendArg {
+    AudioBackendArg::Mock
+}
+
 /// One-shot utility commands useful while bootstrapping the daemon.
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Print the sanitized config summary as JSON.
+    #[command(hide = true)]
     PrintConfig,
     /// Print configured ASR backend diagnostics as JSON.
+    #[command(hide = true)]
     AsrState,
     /// Print configured command text adapter diagnostics as JSON.
+    #[command(hide = true)]
     TextAdapters,
     /// Print configured audio capture diagnostics as JSON.
+    #[command(hide = true)]
     AudioDevices,
     /// Build the selected runtime and print runtime status diagnostics as JSON.
+    #[command(hide = true)]
     RuntimeStatus,
     /// Run only the legacy-compatible remote text HTTP/WebSocket service.
+    #[command(hide = true)]
     RemoteTextServer {
         /// Listen address. The port is read from the active remote provider settings.
         #[arg(long, default_value_t = IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
@@ -154,6 +204,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut runtime = build_runtime(&args, config).context("initialize runtime")?;
+    apply_runtime_flags(&args, &mut runtime);
     runtime.set_config_path(loaded_config.path);
     runtime.set_model_root(Some(resolve_model_root(args.model_root.as_ref())?));
 
@@ -171,7 +222,7 @@ async fn main() -> anyhow::Result<()> {
         }
         let payload = runtime.stop_recording(None)?;
         println!("{}", payload.to_json_string()?);
-    } else if args.dbus {
+    } else if args.serves_dbus() {
         trace_startup("enter dbus branch");
         let service = VinpstDbusService::new(runtime);
         service
@@ -186,7 +237,7 @@ async fn main() -> anyhow::Result<()> {
             bus = vinpst_protocol::dbus::SERVICE_BUS_NAME,
             object = vinpst_protocol::dbus::SERVICE_OBJECT_PATH,
             interface = vinpst_protocol::dbus::SERVICE_INTERFACE,
-            "mock daemon D-Bus service is running"
+            "daemon D-Bus service is running"
         );
         trace_startup("dbus service owned; waiting for shutdown signal");
         let shutdown_reason =
@@ -242,8 +293,9 @@ async fn handle_utility_command(
             );
         }
         Command::RuntimeStatus => {
-            let runtime =
+            let mut runtime =
                 build_runtime(args, config.clone()).context("initialize runtime status")?;
+            apply_runtime_flags(args, &mut runtime);
             println!(
                 "{}",
                 serde_json::to_string_pretty(&runtime_status_summary(&runtime, config, args)?)?
@@ -277,6 +329,53 @@ async fn run_remote_text_server(config: &VinpstConfig, bind: IpAddr) -> anyhow::
         .shutdown()
         .await
         .context("shutdown remote text service")
+}
+
+#[cfg(test)]
+mod argument_semantics_tests {
+    use clap::Parser;
+
+    use super::{Args, AudioBackendArg};
+
+    #[test]
+    fn direct_launch_uses_service_defaults() {
+        let args = Args::try_parse_from(["vinpst-daemon"]).expect("parse direct daemon launch");
+
+        assert!(args.serves_dbus());
+        assert!(args.uses_configured_backends());
+        #[cfg(feature = "pipewire-backend")]
+        assert_eq!(args.effective_audio_backend(), AudioBackendArg::Pipewire);
+        #[cfg(not(feature = "pipewire-backend"))]
+        assert_eq!(args.effective_audio_backend(), AudioBackendArg::Mock);
+    }
+
+    #[test]
+    fn no_asr_keeps_direct_launch_in_service_mode() {
+        let args = Args::try_parse_from(["vinpst-daemon", "--no-asr"])
+            .expect("parse daemon launch with ASR disabled");
+
+        assert!(args.no_asr);
+        assert!(args.serves_dbus());
+        assert!(args.uses_configured_backends());
+    }
+
+    #[test]
+    fn explicit_test_modes_keep_deterministic_defaults() {
+        let once =
+            Args::try_parse_from(["vinpst-daemon", "--once"]).expect("parse one-shot daemon mode");
+        assert!(!once.serves_dbus());
+        assert!(!once.uses_configured_backends());
+        assert_eq!(once.effective_audio_backend(), AudioBackendArg::Mock);
+
+        let explicit_dbus = Args::try_parse_from(["vinpst-daemon", "--dbus"])
+            .expect("parse explicit D-Bus test mode");
+        assert!(explicit_dbus.serves_dbus());
+        assert!(!explicit_dbus.uses_configured_backends());
+        assert_eq!(
+            explicit_dbus.effective_audio_backend(),
+            AudioBackendArg::Mock
+        );
+    }
 }
 
 fn trace_startup(message: &str) {
@@ -385,11 +484,11 @@ fn runtime_status_summary(
         .context("runtime status summary should be a JSON object")?;
     object.insert(
         "configured_backends".to_owned(),
-        serde_json::json!(args.configured_backends),
+        serde_json::json!(args.uses_configured_backends()),
     );
     object.insert(
         "audio_backend".to_owned(),
-        serde_json::json!(args.audio_backend.as_str()),
+        serde_json::json!(args.effective_audio_backend().as_str()),
     );
     object.insert("audio".to_owned(), audio_devices_summary(config)?);
     Ok(summary)
@@ -488,7 +587,16 @@ fn recording_summary(target: &CaptureTarget) -> serde_json::Value {
 
 fn build_runtime(args: &Args, config: VinpstConfig) -> anyhow::Result<RuntimeState> {
     if let Some(audio_source) = input_audio_source(args)? {
-        return if args.configured_backends {
+        return if args.no_asr {
+            let backend = unavailable_asr_backend();
+            if args.uses_configured_backends() {
+                RuntimeState::with_configured_text(config, backend, Box::new(audio_source))
+                    .context("build configured runtime with ASR disabled and file input")
+            } else {
+                RuntimeState::with_backends(config, backend, Box::new(audio_source))
+                    .context("build runtime with ASR disabled and file input")
+            }
+        } else if args.uses_configured_backends() {
             let backend = AsrBackendFactory::build_active(&config.asr)
                 .context("build configured ASR backend")?;
             RuntimeState::with_configured_text(config, backend, Box::new(audio_source))
@@ -501,7 +609,18 @@ fn build_runtime(args: &Args, config: VinpstConfig) -> anyhow::Result<RuntimeSta
     }
 
     if let Some(audio_recorder) = selected_audio_recorder(args)? {
-        return if args.configured_backends {
+        return if args.no_asr {
+            let backend = unavailable_asr_backend();
+            if args.uses_configured_backends() {
+                RuntimeState::with_configured_audio_recorder(config, backend, audio_recorder)
+                    .context(
+                        "build configured runtime with ASR disabled and selected audio recorder",
+                    )
+            } else {
+                RuntimeState::with_audio_recorder(config, backend, audio_recorder)
+                    .context("build runtime with ASR disabled and selected audio recorder")
+            }
+        } else if args.uses_configured_backends() {
             RuntimeState::with_configured_audio_recorder_or_unavailable(config, audio_recorder)
                 .context("build configured runtime with selected audio recorder")
         } else {
@@ -511,7 +630,20 @@ fn build_runtime(args: &Args, config: VinpstConfig) -> anyhow::Result<RuntimeSta
         };
     }
 
-    if args.configured_backends {
+    if args.no_asr {
+        let backend = unavailable_asr_backend();
+        if args.uses_configured_backends() {
+            RuntimeState::with_configured_text(
+                config,
+                backend,
+                Box::new(MockAudioSource::from_frames(Vec::new())),
+            )
+            .context("build configured runtime with ASR disabled")
+        } else {
+            RuntimeState::with_asr_backend(config, backend)
+                .context("build runtime with ASR disabled")
+        }
+    } else if args.uses_configured_backends() {
         RuntimeState::with_configured_backends_or_unavailable(config)
             .context("build configured runtime")
     } else {
@@ -519,9 +651,19 @@ fn build_runtime(args: &Args, config: VinpstConfig) -> anyhow::Result<RuntimeSta
     }
 }
 
+fn unavailable_asr_backend() -> Box<dyn vinpst_asr::AsrBackend> {
+    Box::new(UnavailableAsrBackend::new(ASR_DISABLED_REASON))
+}
+
+fn apply_runtime_flags(args: &Args, runtime: &mut RuntimeState) {
+    if args.no_asr {
+        runtime.disable_asr(ASR_DISABLED_REASON);
+    }
+}
+
 #[cfg_attr(feature = "pipewire-backend", allow(clippy::unnecessary_wraps))]
 fn selected_audio_recorder(args: &Args) -> anyhow::Result<Option<Box<dyn AudioRecorder>>> {
-    match args.audio_backend {
+    match args.effective_audio_backend() {
         AudioBackendArg::Mock => Ok(None),
         AudioBackendArg::Pipewire => {
             #[cfg(feature = "pipewire-backend")]

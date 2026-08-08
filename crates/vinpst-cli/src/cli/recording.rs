@@ -6,10 +6,10 @@ pub(crate) enum RecordingCommand {
     /// Start normal or command-mode recording.
     Start {
         /// Selected text context for command-mode recording.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         selected_text: Option<String>,
         /// Print the D-Bus call plan without contacting the daemon.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         dry_run: bool,
         /// Print machine-readable JSON instead of text output.
         #[arg(long)]
@@ -21,7 +21,7 @@ pub(crate) enum RecordingCommand {
         #[arg(long)]
         scene: Option<String>,
         /// Print the D-Bus call plan without contacting the daemon.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         dry_run: bool,
         /// Print machine-readable JSON instead of text output.
         #[arg(long)]
@@ -30,7 +30,7 @@ pub(crate) enum RecordingCommand {
     /// Query current daemon recording/status state.
     Status {
         /// Print the D-Bus call plan without contacting the daemon.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         dry_run: bool,
         /// Print machine-readable JSON instead of text output.
         #[arg(long)]
@@ -39,13 +39,13 @@ pub(crate) enum RecordingCommand {
     /// Toggle recording by querying daemon status first.
     Toggle {
         /// Selected text context used when toggle starts command-mode recording.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         selected_text: Option<String>,
         /// Scene id used when toggle stops recording. Defaults to an empty scene.
         #[arg(long)]
         scene: Option<String>,
         /// Print the D-Bus call plan without contacting the daemon.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         dry_run: bool,
         /// Print machine-readable JSON instead of text output.
         #[arg(long)]

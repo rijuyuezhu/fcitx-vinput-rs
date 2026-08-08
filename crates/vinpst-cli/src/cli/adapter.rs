@@ -9,17 +9,17 @@ pub(crate) enum AdapterCommand {
     /// List configured text adapters.
     #[command(alias = "ls")]
     List {
-        /// Legacy-compatible flag for listing registry-available text adapters.
+        /// List text adapters available for installation.
         #[arg(short = 'a', long)]
         available: bool,
         /// Optional local registry index JSON used by --available.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         registry: Option<PathBuf>,
         /// Optional local registry i18n JSON used by --available.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         i18n: Option<PathBuf>,
         /// Registry locale used by --available.
-        #[arg(long, default_value_t = detect_preferred_registry_locale())]
+        #[arg(long, default_value_t = detect_preferred_registry_locale(), hide = true)]
         locale: String,
         /// Optional config JSON file. Omitted to read the user config, then the bundled default.
         #[arg(long)]
@@ -28,7 +28,8 @@ pub(crate) enum AdapterCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Add a command text adapter to config.
+    /// Create a custom command text adapter in config.
+    #[command(name = "create")]
     Add {
         /// New adapter id.
         id: String,
@@ -61,14 +62,15 @@ pub(crate) enum AdapterCommand {
         json: bool,
     },
     /// Install or update a command text adapter from the live script registry.
+    #[command(alias = "add")]
     Install {
         /// Full adapter id or registry `short_id`.
         id: String,
         /// Optional local registry/adapters.json file. Omitted to fetch configured mirrors.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         registry: Option<PathBuf>,
         /// Managed adapter script root. Defaults to $XDG_DATA_HOME/fcitx-vinpst/adapters.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         adapter_root: Option<PathBuf>,
         /// Optional config JSON file. Omitted to read the user config, then the bundled default.
         #[arg(long)]
@@ -87,11 +89,12 @@ pub(crate) enum AdapterCommand {
         json: bool,
     },
     /// Print a dry-run install plan for a registry adapter.
+    #[command(hide = true)]
     InstallPlan {
         /// Adapter id from the registry index.
         id: String,
         /// Local registry index JSON containing adapter entries.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         registry: PathBuf,
         /// Target root directory for planned adapter asset installation.
         #[arg(long)]
@@ -152,7 +155,7 @@ pub(crate) enum AdapterCommand {
         /// Existing adapter id or registry `short_id` to start.
         id: String,
         /// Optional local registry/adapters.json file used to resolve a short id.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         registry: Option<PathBuf>,
         /// Optional config JSON file. Omitted to read the user config, then the bundled default.
         #[arg(long)]
@@ -169,7 +172,7 @@ pub(crate) enum AdapterCommand {
         /// Existing adapter id or registry `short_id` to stop.
         id: String,
         /// Optional local registry/adapters.json file used to resolve a short id.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         registry: Option<PathBuf>,
         /// Optional config JSON file. Omitted to read the user config, then the bundled default.
         #[arg(long)]
@@ -186,7 +189,7 @@ pub(crate) enum AdapterCommand {
         /// Optional adapter id or registry `short_id` to filter. Omitted to show all adapters.
         id: Option<String>,
         /// Optional local registry/adapters.json file used to resolve a short id.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         registry: Option<PathBuf>,
         /// Optional config JSON file used when filtering by adapter. Omitted to read the user config, then the bundled default.
         #[arg(long)]
@@ -204,10 +207,10 @@ pub(crate) enum AdapterCommand {
         /// Existing adapter id or registry `short_id` to remove.
         id: String,
         /// Optional local registry/adapters.json file used to resolve a short id.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         registry: Option<PathBuf>,
         /// Managed adapter script root. Defaults to $XDG_DATA_HOME/fcitx-vinpst/adapters.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         adapter_root: Option<PathBuf>,
         /// Optional config JSON file. Omitted to read the user config, then the bundled default.
         #[arg(long)]

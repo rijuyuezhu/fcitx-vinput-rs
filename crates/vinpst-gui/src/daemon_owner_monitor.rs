@@ -128,9 +128,7 @@ impl App {
 
     fn invalidate_daemon_owner(&mut self) {
         self.active_daemon_refresh_id = None;
-        self.daemon = DaemonLoadState::Failed(
-            "Daemon is not running; waiting for its D-Bus owner.".to_owned(),
-        );
+        self.daemon = DaemonLoadState::Stopped;
     }
 
     fn next_daemon_refresh_id(&mut self) -> u64 {

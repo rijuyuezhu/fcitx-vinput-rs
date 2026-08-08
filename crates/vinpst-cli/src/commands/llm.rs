@@ -1,7 +1,7 @@
 use crate::{
     Context, LlmCommand, OpenAiCompatibleTextAdapter, Path, PathBuf, RecognitionPayload,
     ReqwestOpenAiCompatibleChatTransport, SceneDefinition, TextAdapter, TextRequest, VinpstConfig,
-    bool_label, build_openai_compatible_chat_request, config_set_write_target, default_config_path,
+    build_openai_compatible_chat_request, config_set_write_target, default_config_path,
     load_config_json, validate_config_json_value, write_config_set_document,
 };
 
@@ -78,6 +78,7 @@ struct LlmRemoveOutcome {
     config_path: Option<PathBuf>,
     source: &'static str,
     removed_provider_id: String,
+    cleared_scene_references: usize,
     before_provider_count: usize,
     after_provider_count: usize,
     output_path: Option<PathBuf>,
@@ -311,35 +312,20 @@ fn llm_test_output(
 }
 
 fn print_llm_test_text(outcome: &serde_json::Value) {
-    println!("dry_run: {}", outcome["dry_run"]);
-    println!("source: {}", outcome["source"].as_str().unwrap_or("-"));
-    if let Some(config_path) = outcome["config_path"].as_str() {
-        println!("config_path: {config_path}");
+    let provider_id = outcome["provider_id"].as_str().unwrap_or("-");
+    if outcome["dry_run"].as_bool().unwrap_or(false) {
+        println!("Would test LLM provider `{provider_id}`.");
+        if let Some(url) = outcome["request"]["url"].as_str() {
+            println!("Request: {url}");
+        }
+        return;
     }
-    println!(
-        "provider_id: {}",
-        outcome["provider_id"].as_str().unwrap_or("-")
-    );
-    println!("timeout_ms: {}", value_or_dash(&outcome["timeout_ms"]));
-    println!("will_call_http: {}", outcome["will_call_http"]);
-    println!("called: {}", outcome["called"]);
-    if let Some(url) = outcome["request"]["url"].as_str() {
-        println!("url: {url}");
-    }
+    println!("LLM provider `{provider_id}` responded successfully.");
     if let Some(result) = outcome.get("result").filter(|value| !value.is_null()) {
         println!(
-            "commit_text: {}",
+            "Response: {}",
             result["commit_text"].as_str().unwrap_or("-")
         );
-        println!("candidate_count: {}", result["candidate_count"]);
-    }
-}
-
-fn value_or_dash(value: &serde_json::Value) -> String {
-    if value.is_null() {
-        "-".to_owned()
-    } else {
-        value.to_string()
     }
 }
 
@@ -562,22 +548,15 @@ fn llm_edit_outcome_json(outcome: &LlmEditOutcome) -> serde_json::Value {
 }
 
 fn print_llm_edit_text(outcome: &LlmEditOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("provider_id: {}", outcome.provider_id);
-    println!("changed_fields: {}", outcome.changed_fields.join(","));
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = format!("Would update LLM provider `{}`.", outcome.provider_id);
+    let applied = format!("Updated LLM provider `{}`.", outcome.provider_id);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 fn print_llm_remove(request: LlmRemoveRequest<'_>) -> anyhow::Result<()> {
@@ -615,6 +594,7 @@ fn run_llm_remove(request: &LlmRemoveRequest<'_>) -> anyhow::Result<LlmRemoveOut
     let before_provider_count = config.llm.providers.len();
     let provider_index = explicit_llm_provider_index(&loaded.document, &id)?;
     llm_providers_array_mut(&mut loaded.document)?.remove(provider_index);
+    let cleared_scene_references = clear_llm_provider_scene_references(&mut loaded.document, &id)?;
     validate_config_json_value(&loaded.document, "validate updated LLM config")?;
 
     let write_target = config_set_write_target(
@@ -633,6 +613,7 @@ fn run_llm_remove(request: &LlmRemoveRequest<'_>) -> anyhow::Result<LlmRemoveOut
         config_path: loaded.path.take(),
         source: loaded.source,
         removed_provider_id: id,
+        cleared_scene_references,
         before_provider_count,
         after_provider_count: before_provider_count - 1,
         output_path: write_target.output_path(),
@@ -698,6 +679,32 @@ fn llm_providers_array_mut(
         .with_context(|| "config pointer `/llm/providers` not found or not an array")
 }
 
+fn clear_llm_provider_scene_references(
+    document: &mut serde_json::Value,
+    provider_id: &str,
+) -> anyhow::Result<usize> {
+    let scenes = document
+        .pointer_mut("/scenes/definitions")
+        .and_then(serde_json::Value::as_array_mut)
+        .with_context(|| "config pointer `/scenes/definitions` not found or not an array")?;
+    let mut cleared = 0;
+    for scene in scenes {
+        let object = scene
+            .as_object_mut()
+            .with_context(|| "scene definition is not a JSON object")?;
+        let references_provider = object
+            .get("provider_id")
+            .and_then(serde_json::Value::as_str)
+            == Some(provider_id);
+        if references_provider {
+            object.remove("provider_id");
+            object.remove("model");
+            cleared += 1;
+        }
+    }
+    Ok(cleared)
+}
+
 fn explicit_llm_provider_index(document: &serde_json::Value, id: &str) -> anyhow::Result<usize> {
     document
         .pointer("/llm/providers")
@@ -753,6 +760,7 @@ fn llm_remove_outcome_json(outcome: &LlmRemoveOutcome) -> serde_json::Value {
         "config_path": outcome.config_path.as_ref(),
         "source": outcome.source,
         "removed_provider_id": outcome.removed_provider_id,
+        "cleared_scene_references": outcome.cleared_scene_references,
         "before_provider_count": outcome.before_provider_count,
         "after_provider_count": outcome.after_provider_count,
         "output_path": outcome.output_path,
@@ -769,43 +777,44 @@ fn llm_remove_outcome_json(outcome: &LlmRemoveOutcome) -> serde_json::Value {
 }
 
 fn print_llm_add_text(outcome: &LlmAddOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("provider_id: {}", outcome.provider_id);
-    println!("before_provider_count: {}", outcome.before_provider_count);
-    println!("after_provider_count: {}", outcome.after_provider_count);
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = format!("Would add LLM provider `{}`.", outcome.provider_id);
+    let applied = format!("Added LLM provider `{}`.", outcome.provider_id);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 fn print_llm_remove_text(outcome: &LlmRemoveOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("removed_provider_id: {}", outcome.removed_provider_id);
-    println!("before_provider_count: {}", outcome.before_provider_count);
-    println!("after_provider_count: {}", outcome.after_provider_count);
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = if outcome.cleared_scene_references == 0 {
+        format!(
+            "Would remove LLM provider `{}`.",
+            outcome.removed_provider_id
+        )
+    } else {
+        format!(
+            "Would remove LLM provider `{}` and clear it from {} scene(s).",
+            outcome.removed_provider_id, outcome.cleared_scene_references
+        )
+    };
+    let applied = if outcome.cleared_scene_references == 0 {
+        format!("Removed LLM provider `{}`.", outcome.removed_provider_id)
+    } else {
+        format!(
+            "Removed LLM provider `{}` and cleared it from {} scene(s).",
+            outcome.removed_provider_id, outcome.cleared_scene_references
+        )
+    };
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 fn print_llm_list(config_path: Option<&PathBuf>, json_output: bool) -> anyhow::Result<()> {
@@ -868,26 +877,18 @@ fn llm_provider_summary_json(provider: &vinpst_config::LlmProviderConfig) -> ser
 }
 
 fn print_llm_list_text(context: &LlmListContext) {
-    println!("source: {}", context.source);
-    if let Some(path) = &context.config_path {
-        println!("config_path: {}", path.display());
-    }
-    println!("provider_count: {}", context.config.llm.providers.len());
-    println!("id	base_url	api_key	model	extra_body	extra_fields");
+    println!("ID\tBASE URL\tMODEL\tAPI KEY");
     for provider in &context.config.llm.providers {
         println!(
-            "{}	{}	{}	{}	{}	{}",
+            "{}\t{}\t{}\t{}",
             provider.id,
-            bool_label(!provider.base_url.trim().is_empty()),
-            bool_label(!provider.api_key.trim().is_empty()),
+            vinpst_config::redact_url_for_diagnostics(&provider.base_url),
             provider.model.as_deref().unwrap_or("-"),
-            bool_label(
-                provider
-                    .extra_body
-                    .as_object()
-                    .is_some_and(|object| !object.is_empty())
-            ),
-            provider.extra.len(),
+            if provider.api_key.trim().is_empty() {
+                "not set"
+            } else {
+                "set"
+            },
         );
     }
 }

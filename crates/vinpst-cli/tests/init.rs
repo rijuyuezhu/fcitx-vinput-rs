@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{assert_json_success, assert_stdout_success, vinpst_command, workspace_file};
+use common::{assert_json_success, vinpst_command, workspace_file};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -208,29 +208,4 @@ fn init_force_overwrites_existing_config() {
         std::fs::read_to_string(workspace_file("data/default-config.json"))
             .expect("read bundled default config")
     );
-}
-
-#[test]
-fn init_text_output_includes_next_activation_hint() {
-    let root = unique_temp_dir("vinpst-cli-init-text");
-    let output = vinpst_command()
-        .args(["init", "--dry-run"])
-        .arg("--config")
-        .arg(root.join("config.json"))
-        .arg("--model-root")
-        .arg(root.join("models"))
-        .arg("--cache-root")
-        .arg(root.join("cache"))
-        .env("XDG_DATA_HOME", root.join("data-home"))
-        .env("XDG_CACHE_HOME", root.join("cache-home"))
-        .env("HOME", root.join("home"))
-        .output()
-        .expect("run vinpst init text dry-run");
-
-    let stdout = assert_stdout_success(output, "init text output");
-    assert!(stdout.contains("dry_run: true"));
-    assert!(stdout.contains("config_will_write: true"));
-    assert!(stdout.contains("activation_service_command: vinpst activation-service"));
-    assert!(stdout.contains("--configured-backends"));
-    assert!(stdout.contains("next: vinpst model install <id-or-short-id>"));
 }

@@ -10,13 +10,13 @@ stage=target/tmp/fcitx-addon-install-smoke
 no_systemd_build=target/cpp/fcitx5-addon-no-systemd
 no_systemd_stage=target/tmp/fcitx-addon-no-systemd
 
+rm -rf "${build_dir}" "${stage}"
 cmake -S cpp/fcitx5-addon -B "${build_dir}" \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DVINPST_FCITX_BRIDGE_REQUIRE_FCITX_CORE=ON
 cmake --build "${build_dir}" --parallel
 
-rm -rf "${stage}"
 DESTDIR="${PWD}/${stage}" cmake --install "${build_dir}"
 test -f "${stage}/usr/local/lib/fcitx5/fcitx5-vinpst.so"
 addon_module="${stage}/usr/local/lib/fcitx5/fcitx5-vinpst.so"
@@ -35,12 +35,12 @@ grep -qx '1=clipboard' "${stage}/usr/local/share/fcitx5/addon/vinpst.conf"
 ! grep -qE '^(Name|Comment)\[' "${stage}/usr/local/share/fcitx5/addon/vinpst.conf"
 test -f "${stage}/usr/local/share/dbus-1/services/org.fcitx.Vinpst.service"
 grep -qx 'Name=org.fcitx.Vinpst' "${stage}/usr/local/share/dbus-1/services/org.fcitx.Vinpst.service"
-grep -qx 'Exec=/usr/local/bin/vinpst-daemon --dbus --exit-when-executable-replaced' "${stage}/usr/local/share/dbus-1/services/org.fcitx.Vinpst.service"
+grep -qx 'Exec=/usr/local/bin/vinpst-daemon --exit-when-executable-replaced' "${stage}/usr/local/share/dbus-1/services/org.fcitx.Vinpst.service"
 grep -qx 'SystemdService=vinpst-daemon.service' "${stage}/usr/local/share/dbus-1/services/org.fcitx.Vinpst.service"
 test -f "${stage}/usr/lib/systemd/user/vinpst-daemon.service"
 grep -qx 'Type=dbus' "${stage}/usr/lib/systemd/user/vinpst-daemon.service"
 grep -qx 'BusName=org.fcitx.Vinpst' "${stage}/usr/lib/systemd/user/vinpst-daemon.service"
-grep -qx 'ExecStart=/usr/local/bin/vinpst-daemon --dbus --exit-when-executable-replaced' "${stage}/usr/lib/systemd/user/vinpst-daemon.service"
+grep -qx 'ExecStart=/usr/local/bin/vinpst-daemon --exit-when-executable-replaced' "${stage}/usr/lib/systemd/user/vinpst-daemon.service"
 grep -qx 'Restart=on-failure' "${stage}/usr/lib/systemd/user/vinpst-daemon.service"
 
 rm -rf "${no_systemd_build}" "${no_systemd_stage}"

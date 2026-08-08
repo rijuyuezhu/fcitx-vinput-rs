@@ -336,8 +336,8 @@ impl App {
                 OperationState::Failed(self.locale.text(GuiText::NoValidConfigLoaded).to_owned());
             return Task::none();
         };
-        let updated = match remove_llm_provider(&document.config, provider_id) {
-            Ok(updated) => updated,
+        let removal = match remove_llm_provider(&document.config, provider_id) {
+            Ok(removal) => removal,
             Err(error) => {
                 self.operation = OperationState::Failed(error);
                 return Task::none();
@@ -345,8 +345,9 @@ impl App {
         };
         self.begin_llm_provider_mutation(
             document.clone(),
-            updated,
-            self.locale.llm_provider_changed("remove", provider_id),
+            removal.updated,
+            self.locale
+                .llm_provider_removed(provider_id, removal.cleared_scene_references),
         )
     }
 
@@ -726,7 +727,15 @@ fn safe_provider_failure_category(message: &str) -> String {
     }
 }
 
-fn remove_llm_provider(config: &VinpstConfig, provider_id: &str) -> Result<VinpstConfig, String> {
+struct LlmProviderRemoval {
+    updated: VinpstConfig,
+    cleared_scene_references: usize,
+}
+
+fn remove_llm_provider(
+    config: &VinpstConfig,
+    provider_id: &str,
+) -> Result<LlmProviderRemoval, String> {
     let mut updated = config.clone();
     let before = updated.llm.providers.len();
     updated
@@ -738,7 +747,18 @@ fn remove_llm_provider(config: &VinpstConfig, provider_id: &str) -> Result<Vinps
             "LLM provider `{provider_id}` is no longer configured."
         ));
     }
-    validate_llm_provider_update(updated)
+    let mut cleared_scene_references = 0;
+    for scene in &mut updated.scenes.definitions {
+        if scene.provider_id.as_deref() == Some(provider_id) {
+            scene.provider_id = None;
+            scene.model = None;
+            cleared_scene_references += 1;
+        }
+    }
+    Ok(LlmProviderRemoval {
+        updated: validate_llm_provider_update(updated)?,
+        cleared_scene_references,
+    })
 }
 
 fn validate_llm_provider_update(config: VinpstConfig) -> Result<VinpstConfig, String> {
@@ -944,16 +964,21 @@ mod tests {
     }
 
     #[test]
-    fn remove_provider_requires_unreferenced_config() {
+    fn remove_provider_clears_scene_references_like_upstream_gui() {
         let mut config = VinpstConfig::bundled_default().expect("bundled config");
         config.llm.providers.push(provider("cloud"));
 
         let removed = remove_llm_provider(&config, "cloud").expect("remove provider");
-        assert!(removed.llm.providers.is_empty());
+        assert!(removed.updated.llm.providers.is_empty());
+        assert_eq!(removed.cleared_scene_references, 0);
 
         config.scenes.definitions[0].provider_id = Some("cloud".to_owned());
-        let error = remove_llm_provider(&config, "cloud").expect_err("reject referenced provider");
-        assert!(error.contains("cloud"));
+        config.scenes.definitions[0].model = Some("model-a".to_owned());
+        let removed = remove_llm_provider(&config, "cloud").expect("remove referenced provider");
+        assert!(removed.updated.llm.providers.is_empty());
+        assert_eq!(removed.cleared_scene_references, 1);
+        assert_eq!(removed.updated.scenes.definitions[0].provider_id, None);
+        assert_eq!(removed.updated.scenes.definitions[0].model, None);
     }
 
     #[test]

@@ -10,11 +10,11 @@ use crate::{
     AdapterCommand, BTreeMap, Context, Duration, LiveRegistryI18n, LiveScriptKind,
     LiveScriptRegistry, LoadedLiveI18n, LoadedLiveScriptRegistry, Path, PathBuf, RegistryConfig,
     RegistryIndex, ReqwestRegistryAssetSource, ReqwestRegistryTextSource, TextAdapterState,
-    VinpstConfig, bool_label, config_set_write_target, daemon_owner_probe_plan_json,
-    daemon_service_proxy, dbus, default_adapter_root, default_config_path, fetch_text_from_mirrors,
-    fs, install_live_script, live_registry_urls, load_config_file, load_config_json,
-    load_live_i18n, managed_script_relative_path, materialize_llm_adapter,
-    validate_config_json_value, write_config_set_document,
+    VinpstConfig, config_set_write_target, daemon_owner_probe_plan_json, daemon_service_proxy,
+    dbus, default_adapter_root, default_config_path, fetch_text_from_mirrors, fs,
+    install_live_script, live_registry_urls, load_config_file, load_config_json, load_live_i18n,
+    managed_script_relative_path, materialize_llm_adapter, validate_config_json_value,
+    write_config_set_document,
 };
 
 #[derive(Clone, Copy)]

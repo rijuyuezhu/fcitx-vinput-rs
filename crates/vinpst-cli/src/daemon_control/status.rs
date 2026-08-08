@@ -68,22 +68,10 @@ fn daemon_status_dbus_plan_json() -> serde_json::Value {
 }
 
 fn print_daemon_status_dry_run_text() {
-    println!("dry_run: true");
-    println!("will_call_dbus: false");
-    println!("service: {}", dbus::SERVICE_BUS_NAME);
-    println!("object_path: {}", dbus::SERVICE_OBJECT_PATH);
-    println!("interface: {}", dbus::SERVICE_INTERFACE);
-    println!(
-        "methods: {}, {}, {}",
-        dbus::method::GET_STATUS,
-        dbus::method::GET_ASR_BACKEND_STATE,
-        dbus::method::GET_RUNTIME_STATUS
-    );
-    println!(
-        "reports: service_status, bus_owner, daemon_handoff, asr_backend, runtime_status, text_adapters"
-    );
-    println!("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline");
-    println!("next_step: run vinpst daemon status without --dry-run");
+    println!("Daemon status preview");
+    println!("No daemon will be contacted.");
+    println!();
+    println!("Run `vinpst daemon status` to query the current daemon.");
 }
 
 pub(crate) fn daemon_owner_probe_plan_json() -> serde_json::Value {
@@ -285,133 +273,55 @@ fn executable_paths_match(owner: &Path, expected: &Path) -> bool {
 }
 
 fn print_daemon_status_text(snapshot: &serde_json::Value) {
-    println!("status: {}", optional_json_str(&snapshot["status"]));
-    if !snapshot["owner"].is_null() {
-        println!(
-            "owner_unique_name: {}",
-            optional_json_str(&snapshot["owner"]["unique_name"])
-        );
-        match snapshot["owner"]["unix_process_id"].as_u64() {
-            Some(pid) => println!("owner_pid: {pid}"),
-            None => println!("owner_pid: -"),
-        }
-        println!(
-            "owner_exe: {}",
-            optional_json_str(&snapshot["owner"]["process"]["exe"])
-        );
-        println!(
-            "owner_cmdline: {}",
-            json_string_array_summary(&snapshot["owner"]["process"]["cmdline"])
-        );
+    println!("Daemon: {}", optional_json_str(&snapshot["status"]));
+    if let Some(pid) = snapshot["owner"]["unix_process_id"].as_u64() {
+        println!("Process: {pid}");
     }
-    print_daemon_handoff_text(&snapshot["handoff"]);
-    println!(
-        "target_provider_id: {}",
-        optional_json_str(&snapshot["asr_backend"]["target_provider_id"])
-    );
-    println!(
-        "target_model_id: {}",
-        optional_json_str(&snapshot["asr_backend"]["target_model_id"])
-    );
-    println!(
-        "effective_provider_id: {}",
-        optional_json_str(&snapshot["asr_backend"]["effective_provider_id"])
-    );
-    println!(
-        "effective_model_id: {}",
-        optional_json_str(&snapshot["asr_backend"]["effective_model_id"])
-    );
-    println!(
-        "last_error: {}",
-        optional_json_str(&snapshot["asr_backend"]["last_error"])
-    );
-    println!(
-        "reload_in_progress: {}",
-        snapshot["asr_backend"]["reload_in_progress"]
-            .as_bool()
-            .unwrap_or(false)
-    );
-    println!(
-        "has_effective_backend: {}",
-        snapshot["asr_backend"]["has_effective_backend"]
-            .as_bool()
-            .unwrap_or(false)
-    );
-    println!(
-        "remote_endpoints: {}",
-        json_string_array_summary(&snapshot["asr_backend"]["remote_endpoints"])
-    );
-    println!(
-        "runtime_status: {}",
-        optional_json_str(&snapshot["runtime_status"]["status"])
-    );
-    println!(
-        "runtime_uptime_ms: {}",
-        snapshot["runtime_status"]["uptime_ms"]
-            .as_u64()
-            .unwrap_or(0)
-    );
-    println!(
-        "active_session: {}",
-        snapshot["runtime_status"]["active_session"]
-            .as_bool()
-            .unwrap_or(false)
-    );
-    println!(
-        "text_adapter_count: {}",
-        snapshot["runtime_status"]["text_adapters"]["adapter_count"]
-            .as_u64()
-            .unwrap_or(0)
-    );
-}
 
-fn print_daemon_handoff_text(handoff: &serde_json::Value) {
+    let provider = optional_json_str(&snapshot["asr_backend"]["effective_provider_id"]);
+    let model = optional_json_str(&snapshot["asr_backend"]["effective_model_id"]);
+    let backend_ready = snapshot["asr_backend"]["has_effective_backend"]
+        .as_bool()
+        .unwrap_or(false);
     println!(
-        "handoff_expected_exe: {}",
-        optional_json_str(&handoff["expected_executable"])
+        "ASR: {provider} ({})",
+        if backend_ready {
+            "ready"
+        } else {
+            "unavailable"
+        }
     );
-    println!(
-        "handoff_owner_exe_deleted: {}",
-        handoff["owner_executable_deleted"]
-            .as_bool()
-            .unwrap_or(false)
-    );
-    match handoff["path_matches"].as_bool() {
-        Some(matches) => println!("handoff_path_matches: {matches}"),
-        None => println!("handoff_path_matches: -"),
+    if model != "-" {
+        println!("Model: {model}");
     }
+    if let Some(error) = snapshot["asr_backend"]["last_error"]
+        .as_str()
+        .filter(|error| !error.is_empty())
+    {
+        println!("ASR error: {error}");
+    }
+
+    let active_session = snapshot["runtime_status"]["active_session"]
+        .as_bool()
+        .unwrap_or(false);
+    let adapter_count = snapshot["runtime_status"]["text_adapters"]["adapter_count"]
+        .as_u64()
+        .unwrap_or(0);
     println!(
-        "handoff_restart_recommended: {}",
-        handoff["restart_recommended"].as_bool().unwrap_or(false)
+        "Session: {}",
+        if active_session { "active" } else { "idle" }
     );
-    println!("handoff_reason: {}", optional_json_str(&handoff["reason"]));
-    println!(
-        "handoff_next_step: {}",
-        optional_json_str(&handoff["next_step"])
-    );
+    println!("Text adapters: {adapter_count}");
+
+    if snapshot["handoff"]["restart_recommended"].as_bool() == Some(true) {
+        println!();
+        println!("The running daemon belongs to an older installation.");
+        println!("Run `vinpst daemon handoff` to switch to the current daemon safely.");
+    }
 }
 
 pub(crate) fn optional_json_str(value: &serde_json::Value) -> &str {
     value.as_str().unwrap_or("-")
-}
-
-pub(super) fn empty_as_dash(value: &str) -> &str {
-    if value.is_empty() { "-" } else { value }
-}
-
-fn json_string_array_summary(value: &serde_json::Value) -> String {
-    let values = value
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(serde_json::Value::as_str)
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-    if values.is_empty() {
-        "-".to_owned()
-    } else {
-        values.join(", ")
-    }
 }
 
 pub(crate) fn daemon_service_proxy(

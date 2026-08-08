@@ -455,7 +455,7 @@ fn use_scene(config: &VinpstConfig, scene_id: &str) -> Result<VinpstConfig, Stri
 }
 
 fn remove_scene(config: &VinpstConfig, scene_id: &str) -> Result<VinpstConfig, String> {
-    if matches!(scene_id, RAW_SCENE_ID | COMMAND_SCENE_ID) {
+    if scene_is_built_in(scene_id) {
         return Err(format!("Refusing to remove built-in scene `{scene_id}`."));
     }
     if config.scenes.active_scene == scene_id {
@@ -480,6 +480,10 @@ fn validate_scene_update(updated: VinpstConfig) -> Result<VinpstConfig, String> 
         .validate()
         .map_err(|error| format!("Validate scene configuration: {error}"))?;
     Ok(updated)
+}
+
+fn scene_is_built_in(scene_id: &str) -> bool {
+    matches!(scene_id, RAW_SCENE_ID | COMMAND_SCENE_ID)
 }
 
 fn optional_trimmed(value: &str) -> Option<String> {
@@ -584,9 +588,11 @@ mod tests {
         let active_error = remove_scene(&selected, "meeting").expect_err("reject active removal");
         assert!(active_error.contains("is active"));
         for built_in in [RAW_SCENE_ID, COMMAND_SCENE_ID] {
+            assert!(scene_is_built_in(built_in));
             let error = remove_scene(&selected, built_in).expect_err("reject built-in removal");
             assert!(error.contains("built-in scene"));
         }
+        assert!(!scene_is_built_in("meeting"));
 
         let raw_selected = use_scene(&selected, RAW_SCENE_ID).expect("restore raw scene");
         let removed = remove_scene(&raw_selected, "meeting").expect("remove inactive custom scene");
@@ -633,8 +639,7 @@ mod tests {
             crate::GuiLocale::EnUs.scene_provider_choice(Some("No provider"))
         );
 
-        let (mut app, boot_task) = App::boot();
-        drop(boot_task);
+        let mut app = crate::test_support::GuiHarness::new();
         app.scene_editor = Some(new_scene_editor());
         drop(app.handle_scene_message(SceneMessage::ProviderSelected(
             SceneProviderSelection::Configured("cloud".to_owned()),

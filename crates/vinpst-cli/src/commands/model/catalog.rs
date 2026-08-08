@@ -323,42 +323,44 @@ fn live_model_info_json(
 }
 
 fn print_model_list_text(loaded: &LoadedLiveModelRegistry, i18n: &LoadedLiveI18n) {
-    println!("registry_source: {}", loaded.source_label);
-    println!("i18n_source: {}", i18n.source_label);
-    println!("models: {}", loaded.registry.items.len());
-    println!("id\tshort_id\tlanguage\tsize\tbackend\tfamily\tsupport\ttitle");
+    println!("ID\tTITLE\tLANGUAGE\tSIZE\tTYPE\tHOTWORDS\tSTATUS");
     for model in &loaded.registry.items {
         let support = live_model_support(model);
         println!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}",
             model.id,
-            optional_str(model.short_id.as_deref()),
+            model.resolved_title(i18n.i18n.as_ref()),
             optional_str(model.language.as_deref()),
             format_size_bytes(model.size_bytes),
-            optional_str(model.backend()),
             optional_str(model.model_family()),
-            support.reason,
-            model.resolved_title(i18n.i18n.as_ref()),
+            if model.supports_hotwords() {
+                "yes"
+            } else {
+                "no"
+            },
+            if support.supported {
+                "available"
+            } else {
+                "unsupported"
+            },
         );
     }
 }
 
-fn print_installed_model_list_text(model_root: &Path, models: &[InstalledModelInfo]) {
-    println!("model_root: {}", model_root.display());
-    println!("models: {}", models.len());
-    println!("id	path	language	size	backend	family	runtime	hotwords	files");
+fn print_installed_model_list_text(_model_root: &Path, models: &[InstalledModelInfo]) {
+    println!("ID\tLANGUAGE\tSIZE\tTYPE\tHOTWORDS\tSTATUS");
     for model in models {
         println!(
-            "{}	{}	{}	{}	{}	{}	{}	{}	{}",
+            "{}\t{}\t{}\t{}\t{}\tinstalled",
             model.model_id,
-            model.model_dir.display(),
             optional_str(model.metadata.language.as_deref()),
             format_size_bytes(model.metadata.size_bytes),
-            optional_str(model.metadata.backend.as_deref()),
             optional_str(model.metadata.model_family()),
-            optional_str(model.metadata.runtime.as_deref()),
-            model.metadata.supports_hotwords,
-            model.file_count,
+            if model.metadata.supports_hotwords {
+                "yes"
+            } else {
+                "no"
+            },
         );
     }
 }

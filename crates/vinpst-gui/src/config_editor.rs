@@ -1,10 +1,11 @@
 //! Control-page typed config draft updates and editor rendering.
 
-use crate::keyboard_action::{adjacent_values, keyboard_action, keyboard_button, keyboard_select};
+use crate::audio_devices::{AudioDeviceState, capture_device_choices};
+use crate::keyboard_action::{keyboard_action, keyboard_button, keyboard_select};
 
 use iced::{
     Element, Length,
-    widget::{checkbox, column, pick_list, row, slider, text, text_input},
+    widget::{checkbox, column, pick_list, row, slider, text},
 };
 
 use crate::{App, ConfigDocument, ConfigDraft, ConfigDraftMessage, GuiText, Message};
@@ -18,11 +19,21 @@ impl App {
             ConfigDraftMessage::CaptureDevice(value) => {
                 self.update_draft(|draft| draft.capture_device = value);
             }
+            ConfigDraftMessage::NormalizeAudio(value) => {
+                self.update_draft(|draft| draft.normalize_audio = value);
+            }
+            ConfigDraftMessage::InputGain(value) => {
+                self.update_draft(|draft| draft.input_gain = value);
+            }
             ConfigDraftMessage::DuckOutput(value) => {
                 self.update_draft(|draft| draft.duck_output_while_recording = value);
             }
             ConfigDraftMessage::DuckVolume(value) => {
-                self.update_draft(|draft| draft.duck_output_volume = value);
+                self.update_draft(|draft| {
+                    if draft.duck_output_while_recording {
+                        draft.duck_output_volume = value;
+                    }
+                });
             }
             ConfigDraftMessage::VadEnabled(value) => {
                 self.update_draft(|draft| draft.vad_enabled = value);
@@ -59,19 +70,7 @@ impl App {
         draft: &'a ConfigDraft,
         busy: bool,
     ) -> Element<'a, Message> {
-        let source = if document.from_disk {
-            self.locale.text(GuiText::SourceUserFile)
-        } else {
-            self.locale.text(GuiText::SourceBundledDefault)
-        };
         column![
-            text(self.locale.config_path(document.path.display())),
-            text(match self.locale {
-                crate::GuiLocale::EnUs => format!("Source: {source}"),
-                crate::GuiLocale::ZhCn => format!("来源：{source}"),
-            }),
-            text(self.locale.text(GuiText::General)).size(22),
-            self.general_config_editor(document, draft, busy),
             text(self.locale.text(GuiText::AudioAndVad)).size(22),
             self.audio_vad_editor(draft, busy),
             self.config_save_controls(document, draft, busy),
@@ -80,149 +79,19 @@ impl App {
         .into()
     }
 
-    fn general_config_editor<'a>(
-        &'a self,
-        document: &'a ConfigDocument,
-        draft: &'a ConfigDraft,
-        busy: bool,
-    ) -> Element<'a, Message> {
-        let provider_options = document
-            .config
-            .asr
-            .providers
-            .iter()
-            .map(|provider| provider.id.clone())
-            .collect::<Vec<_>>();
-        let scene_options = document
-            .config
-            .scenes
-            .definitions
-            .iter()
-            .map(|scene| scene.id.clone())
-            .collect::<Vec<_>>();
-        let submit = (draft.is_dirty(&document.config) && !busy).then_some(Message::SaveConfig);
-        let provider_control: Element<'a, Message> = if busy {
-            text(&draft.active_provider).width(Length::Fill).into()
-        } else {
-            let (previous, next) = adjacent_values(&provider_options, Some(&draft.active_provider));
-            keyboard_select(
-                pick_list(
-                    provider_options,
-                    Some(draft.active_provider.clone()),
-                    |value| Message::ConfigDraft(ConfigDraftMessage::ActiveProvider(value)),
-                )
-                .width(Length::Fill),
-                previous
-                    .map(|value| Message::ConfigDraft(ConfigDraftMessage::ActiveProvider(value))),
-                next.map(|value| Message::ConfigDraft(ConfigDraftMessage::ActiveProvider(value))),
-            )
-        };
-        let scene_control: Element<'a, Message> = if busy {
-            text(&draft.active_scene).width(Length::Fill).into()
-        } else {
-            let (previous, next) = adjacent_values(&scene_options, Some(&draft.active_scene));
-            keyboard_select(
-                pick_list(scene_options, Some(draft.active_scene.clone()), |value| {
-                    Message::ConfigDraft(ConfigDraftMessage::ActiveScene(value))
-                })
-                .width(Length::Fill),
-                previous.map(|value| Message::ConfigDraft(ConfigDraftMessage::ActiveScene(value))),
-                next.map(|value| Message::ConfigDraft(ConfigDraftMessage::ActiveScene(value))),
-            )
-        };
-        column![
-            row![
-                text(self.locale.text(GuiText::DefaultLanguage)).width(180),
-                text_input(
-                    self.locale.text(GuiText::DefaultLanguagePlaceholder),
-                    &draft.default_language
-                )
-                .on_input_maybe((!busy).then_some(|value| Message::ConfigDraft(
-                    ConfigDraftMessage::DefaultLanguage(value)
-                )))
-                .on_submit_maybe(submit.clone())
-                .width(Length::Fill),
-            ]
-            .spacing(12),
-            row![
-                text(self.locale.text(GuiText::CaptureDevice)).width(180),
-                text_input(
-                    self.locale.text(GuiText::PipeWireTarget),
-                    &draft.capture_device
-                )
-                .on_input_maybe((!busy).then_some(|value| Message::ConfigDraft(
-                    ConfigDraftMessage::CaptureDevice(value)
-                )))
-                .on_submit_maybe(submit)
-                .width(Length::Fill),
-            ]
-            .spacing(12),
-            row![
-                text(self.locale.text(GuiText::ActiveAsrProvider)).width(180),
-                provider_control,
-            ]
-            .spacing(12),
-            row![
-                text(self.locale.text(GuiText::ActiveScene)).width(180),
-                scene_control,
-            ]
-            .spacing(12),
-        ]
-        .spacing(12)
-        .into()
-    }
-
     fn audio_vad_editor(&self, draft: &ConfigDraft, busy: bool) -> Element<'_, Message> {
-        let duck_volume_control: Element<'_, Message> = if busy {
-            text(self.locale.text(GuiText::LockedWhileFinishing))
-                .width(Length::Fill)
-                .into()
-        } else {
-            let previous = (draft.duck_output_volume > 0.0).then(|| {
-                Message::ConfigDraft(ConfigDraftMessage::DuckVolume(
-                    (draft.duck_output_volume - 0.05).max(0.0),
-                ))
-            });
-            let next = (draft.duck_output_volume < 1.0).then(|| {
-                Message::ConfigDraft(ConfigDraftMessage::DuckVolume(
-                    (draft.duck_output_volume + 0.05).min(1.0),
-                ))
-            });
-            keyboard_select(
-                slider(0.0_f32..=1.0_f32, draft.duck_output_volume, |value| {
-                    Message::ConfigDraft(ConfigDraftMessage::DuckVolume(value))
-                })
-                .step(0.05_f32)
-                .width(Length::Fill),
-                previous,
-                next,
-            )
-        };
-        let vad_threshold_control: Element<'_, Message> = if busy {
-            text(self.locale.text(GuiText::LockedWhileFinishing))
-                .width(Length::Fill)
-                .into()
-        } else {
-            let previous = (draft.vad_threshold > 0.05).then(|| {
-                Message::ConfigDraft(ConfigDraftMessage::VadThreshold(
-                    (draft.vad_threshold - 0.05).max(0.05),
-                ))
-            });
-            let next = (draft.vad_threshold < 0.95).then(|| {
-                Message::ConfigDraft(ConfigDraftMessage::VadThreshold(
-                    (draft.vad_threshold + 0.05).min(0.95),
-                ))
-            });
-            keyboard_select(
-                slider(0.05_f32..=0.95_f32, draft.vad_threshold, |value| {
-                    Message::ConfigDraft(ConfigDraftMessage::VadThreshold(value))
-                })
-                .step(0.05_f32)
-                .width(Length::Fill),
-                previous,
-                next,
-            )
-        };
+        let input_gain_control = self.input_gain_control(draft, busy);
+        let normalize_action = (!busy).then_some(Message::ConfigDraft(
+            ConfigDraftMessage::NormalizeAudio(!draft.normalize_audio),
+        ));
+        let normalize_checkbox = keyboard_action(
+            checkbox(draft.normalize_audio)
+                .label(self.locale.text(GuiText::NormalizeAudio))
+                .on_toggle_maybe((!busy).then_some(|value| {
+                    Message::ConfigDraft(ConfigDraftMessage::NormalizeAudio(value))
+                })),
+            normalize_action,
+        );
         let duck_action = (!busy).then_some(Message::ConfigDraft(ConfigDraftMessage::DuckOutput(
             !draft.duck_output_while_recording,
         )));
@@ -245,22 +114,128 @@ impl App {
                 })),
             vad_action,
         );
-        column![
+        let mut body = column![
+            self.capture_device_section(draft, busy),
+            normalize_checkbox,
+            row![
+                text(self.locale.input_gain(draft.input_gain)).width(180),
+                input_gain_control,
+            ]
+            .spacing(12),
             duck_checkbox,
-            row![
-                text(self.locale.duck_volume(draft.duck_output_volume * 100.0),).width(180),
-                duck_volume_control,
-            ]
-            .spacing(12),
-            vad_checkbox,
-            row![
-                text(self.locale.vad_threshold(draft.vad_threshold)).width(180),
-                vad_threshold_control,
-            ]
-            .spacing(12),
         ]
-        .spacing(12)
+        .spacing(12);
+        if draft.duck_output_while_recording {
+            body = body.push(
+                row![
+                    text(self.locale.duck_volume(draft.duck_output_volume * 100.0),).width(180),
+                    self.duck_volume_control(draft, busy),
+                ]
+                .spacing(12),
+            );
+        }
+        body.push(vad_checkbox).into()
+    }
+
+    fn capture_device_section(&self, draft: &ConfigDraft, busy: bool) -> Element<'_, Message> {
+        let mut section = column![
+            row![
+                text(self.locale.text(GuiText::CaptureDevice)).width(180),
+                self.capture_device_control(draft, busy),
+            ]
+            .spacing(12)
+        ]
+        .spacing(8);
+        if matches!(&self.audio_devices, AudioDeviceState::Failed(_)) {
+            section = section.push(
+                row![
+                    text(self.locale.text(GuiText::AudioDevicesUnavailable)),
+                    keyboard_button(self.locale.text(GuiText::Retry))
+                        .on_press_maybe((!busy).then_some(Message::RefreshAudioDevices)),
+                ]
+                .spacing(10),
+            );
+        }
+        section.into()
+    }
+
+    fn capture_device_control(&self, draft: &ConfigDraft, busy: bool) -> Element<'_, Message> {
+        if busy {
+            return text(draft.capture_device.clone())
+                .width(Length::Fill)
+                .into();
+        }
+        let choices = match &self.audio_devices {
+            AudioDeviceState::Ready(choices) => choices.clone(),
+            AudioDeviceState::Loading | AudioDeviceState::Failed(_) => capture_device_choices(
+                &draft.capture_device,
+                self.locale.default_capture_device(),
+                &[],
+            ),
+        };
+        let selected = choices
+            .iter()
+            .find(|choice| choice.value == draft.capture_device)
+            .cloned();
+        pick_list(choices, selected, |choice| {
+            Message::ConfigDraft(ConfigDraftMessage::CaptureDevice(choice.value))
+        })
+        .width(Length::Fill)
         .into()
+    }
+
+    fn input_gain_control(&self, draft: &ConfigDraft, busy: bool) -> Element<'_, Message> {
+        if busy {
+            return text(self.locale.text(GuiText::LockedWhileFinishing))
+                .width(Length::Fill)
+                .into();
+        }
+        let previous = (draft.input_gain > 0.1).then(|| {
+            Message::ConfigDraft(ConfigDraftMessage::InputGain(
+                (draft.input_gain - 0.1).max(0.1),
+            ))
+        });
+        let next = (draft.input_gain < 10.0).then(|| {
+            Message::ConfigDraft(ConfigDraftMessage::InputGain(
+                (draft.input_gain + 0.1).min(10.0),
+            ))
+        });
+        keyboard_select(
+            slider(0.1_f32..=10.0_f32, draft.input_gain, |value| {
+                Message::ConfigDraft(ConfigDraftMessage::InputGain(value))
+            })
+            .step(0.1_f32)
+            .width(Length::Fill),
+            previous,
+            next,
+        )
+    }
+
+    fn duck_volume_control(&self, draft: &ConfigDraft, busy: bool) -> Element<'_, Message> {
+        if busy {
+            return text(self.locale.text(GuiText::LockedWhileFinishing))
+                .width(Length::Fill)
+                .into();
+        }
+        let previous = (draft.duck_output_volume > 0.0).then(|| {
+            Message::ConfigDraft(ConfigDraftMessage::DuckVolume(
+                (draft.duck_output_volume - 0.05).max(0.0),
+            ))
+        });
+        let next = (draft.duck_output_volume < 1.0).then(|| {
+            Message::ConfigDraft(ConfigDraftMessage::DuckVolume(
+                (draft.duck_output_volume + 0.05).min(1.0),
+            ))
+        });
+        keyboard_select(
+            slider(0.0_f32..=1.0_f32, draft.duck_output_volume, |value| {
+                Message::ConfigDraft(ConfigDraftMessage::DuckVolume(value))
+            })
+            .step(0.05_f32)
+            .width(Length::Fill),
+            previous,
+            next,
+        )
     }
 
     fn config_save_controls<'a>(

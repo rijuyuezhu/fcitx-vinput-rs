@@ -26,7 +26,7 @@ pub(crate) use recording::RecordingCommand;
 pub(crate) use registry::RegistryCommand;
 pub(crate) use scene::SceneCommand;
 
-/// CLI for inspecting and controlling the vinpst daemon.
+/// Manage Vinpst voice input, configuration, and diagnostics.
 #[derive(Debug, Parser)]
 #[command(version, about)]
 pub(crate) struct Args {
@@ -43,13 +43,13 @@ pub(crate) enum Command {
     /// Initialize per-user config and managed directories.
     Init {
         /// Config path to create. Defaults to $XDG_CONFIG_HOME/fcitx-vinpst/config.json.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         config: Option<PathBuf>,
         /// Managed model root to create. Defaults to $XDG_DATA_HOME/fcitx-vinpst/models.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         model_root: Option<PathBuf>,
         /// Managed cache root to create. Defaults to $XDG_CACHE_HOME/fcitx-vinpst.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         cache_root: Option<PathBuf>,
         /// Overwrite an existing config file with the bundled default config.
         #[arg(long)]
@@ -62,27 +62,29 @@ pub(crate) enum Command {
         json: bool,
     },
     /// Print stable D-Bus names and methods.
+    #[command(hide = true)]
     Protocol,
-    /// Inspect or validate vinpst config metadata.
+    /// Manage Vinpst configuration.
     Config {
         /// Config operation. Omitted to validate the bundled default config.
         #[command(subcommand)]
         command: Option<ConfigCommand>,
     },
     /// Inspect or validate registry metadata.
+    #[command(hide = true)]
     Registry {
         /// Registry operation. Omitted to print URL resolution for the bundled config.
         #[command(subcommand)]
         command: Option<RegistryCommand>,
     },
-    /// Control or inspect the running vinpst daemon.
+    /// Start, stop, or inspect the Vinpst daemon.
     Daemon {
         /// Daemon operation.
         #[command(subcommand)]
         command: DaemonCommand,
     },
 
-    /// Control daemon recording over D-Bus.
+    /// Start, stop, toggle, or inspect recording.
     Recording {
         /// Recording operation.
         #[command(subcommand)]
@@ -124,31 +126,34 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: ProviderCommand,
     },
-    /// Manage ASR models from the live registry catalog.
+    /// Manage ASR models.
     Model {
         /// Model operation.
         #[command(subcommand)]
         command: ModelCommand,
     },
     /// Print ASR backend availability diagnostics from config.
+    #[command(hide = true)]
     AsrState {
         /// Optional config JSON file. Omitted to inspect the bundled default config.
         #[arg(long)]
         config: Option<PathBuf>,
     },
     /// Print capture-device diagnostics from config and optional live backend.
+    #[command(hide = true)]
     AudioDevices {
         /// Optional config JSON file. Omitted to inspect the bundled default config.
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Print combined local diagnostics for config, ASR, audio, and activation setup.
+    /// Check the local Vinpst setup and report problems.
     Doctor {
         /// Optional config JSON file. Omitted to inspect the bundled default config.
         #[arg(long)]
         config: Option<PathBuf>,
     },
     /// Generate, install, or remove an org.fcitx.Vinpst D-Bus activation service file.
+    #[command(hide = true)]
     ActivationService {
         /// Path to the vinpst-daemon executable used by D-Bus activation.
         #[arg(long, required_unless_present_any = ["remove_user", "user_status"])]
@@ -202,11 +207,13 @@ pub(crate) enum Command {
         output: Option<PathBuf>,
     },
     /// Create a recognition JSON payload for tests/manual inspection.
+    #[command(hide = true)]
     MockResult {
         /// Commit text for the payload.
         text: String,
     },
     /// Parse a status string and print the normalized wire value.
+    #[command(hide = true)]
     Status {
         /// Status string such as idle, recording, inferring, postprocessing, or error.
         status: String,
@@ -345,5 +352,223 @@ pub(crate) fn force_json_output(command: &mut Command) {
         | Command::ActivationService { .. }
         | Command::MockResult { .. }
         | Command::Status { .. } => {}
+    }
+}
+
+#[cfg(test)]
+mod help_surface_tests {
+    use clap::{CommandFactory, Parser};
+
+    use super::{AdapterCommand, Args, Command, ConfigCommand, ProviderCommand, SceneCommand};
+    use crate::hotword::HotwordCommand;
+
+    #[test]
+    fn internal_top_level_commands_are_hidden_but_registered() {
+        let command = Args::command();
+        for name in [
+            "protocol",
+            "registry",
+            "asr-state",
+            "audio-devices",
+            "activation-service",
+            "mock-result",
+            "status",
+        ] {
+            let subcommand = command
+                .find_subcommand(name)
+                .expect("registered subcommand");
+            assert!(subcommand.is_hide_set(), "{name} should be hidden");
+        }
+    }
+
+    #[test]
+    fn public_root_command_surface_is_exact() {
+        let command = Args::command();
+        let visible = command
+            .get_subcommands()
+            .filter(|subcommand| !subcommand.is_hide_set() && subcommand.get_name() != "help")
+            .map(clap::Command::get_name)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            visible,
+            [
+                "init",
+                "config",
+                "daemon",
+                "recording",
+                "device",
+                "hotword",
+                "llm",
+                "adapter",
+                "scene",
+                "provider",
+                "model",
+                "doctor",
+            ]
+        );
+    }
+
+    #[test]
+    fn maintenance_subcommands_are_hidden_but_registered() {
+        let command = Args::command();
+        let daemon = command.find_subcommand("daemon").expect("daemon command");
+        for name in ["handoff", "prepare-remove", "install-service"] {
+            let subcommand = daemon
+                .find_subcommand(name)
+                .expect("maintenance subcommand");
+            assert!(subcommand.is_hide_set(), "daemon {name} should be hidden");
+        }
+
+        let adapter = command.find_subcommand("adapter").expect("adapter command");
+        let install_plan = adapter
+            .find_subcommand("install-plan")
+            .expect("adapter install-plan");
+        assert!(install_plan.is_hide_set());
+
+        let config = command.find_subcommand("config").expect("config command");
+        let example = config
+            .find_subcommand("example")
+            .expect("config example command");
+        assert!(example.is_hide_set());
+    }
+
+    #[test]
+    fn fixture_and_transport_plan_options_are_hidden_from_help() {
+        let command = Args::command();
+
+        let init = command.find_subcommand("init").expect("init command");
+        for arg_id in ["config", "model_root", "cache_root"] {
+            let arg = init
+                .get_arguments()
+                .find(|arg| arg.get_id().as_str() == arg_id)
+                .expect("registered init fixture argument");
+            assert!(arg.is_hide_set(), "init {arg_id} should be hidden");
+        }
+
+        let config = command.find_subcommand("config").expect("config command");
+        let validate = config
+            .find_subcommand("validate")
+            .expect("config validate command");
+        let summary_only = validate
+            .get_arguments()
+            .find(|arg| arg.get_id().as_str() == "summary_only")
+            .expect("config validate summary-only argument");
+        assert!(summary_only.is_hide_set());
+
+        for (group, subcommand, hidden_args) in [
+            (
+                "model",
+                "list",
+                &["model_root", "registry", "i18n", "locale"][..],
+            ),
+            (
+                "model",
+                "install",
+                &["registry", "i18n", "locale", "model_root", "staging_root"][..],
+            ),
+            ("provider", "list", &["registry", "i18n", "locale"][..]),
+            ("provider", "install", &["registry", "provider_root"][..]),
+            ("adapter", "list", &["registry", "i18n", "locale"][..]),
+            ("adapter", "install", &["registry", "adapter_root"][..]),
+            ("daemon", "status", &["dry_run"][..]),
+            ("recording", "start", &["selected_text", "dry_run"][..]),
+        ] {
+            let group = command.find_subcommand(group).expect("command group");
+            let subcommand = group.find_subcommand(subcommand).expect("user subcommand");
+            for arg_id in hidden_args {
+                let arg = subcommand
+                    .get_arguments()
+                    .find(|arg| arg.get_id().as_str() == *arg_id)
+                    .expect("registered hidden argument");
+                assert!(
+                    arg.is_hide_set(),
+                    "{arg_id} should remain callable but hidden"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn familiar_upstream_edit_and_remove_aliases_remain_accepted() {
+        let args =
+            Args::try_parse_from(["vinpst", "config", "e"]).expect("upstream config edit alias");
+        assert!(matches!(
+            args.command,
+            Command::Config {
+                command: Some(ConfigCommand::Edit { .. })
+            }
+        ));
+
+        let args =
+            Args::try_parse_from(["vinpst", "hotword", "e"]).expect("upstream hotword edit alias");
+        assert!(matches!(
+            args.command,
+            Command::Hotword {
+                command: HotwordCommand::Edit { .. }
+            }
+        ));
+
+        let args = Args::try_parse_from(["vinpst", "provider", "e", "provider.demo"])
+            .expect("upstream provider edit-script alias");
+        assert!(matches!(
+            args.command,
+            Command::Provider {
+                command: ProviderCommand::EditScript { .. }
+            }
+        ));
+
+        let args = Args::try_parse_from(["vinpst", "provider", "rm", "provider.demo"])
+            .expect("upstream provider remove alias");
+        assert!(matches!(
+            args.command,
+            Command::Provider {
+                command: ProviderCommand::Remove { .. }
+            }
+        ));
+
+        let args = Args::try_parse_from(["vinpst", "provider", "add", "provider.demo"])
+            .expect("upstream provider add alias");
+        assert!(matches!(
+            args.command,
+            Command::Provider {
+                command: ProviderCommand::Install { .. }
+            }
+        ));
+
+        let args = Args::try_parse_from(["vinpst", "provider", "edit", "provider.demo"])
+            .expect("upstream provider edit command");
+        assert!(matches!(
+            args.command,
+            Command::Provider {
+                command: ProviderCommand::EditScript { .. }
+            }
+        ));
+
+        let args = Args::try_parse_from(["vinpst", "adapter", "add", "adapter.demo"])
+            .expect("upstream adapter add alias");
+        assert!(matches!(
+            args.command,
+            Command::Adapter {
+                command: AdapterCommand::Install { .. }
+            }
+        ));
+
+        let args = Args::try_parse_from(["vinpst", "scene", "e", "scene.demo"])
+            .expect("upstream scene edit alias");
+        assert!(matches!(
+            args.command,
+            Command::Scene {
+                command: SceneCommand::Edit { .. }
+            }
+        ));
+
+        let args = Args::try_parse_from(["vinpst", "scene", "rm", "scene.demo"])
+            .expect("upstream scene remove alias");
+        assert!(matches!(
+            args.command,
+            Command::Scene {
+                command: SceneCommand::Remove { .. }
+            }
+        ));
     }
 }

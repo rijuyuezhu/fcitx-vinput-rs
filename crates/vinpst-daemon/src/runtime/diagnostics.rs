@@ -129,8 +129,9 @@ impl RuntimeState {
             let mut state = AsrBackendState::unavailable(
                 configured.target_provider_id,
                 configured.target_model_id,
-                self.asr_reload_last_error
+                self.asr_disabled_reason
                     .clone()
+                    .or_else(|| self.asr_reload_last_error.clone())
                     .unwrap_or(configured.last_error),
             );
             state.remote_endpoints = configured.remote_endpoints;

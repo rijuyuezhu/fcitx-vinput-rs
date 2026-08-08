@@ -12,11 +12,11 @@ use crate::{App, GuiLocale, GuiText, Message};
 /// Main GUI pages matching the legacy management surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
-    /// Daemon and audio controls.
+    /// Audio, ASR, and daemon controls.
     Control,
-    /// ASR providers and scenes.
+    /// Installable models, ASR providers, and LLM adapters.
     Resources,
-    /// LLM providers and adapters.
+    /// LLM providers, configured adapters, and scenes.
     Llm,
     /// Hotword file configuration.
     Hotwords,
@@ -64,10 +64,7 @@ impl App {
                 )
             },
         );
-        navigation
-            .push(self.desktop_action_button(busy))
-            .push(text(self.locale.text(GuiText::KeyboardHint)).size(12))
-            .into()
+        navigation.push(self.desktop_action_button(busy)).into()
     }
 
     pub(super) fn select_page(&mut self, page: Page) {

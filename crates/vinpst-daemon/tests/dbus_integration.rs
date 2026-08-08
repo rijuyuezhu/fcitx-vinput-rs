@@ -63,6 +63,7 @@ const RAW_PAYLOAD_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../fixtures/recognition/raw.json"
 ));
+static WELL_KNOWN_NAME_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn fixture_json(input: &str) -> &str {
     input.trim_end()
@@ -75,6 +76,31 @@ async fn spawn_service() -> anyhow::Result<zbus::Connection> {
         .serve_on_session_bus()
         .await?;
     Ok(connection)
+}
+
+#[tokio::test]
+async fn second_service_cannot_replace_or_queue_behind_current_owner() -> anyhow::Result<()> {
+    let _well_known_name_guard = WELL_KNOWN_NAME_TEST_LOCK.lock().await;
+    let first = spawn_service().await?;
+    let first_unique_name = first
+        .unique_name()
+        .ok_or_else(|| anyhow::anyhow!("first service should have a unique bus name"))?
+        .to_owned();
+
+    let second_runtime = RuntimeState::new(VinpstConfig::bundled_default()?)?;
+    let error = VinpstDbusService::new(second_runtime)
+        .serve_on_session_bus()
+        .await
+        .expect_err("a second daemon must not replace or queue behind the current owner");
+    assert!(matches!(error, zbus::Error::NameTaken));
+
+    let bus = zbus::fdo::DBusProxy::new(&first).await?;
+    let owner = bus
+        .get_name_owner(dbus::SERVICE_BUS_NAME.try_into()?)
+        .await?;
+    assert_eq!(owner, first_unique_name);
+    assert!(first.release_name(dbus::SERVICE_BUS_NAME).await?);
+    Ok(())
 }
 
 async fn spawn_runtime_on_unique_name(
@@ -719,7 +745,8 @@ async fn asr_provider_selection_persists_and_reloads_through_session_bus() -> an
 #[allow(clippy::too_many_lines)]
 #[tokio::test]
 async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<()> {
-    let _service_connection = spawn_service().await?;
+    let _well_known_name_guard = WELL_KNOWN_NAME_TEST_LOCK.lock().await;
+    let service_connection = spawn_service().await?;
     let client_connection = zbus::Connection::session().await?;
     let proxy = Proxy::new(
         &client_connection,
@@ -965,6 +992,11 @@ async fn legacy_dbus_methods_roundtrip_through_session_bus() -> anyhow::Result<(
     let status: String = proxy.call(dbus::method::GET_STATUS, &()).await?;
     assert_eq!(status, "idle");
 
+    assert!(
+        service_connection
+            .release_name(dbus::SERVICE_BUS_NAME)
+            .await?
+    );
     Ok(())
 }
 

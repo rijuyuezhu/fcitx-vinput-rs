@@ -1327,6 +1327,47 @@ fn reload_asr_backend_keeps_injected_backend() {
 }
 
 #[test]
+fn command_line_disabled_asr_survives_configured_reloads() {
+    let mut config = VinpstConfig::bundled_default().unwrap();
+    config.asr.active_provider = "cmd".to_owned();
+    config.asr.providers.push(AsrProviderConfig {
+        id: "cmd".to_owned(),
+        kind: AsrProviderKind::Command,
+        timeout_ms: Some(1_000),
+        model: Some("cmd-model".to_owned()),
+        hotwords_file: None,
+        command: Some("sh".to_owned()),
+        args: vec!["-c".to_owned(), "printf disabled".to_owned()],
+        env: std::collections::HashMap::new(),
+        endpoint: None,
+    });
+    let mut runtime = RuntimeState::new(config.clone()).unwrap();
+    runtime.disable_asr("ASR disabled by command line.");
+
+    let state = runtime.asr_backend_state();
+    assert!(!state.has_effective_backend);
+    assert_eq!(state.target_provider_id, "cmd");
+    assert_eq!(state.target_model_id, "cmd-model");
+    assert_eq!(state.last_error, "ASR disabled by command line.");
+
+    let state = runtime.reload_configured_asr_backend().unwrap();
+    assert!(!state.has_effective_backend);
+    assert_eq!(state.last_error, "ASR disabled by command line.");
+
+    let mut updated = config;
+    updated.global.default_language = "en-US".to_owned();
+    assert!(!runtime.queue_configured_asr_reload(updated).unwrap());
+    assert!(matches!(
+        runtime.next_asr_reload_worker_step(),
+        AsrReloadWorkerStep::Stop
+    ));
+    assert_eq!(
+        runtime.asr_backend_state().last_error,
+        "ASR disabled by command line."
+    );
+}
+
+#[test]
 fn reload_asr_backend_is_deferred_while_recording() {
     let mut config = VinpstConfig::bundled_default().unwrap();
     config.asr.active_provider = "cmd".to_owned();

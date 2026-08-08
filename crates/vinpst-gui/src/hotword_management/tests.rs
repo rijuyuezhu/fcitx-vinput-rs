@@ -236,8 +236,7 @@ fn config_refresh_preserves_only_current_pending_activation() {
         from_disk: true,
         config: config.clone(),
     });
-    let (mut app, boot_task) = App::boot();
-    drop(boot_task);
+    let mut app = crate::test_support::GuiHarness::new();
     app.refresh_hotword_editor(&document);
     app.hotword_editor.pending_activation = Some(PendingHotwordActivation::for_file(
         config.asr.active_provider.clone(),
@@ -361,7 +360,7 @@ fn hotword_messages_redact_paths_and_loaded_content() {
 
 #[test]
 fn file_picker_selection_updates_only_the_path_draft_and_clears_stale_content() {
-    let (mut app, _) = App::boot();
+    let mut app = crate::test_support::GuiHarness::new();
     let old_path = PathBuf::from("/tmp/old-hotwords.txt");
     app.hotword_editor.path_input = old_path.to_string_lossy().into_owned();
     app.hotword_editor.loaded_path = Some(old_path);
@@ -391,7 +390,7 @@ fn file_picker_selection_updates_only_the_path_draft_and_clears_stale_content() 
 
 #[test]
 fn file_picker_cancel_preserves_the_current_draft() {
-    let (mut app, _) = App::boot();
+    let mut app = crate::test_support::GuiHarness::new();
     app.hotword_editor.path_input = "/tmp/pending-hotwords.txt".to_owned();
     app.operation = OperationState::Running("fixture");
 
@@ -403,7 +402,7 @@ fn file_picker_cancel_preserves_the_current_draft() {
 
 #[test]
 fn dirty_content_blocks_file_picker_entry() {
-    let (mut app, _) = App::boot();
+    let mut app = crate::test_support::GuiHarness::new();
     app.hotword_editor.baseline = Some(HotwordContentSnapshot {
         existed: true,
         content: "baseline

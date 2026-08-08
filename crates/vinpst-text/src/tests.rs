@@ -17,6 +17,7 @@ use super::{
 };
 use vinpst_config::{
     COMMAND_SCENE_ID, LlmAdapterConfig, LlmProviderConfig, RAW_SCENE_ID, SceneDefinition,
+    VinpstConfig,
 };
 use vinpst_protocol::{CandidateSource, RecognitionPayload};
 
@@ -833,6 +834,36 @@ fn openai_text_adapter_command_scene_falls_back_to_selected_without_llm_candidat
     assert_eq!(payload.candidates[0].source.to_string(), "raw");
     assert_eq!(payload.candidates[1].text, "make it shorter");
     assert_eq!(payload.candidates[1].source.to_string(), "asr");
+}
+
+#[test]
+fn bundled_command_prompt_interpolates_upstream_scoped_xml_once() {
+    let config = VinpstConfig::bundled_default().unwrap();
+    let command = config
+        .scenes
+        .definitions
+        .iter()
+        .find(|scene| scene.id == COMMAND_SCENE_ID)
+        .expect("bundled command scene");
+    let request = build_openai_compatible_chat_request(
+        &TextRequest {
+            raw_text: "make it shorter",
+            scene: command,
+            selected_text: Some("selected source"),
+        },
+        &provider(serde_json::json!({})),
+        "",
+    )
+    .unwrap()
+    .expect("bundled command prompt should build a request");
+    let content = request.body["messages"][0]["content"]
+        .as_str()
+        .expect("user content should be text");
+
+    assert!(content.contains("<vinput-selected>\nselected source\n</vinput-selected>"));
+    assert!(content.contains("<vinput-asr>\nmake it shorter\n</vinput-asr>"));
+    assert_eq!(content.matches("selected source").count(), 1);
+    assert_eq!(content.matches("make it shorter").count(), 1);
 }
 
 #[test]

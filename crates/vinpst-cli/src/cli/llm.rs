@@ -112,7 +112,7 @@ pub(crate) enum LlmCommand {
     /// Remove an LLM provider from config.
     #[command(alias = "rm")]
     Remove {
-        /// Existing LLM provider id to remove.
+        /// Existing LLM provider id to remove. Scene bindings to it are cleared.
         id: String,
         /// Optional config JSON file. Omitted to read the user config, then the bundled default.
         #[arg(long)]

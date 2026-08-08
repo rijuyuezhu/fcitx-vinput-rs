@@ -174,25 +174,21 @@ fn provider_add_outcome_json(outcome: &ProviderAddOutcome) -> serde_json::Value 
 }
 
 fn print_provider_add_text(outcome: &ProviderAddOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("provider_id: {}", outcome.provider_id);
-    println!("provider_type: {}", outcome.provider_type);
-    println!("active_provider: {}", outcome.active_provider);
-    println!("before_provider_count: {}", outcome.before_provider_count);
-    println!("after_provider_count: {}", outcome.after_provider_count);
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = format!(
+        "Would add ASR provider `{}` ({}).",
+        outcome.provider_id, outcome.provider_type
+    );
+    let applied = format!(
+        "Added ASR provider `{}` ({}).",
+        outcome.provider_id, outcome.provider_type
+    );
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 pub(super) fn print_provider_remove(request: ProviderRemoveRequest<'_>) -> anyhow::Result<()> {
@@ -335,25 +331,18 @@ fn provider_remove_outcome_json(outcome: &ProviderRemoveOutcome) -> serde_json::
 }
 
 fn print_provider_remove_text(outcome: &ProviderRemoveOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("removed_provider_id: {}", outcome.removed_provider_id);
-    println!("removed_provider_type: {}", outcome.removed_provider_type);
-    println!("active_provider: {}", outcome.active_provider);
-    println!("before_provider_count: {}", outcome.before_provider_count);
-    println!("after_provider_count: {}", outcome.after_provider_count);
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = format!(
+        "Would remove ASR provider `{}`.",
+        outcome.removed_provider_id
+    );
+    let applied = format!("Removed ASR provider `{}`.", outcome.removed_provider_id);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 pub(super) fn print_provider_use(request: ProviderUseRequest<'_>) -> anyhow::Result<()> {
@@ -451,23 +440,15 @@ fn provider_use_outcome_json(outcome: &ProviderUseOutcome) -> serde_json::Value 
 }
 
 fn print_provider_use_text(outcome: &ProviderUseOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("before: {}", outcome.before);
-    println!("after: {}", outcome.after);
-    println!("provider_type: {}", outcome.provider_type);
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = format!("Would select ASR provider `{}`.", outcome.after);
+    let applied = format!("Selected ASR provider `{}`.", outcome.after);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 pub(super) fn asr_provider_kind_label(kind: &AsrProviderKind) -> &'static str {
@@ -475,13 +456,5 @@ pub(super) fn asr_provider_kind_label(kind: &AsrProviderKind) -> &'static str {
         AsrProviderKind::Local => "local",
         AsrProviderKind::Remote => "remote",
         AsrProviderKind::Command => "command",
-    }
-}
-
-pub(super) fn configured_label(value: Option<&str>) -> &'static str {
-    if value.is_some_and(|value| !value.trim().is_empty()) {
-        "yes"
-    } else {
-        "no"
     }
 }

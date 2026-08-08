@@ -147,22 +147,15 @@ fn adapter_edit_outcome_json(outcome: &AdapterEditOutcome) -> serde_json::Value 
 }
 
 fn print_adapter_edit_text(outcome: &AdapterEditOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("adapter_id: {}", outcome.adapter_id);
-    println!("changed_fields: {}", outcome.changed_fields.join(","));
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = format!("Would update text adapter `{}`.", outcome.adapter_id);
+    let applied = format!("Updated text adapter `{}`.", outcome.adapter_id);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 pub(super) fn print_adapter_add(request: AdapterAddRequest<'_>) -> anyhow::Result<()> {
@@ -504,51 +497,28 @@ fn adapter_remove_outcome_json(outcome: &AdapterRemoveOutcome) -> serde_json::Va
 }
 
 fn print_adapter_add_text(outcome: &AdapterAddOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("adapter_id: {}", outcome.adapter_id);
-    println!("before_adapter_count: {}", outcome.before_adapter_count);
-    println!("after_adapter_count: {}", outcome.after_adapter_count);
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let preview = format!("Would add text adapter `{}`.", outcome.adapter_id);
+    let applied = format!("Added text adapter `{}`.", outcome.adapter_id);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }
 
 fn print_adapter_remove_text(outcome: &AdapterRemoveOutcome) {
-    println!("dry_run: {}", outcome.dry_run);
-    println!("source: {}", outcome.source);
-    if let Some(config_path) = &outcome.config_path {
-        println!("config_path: {}", config_path.display());
-    }
-    println!("removed_adapter_id: {}", outcome.removed_adapter_id);
-    println!("managed_script: {}", outcome.managed_script);
-    if let Some(script_path) = &outcome.script_path {
-        println!("script_path: {}", script_path.display());
-    }
-    println!("script_existed: {}", outcome.script_existed);
-    println!(
-        "will_remove_script: {}",
-        !outcome.dry_run && outcome.in_place && outcome.script_existed
+    let preview = format!(
+        "Would remove text adapter `{}`.",
+        outcome.removed_adapter_id
     );
-    println!("removed_script: {}", outcome.removed_script);
-    println!("before_adapter_count: {}", outcome.before_adapter_count);
-    println!("after_adapter_count: {}", outcome.after_adapter_count);
-    println!("in_place: {}", outcome.in_place);
-    if let Some(output_path) = &outcome.output_path {
-        println!("output_path: {}", output_path.display());
-    }
-    if let Some(backup_path) = &outcome.backup_path {
-        println!("backup_path: {}", backup_path.display());
-    }
-    println!("will_write_config: {}", !outcome.dry_run);
-    println!("wrote_config: {}", outcome.wrote_config);
+    let applied = format!("Removed text adapter `{}`.", outcome.removed_adapter_id);
+    crate::human_output::print_config_mutation(
+        outcome.dry_run,
+        &preview,
+        &applied,
+        outcome.output_path.as_deref(),
+        outcome.backup_path.as_deref(),
+    );
 }

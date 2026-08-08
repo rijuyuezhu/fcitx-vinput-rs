@@ -6,13 +6,18 @@ use iced::{
     Element, Length,
     widget::{column, progress_bar, row, text, text_input},
 };
+use vinpst_config::VinpstConfig;
 use vinpst_registry::{LiveScriptKind, RegistryOperationProgress};
 
 use super::{
     ActiveScriptInstall, ActiveScriptPreparation, ScriptInstallPlan, ScriptInstallState,
-    adapter_selector_id, provider_selector_id, script_primary_action_id,
+    script_primary_action_id,
 };
-use crate::{App, GuiLocale, GuiText, Message, SecretInput};
+use crate::{
+    App, GuiLocale, GuiText, Message, SecretInput,
+    script_catalog::ScriptCatalogState,
+    script_management::{managed_adapter_script_path, managed_provider_script_path},
+};
 
 impl ScriptInstallPlan {
     fn view(&self, locale: GuiLocale) -> Element<'_, Message> {
@@ -46,7 +51,7 @@ impl ScriptInstallPlan {
         let can_install = self.missing_required_environment().is_none();
         body.push(
             row![
-                keyboard_button(locale.text(GuiText::InstallOrUpdate))
+                keyboard_button(locale.text(GuiText::Continue))
                     .id(script_primary_action_id())
                     .on_press_maybe(can_install.then_some(Message::ConfirmScriptInstall)),
                 keyboard_button(locale.text(GuiText::Cancel))
@@ -119,49 +124,137 @@ impl ScriptInstallState {
 
 impl App {
     pub(crate) fn provider_install_controls(&self, busy: bool) -> Element<'_, Message> {
-        let input = text_input(
-            self.locale.text(GuiText::RegistryProviderSelector),
-            &self.provider_selector,
+        script_catalog_view(
+            &self.provider_catalog,
+            self.config.as_ref().ok().map(|document| &document.config),
+            LiveScriptKind::AsrProvider,
+            self.locale,
+            busy,
+            Message::RefreshProviderCatalog,
+            Message::InstallProvider,
         )
-        .id(provider_selector_id())
-        .width(Length::Fill);
-        let input = if busy {
-            input
-        } else {
-            input.on_input(Message::ProviderSelectorChanged)
-        };
-        row![
-            input,
-            keyboard_button(self.locale.text(GuiText::InstallOrUpdate)).on_press_maybe(
-                (!busy && !self.provider_selector.trim().is_empty())
-                    .then_some(Message::InstallProvider),
-            ),
-        ]
-        .spacing(10)
-        .into()
     }
 
     pub(crate) fn adapter_install_controls(&self, busy: bool) -> Element<'_, Message> {
-        let input = text_input(
-            self.locale.text(GuiText::RegistryAdapterSelector),
-            &self.adapter_selector,
+        script_catalog_view(
+            &self.adapter_catalog,
+            self.config.as_ref().ok().map(|document| &document.config),
+            LiveScriptKind::LlmAdapter,
+            self.locale,
+            busy,
+            Message::RefreshAdapterCatalog,
+            Message::InstallAdapter,
         )
-        .id(adapter_selector_id())
-        .width(Length::Fill);
-        let input = if busy {
-            input
-        } else {
-            input.on_input(Message::AdapterSelectorChanged)
-        };
-        row![
-            input,
-            keyboard_button(self.locale.text(GuiText::InstallOrUpdate)).on_press_maybe(
-                (!busy && !self.adapter_selector.trim().is_empty())
-                    .then_some(Message::InstallAdapter),
-            ),
+    }
+}
+
+fn script_catalog_view<'a>(
+    state: &'a ScriptCatalogState,
+    config: Option<&'a VinpstConfig>,
+    kind: LiveScriptKind,
+    locale: GuiLocale,
+    busy: bool,
+    refresh: Message,
+    install: fn(String) -> Message,
+) -> Element<'a, Message> {
+    match state {
+        ScriptCatalogState::Loading => text(locale.text(GuiText::LoadingCatalog)).into(),
+        ScriptCatalogState::Failed(_) => column![
+            text(locale.text(GuiText::CatalogUnavailable)),
+            keyboard_button(locale.text(GuiText::RefreshCatalog))
+                .on_press_maybe((!busy).then_some(refresh)),
         ]
-        .spacing(10)
-        .into()
+        .spacing(8)
+        .into(),
+        ScriptCatalogState::Ready(entries) if entries.is_empty() => column![
+            text(locale.text(GuiText::NoCatalogItems)),
+            keyboard_button(locale.text(GuiText::RefreshCatalog))
+                .on_press_maybe((!busy).then_some(refresh)),
+        ]
+        .spacing(8)
+        .into(),
+        ScriptCatalogState::Ready(entries) => {
+            let mut body = column![].spacing(8);
+            for entry in entries {
+                let selector = entry.selector().to_owned();
+                let action = script_catalog_action(config, kind, &entry.id);
+                let mut label = column![text(&entry.title)];
+                if let Some(description) = entry.description.as_deref() {
+                    label = label.push(text(description).size(12));
+                }
+                body = body.push(
+                    row![
+                        label.width(Length::Fill),
+                        keyboard_button(locale.text(action.label())).on_press_maybe(
+                            (!busy && action.actionable()).then_some(install(selector)),
+                        ),
+                    ]
+                    .spacing(10),
+                );
+            }
+            body.push(
+                keyboard_button(locale.text(GuiText::RefreshCatalog))
+                    .on_press_maybe((!busy).then_some(refresh)),
+            )
+            .into()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScriptCatalogAction {
+    Install,
+    Update,
+    Configured,
+}
+
+impl ScriptCatalogAction {
+    const fn label(self) -> GuiText {
+        match self {
+            Self::Install => GuiText::Install,
+            Self::Update => GuiText::Update,
+            Self::Configured => GuiText::Configured,
+        }
+    }
+
+    const fn actionable(self) -> bool {
+        !matches!(self, Self::Configured)
+    }
+}
+
+fn script_catalog_action(
+    config: Option<&VinpstConfig>,
+    kind: LiveScriptKind,
+    entry_id: &str,
+) -> ScriptCatalogAction {
+    let Some(config) = config else {
+        return ScriptCatalogAction::Configured;
+    };
+    match kind {
+        LiveScriptKind::AsrProvider => config
+            .asr
+            .providers
+            .iter()
+            .find(|provider| provider.id == entry_id)
+            .map_or(ScriptCatalogAction::Install, |provider| {
+                if managed_provider_script_path(provider).is_some() {
+                    ScriptCatalogAction::Update
+                } else {
+                    ScriptCatalogAction::Configured
+                }
+            }),
+        LiveScriptKind::LlmAdapter => config
+            .llm
+            .adapters
+            .iter()
+            .find(|adapter| adapter.id == entry_id)
+            .map_or(ScriptCatalogAction::Install, |adapter| {
+                if managed_adapter_script_path(adapter).is_some() {
+                    ScriptCatalogAction::Update
+                } else {
+                    ScriptCatalogAction::Configured
+                }
+            }),
     }
 }
 
@@ -267,5 +360,56 @@ fn progress_label(
         RegistryOperationProgress::Completed => {
             locale.script_progress("completed", resource, None, None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, path::PathBuf};
+
+    use vinpst_config::AsrProviderKind;
+    use vinpst_registry::managed_script_relative_path;
+
+    use super::*;
+
+    #[test]
+    fn catalog_action_distinguishes_install_managed_update_and_custom_conflict() {
+        let mut config = VinpstConfig::bundled_default().expect("bundled config");
+        let id = "provider.fixture.catalog";
+        assert_eq!(
+            script_catalog_action(Some(&config), LiveScriptKind::AsrProvider, id),
+            ScriptCatalogAction::Install
+        );
+
+        let mut provider = config.asr.providers[0].clone();
+        provider.id = id.to_owned();
+        provider.kind = AsrProviderKind::Command;
+        provider.command = Some("python3".to_owned());
+        provider.args = vec!["/tmp/custom-provider.py".to_owned()];
+        config.asr.providers.push(provider.clone());
+        assert_eq!(
+            script_catalog_action(Some(&config), LiveScriptKind::AsrProvider, id),
+            ScriptCatalogAction::Configured
+        );
+
+        let data_home = env::var_os("XDG_DATA_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                env::var_os("HOME")
+                    .filter(|value| !value.is_empty())
+                    .map(PathBuf::from)
+                    .map(|home| home.join(".local/share"))
+            })
+            .expect("test environment has XDG_DATA_HOME or HOME");
+        let managed_path = data_home
+            .join("fcitx-vinpst/providers")
+            .join(managed_script_relative_path(LiveScriptKind::AsrProvider, id).unwrap());
+        provider.args = vec![managed_path.to_string_lossy().into_owned()];
+        *config.asr.providers.last_mut().expect("fixture provider") = provider;
+        assert_eq!(
+            script_catalog_action(Some(&config), LiveScriptKind::AsrProvider, id),
+            ScriptCatalogAction::Update
+        );
     }
 }

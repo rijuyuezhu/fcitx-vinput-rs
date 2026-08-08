@@ -4,7 +4,7 @@
 
 ## Baseline fixture
 
-`data/default-config.json` is the committed compatibility baseline copied from the original project. It is also the stable smoke fixture for explicit config CLI paths:
+`data/default-config.json` is the committed compatibility baseline aligned with the current upstream defaults. It is also the stable smoke fixture for explicit config CLI paths:
 
 ```sh
 cargo run -q -p vinpst-cli -- config validate data/default-config.json --summary-only
@@ -19,14 +19,16 @@ The committed baseline intentionally fixes these compatibility fields:
 
 - output ducking disabled by default, with a `duck_output_volume` multiplier of `0.25` when enabled;
 - ASR provider `sherpa-onnx` as the active local provider placeholder.
-- active scene `__raw__`, with `__command__` kept as the command-mode prompt fixture.
+- active scene `__raw__`, with `__command__` using the current upstream scoped interpolation prompt. The prompt places selected text and ASR text in `<vinput-selected>` and `<vinput-asr>` blocks through `{{selected}}` and `{{asr}}`, so request assembly does not append a second copy of either input.
 - empty `llm.providers` and `llm.adapters`, so text-adapter diagnostics report no configured adapters.
 
 Runtime availability is not implied by the fixture; local `sherpa-onnx` requires the feature-gated native backend and a compatible installed model.
 
 ## Legacy compatibility policy
 
-The legacy C++ project accepted or repaired some malformed user config shapes more loosely. The Rust contract is intentionally explicit: parsing may normalize missing builtin scenes and blank/missing `active_scene` to `__raw__`. The one numeric compatibility repair retained here is `global.duck_output_volume`, which clamps finite parsed values to `0.0..=1.0` like legacy. Validation still rejects programmatically constructed non-finite values and does not silently deduplicate or drop invalid entries.
+The legacy C++ project accepted or repaired some malformed user config shapes more loosely. The Rust contract is intentionally explicit: parsing may normalize missing builtin scenes and blank/missing `active_scene` to `__raw__`. Missing `__command__`, an empty command prompt, the former free-form command prompt, and the former short-tag `<selected>/<asr>` prompt are upgraded to the current upstream scoped interpolation prompt. The one numeric compatibility repair retained here is `global.duck_output_volume`, which clamps finite parsed values to `0.0..=1.0` like legacy. Validation still rejects programmatically constructed non-finite values and does not silently deduplicate or drop invalid entries.
+
+Config-file failure behavior intentionally differs from upstream where fail-closed handling protects user data. Both projects fall back to the bundled default only when the normal user config file is absent. With an existing malformed JSON file, the compiled upstream CLI reports the parse failure but exits successfully with a partially defaulted config; Vinpst returns an error instead. The compiled upstream CLI also accepts an unknown future `version`, while Vinpst rejects schema versions newer than `CURRENT_CONFIG_VERSION`. This prevents an older binary from silently reading or later rewriting a config format it does not understand.
 
 Pinned decisions, covered by `crates/vinpst-config/tests/legacy_compat.rs`:
 

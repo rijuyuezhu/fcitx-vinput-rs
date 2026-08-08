@@ -1,9 +1,9 @@
 use anyhow::Context;
-use vinpst_protocol::{ServiceStatus, dbus};
+use vinpst_protocol::{RecognitionPayload, ServiceStatus, dbus};
 
 use crate::{
     RecordingCommand,
-    daemon_control::{daemon_owner_probe_plan_json, daemon_service_proxy, optional_json_str},
+    daemon_control::{daemon_owner_probe_plan_json, daemon_service_proxy},
 };
 
 pub(crate) fn handle_recording_command(command: RecordingCommand) -> anyhow::Result<()> {
@@ -101,22 +101,15 @@ fn recording_status_result_json(status: &str) -> serde_json::Value {
 }
 
 fn print_recording_status_text(output: &serde_json::Value) {
-    println!("dry_run: {}", output["dry_run"]);
-    println!("action: status");
-    println!("will_call_dbus: {}", output["will_call_dbus"]);
-    println!("called: {}", output["called"]);
-    println!("service: {}", dbus::SERVICE_BUS_NAME);
-    println!("object_path: {}", dbus::SERVICE_OBJECT_PATH);
-    println!("interface: {}", dbus::SERVICE_INTERFACE);
-    println!("method: {}", dbus::method::GET_STATUS);
-    if output["owner_probe"].is_object() {
-        println!("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline");
+    if output["dry_run"].as_bool() == Some(true) {
+        println!("Would query the current recording state.");
+        println!("No daemon will be contacted.");
+        return;
     }
     if let Some(status) = output["status"].as_str() {
-        println!("status: {status}");
-        println!("known_status: {}", output["known_status"]);
-        println!("is_recording: {}", output["is_recording"]);
-        println!("is_busy: {}", output["is_busy"]);
+        println!("Recording state: {status}");
+    } else {
+        println!("Recording state is unavailable.");
     }
 }
 
@@ -244,16 +237,27 @@ fn recording_result_json(
 }
 
 fn print_recording_result_text(result: &serde_json::Value) {
-    println!("dry_run: false");
-    println!("action: {}", optional_json_str(&result["action"]));
-    println!("will_call_dbus: true");
-    println!("called: true");
-    println!("service: {}", dbus::SERVICE_BUS_NAME);
-    println!("object_path: {}", dbus::SERVICE_OBJECT_PATH);
-    println!("interface: {}", dbus::SERVICE_INTERFACE);
-    println!("method: {}", optional_json_str(&result["dbus"]["method"]));
-    if let Some(payload_json) = result["payload_json"].as_str() {
-        println!("payload_json: {payload_json}");
+    let action = result["action"].as_str().unwrap_or("recording");
+    if let Some(payload_json) = result["payload_json"].as_str()
+        && let Ok(payload) = RecognitionPayload::from_json_str(payload_json)
+    {
+        if !payload.commit_text.is_empty() {
+            println!("{}", payload.commit_text);
+            return;
+        }
+        if !payload.candidates.is_empty() {
+            println!(
+                "Recognition finished with {} candidates.",
+                payload.candidates.len()
+            );
+            return;
+        }
+    }
+    match action {
+        "start" => println!("Recording started."),
+        "stop" => println!("Recording stopped."),
+        "toggle" => println!("Recording toggled."),
+        _ => println!("Recording action completed."),
     }
 }
 
@@ -312,32 +316,15 @@ fn recording_action_next_steps(action: &str) -> Vec<&'static str> {
 }
 
 fn print_recording_plan_text(action: &str, selected_text: Option<&str>, scene: Option<&str>) {
-    let output = recording_plan_json(action, selected_text, scene);
-    println!("dry_run: true");
-    println!("action: {action}");
-    println!("will_call_dbus: false");
-    println!("service: {}", dbus::SERVICE_BUS_NAME);
-    println!("object_path: {}", dbus::SERVICE_OBJECT_PATH);
-    println!("interface: {}", dbus::SERVICE_INTERFACE);
-    println!(
-        "methods: {}",
-        output["dbus"]["methods"]
-            .as_array()
-            .map(|methods| methods
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .collect::<Vec<_>>()
-                .join(", "))
-            .unwrap_or_default()
-    );
-    println!("owner_probe: GetNameOwner, GetConnectionUnixProcessID, procfs exe/cmdline");
-    if let Some(next_step) = output["next_steps"]
-        .as_array()
-        .and_then(|steps| steps.first())
-        .and_then(serde_json::Value::as_str)
-    {
-        println!("next_step: {next_step}");
+    match action {
+        "start" if selected_text.is_some() => println!("Would start command-mode recording."),
+        "start" => println!("Would start recording."),
+        "stop" => println!("Would stop recording."),
+        "toggle" => println!("Would toggle recording."),
+        _ => println!("Would run recording action `{action}`."),
     }
-    println!("selected_text_present: {}", selected_text.is_some());
-    println!("scene: {}", scene.unwrap_or(""));
+    if let Some(scene) = scene.filter(|scene| !scene.is_empty()) {
+        println!("Scene: {scene}");
+    }
+    println!("No daemon will be contacted.");
 }
